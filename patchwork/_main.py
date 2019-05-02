@@ -9,14 +9,16 @@ EPSILON = 1e-5
 
 class PatchWork(object):
     
-    def __init__(self, feature_vecs, imfiles, epochs=100, min_count=10):
+    def __init__(self, feature_vecs, imfiles, epochs=100, min_count=10, epsilon=0):
         """
         :feature_vecs: numpy array of feature data for each unlabeled training point
         :imfiles: list of strings of corresponding raw images
         :epochs: how many epochs to train for each iteration
         :min_count: minimum number of examples per class before network starts training
+        :epsilon:
         """
         self.counter = 0
+        self._epsilon = epsilon
         self._min_count = min_count
         self._feature_vecs = feature_vecs
         self._imfiles = imfiles
@@ -80,10 +82,11 @@ class PatchWork(object):
             
     def _training_set(self):
         labeled = ~np.isnan(self.labels)
-        return self._feature_vecs[labeled, :], self.labels[labeled]
+        return self._feature_vecs[labeled, :], self.labels[labeled], self._sample_weights[labeled]
     
-    def uncert_sample(self):
+    def uncert_sample(self, epsilon=0):
         # compute probs for all vectors
+        weights = np.ones(self.M)
         predictions = self.model.predict(self._feature_vecs).ravel()#[:,1]
         predictions[predictions == 0] = EPSILON
         predictions[predictions == 1] = 1-EPSILON
@@ -92,7 +95,21 @@ class PatchWork(object):
             (1-predictions)*np.log2(1-predictions)
         # highest-entropy unlabeled vectors
         highest_entropy = H[self.unlabeled_indices].argsort()[::-1]
-        return self.unlabeled_indices[highest_entropy[:self.M]], predictions
+        uncert_ind = self.unlabeled_indices[highest_entropy[:self.M]]
+        # if epsilon > 0: do epsilon-greedy
+        if epsilon > 0:
+            num_random = np.random.binomial(16, epsilon)
+            if num_random > 0: # otherwise code below breaks
+                rand_ind = self.random_sample()
+                randpicks = np.array([x for x in rand_ind if x not in uncert_ind[:-num_random]])
+                uncert_ind = np.concatenate([uncert_ind[:-num_random], randpicks[:num_random]])
+                weights[-num_random:] /= epsilon
+                # shuffle order so it won't be as obvious which are random
+                order = np.random.choice(np.arange(self.M), size=self.M, replace=False)
+                uncert_ind = uncert_ind[order]
+                weights = weights[order]
+        return uncert_ind, weights #self.unlabeled_indices[highest_entropy[:self.M]]#, predictions
+    
     
     def iterate(self, groundtruth=None):
         assert len(self.unlabeled_indices) >= 16, "not enough unlabeled samples"
@@ -101,12 +118,13 @@ class PatchWork(object):
             sample = self.random_sample()
         # otherwise update model and do uncertainty sampling
         else:
-            x,y = self._training_set()
+            x, y, w = self._training_set()
             batch_size = min(x.shape[0], 64)
             self._hist = self.model.fit(x, y, batch_size=batch_size, 
-                           epochs=self._epochs, verbose=0)#, sample_weight=self._sample_weights)
-            sample, preds = self.uncert_sample()
-
+                           epochs=self._epochs, verbose=0, sample_weight=w)
+            sample, weights = self.uncert_sample(self._epsilon)
+            self._sample_weights[sample] = weights
+            
         # plot the images
         if groundtruth is None:
             self._plot_sample(sample)
@@ -117,6 +135,7 @@ class PatchWork(object):
         else:
             positives = np.array([s for s in np.arange(len(sample)) if (groundtruth[sample[s]]==1)])
         # update labels
+        #print(sample.dtype)
         self.labels[sample] = 0
         self.labels[sample[positives]] = 1
         self._update_unlabeled()
