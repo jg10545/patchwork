@@ -9,7 +9,7 @@ EPSILON = 1e-5
 
 class PatchWork(object):
     
-    def __init__(self, feature_vecs, imfiles, epochs=100, min_count=10, epsilon=0, stratify=True):
+    def __init__(self, feature_vecs, imfiles, epochs=25, min_count=10, epsilon=0, stratify=True):
         """
         :feature_vecs: numpy array of feature data for each unlabeled training point
         :imfiles: list of strings of corresponding raw images
@@ -145,7 +145,8 @@ class PatchWork(object):
         # update labels
         #print(sample.dtype)
         self.labels[sample] = 0
-        self.labels[sample[positives]] = 1
+        if len(positives) > 1:
+            self.labels[sample[positives]] = 1
         self._update_unlabeled()
         
         self.counter += 1

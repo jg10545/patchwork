@@ -16,7 +16,7 @@ patchwork
 
 
 
-Active learning for quickly building image paatch classifiers
+Interactive machine learning for quickly building image paatch classifiers
 
 
 * Free software: MIT license

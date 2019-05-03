@@ -3,10 +3,13 @@ import os
 from sklearn.preprocessing import normalize
 
 
-pos_categories = ["airplane", "buildings", "denseresidential", "freeway",
-                 "harbor", "intersection", "mediumresidential", "mobilehomepark",
-                 "overpass", "parkinglot", "runway", "sparseresidential", "storagetanks"]
+#pos_categories = ["airplane", "buildings", "denseresidential", "freeway",
+#                 "harbor", "intersection", "mediumresidential", "mobilehomepark",
+#                 "overpass", "parkinglot", "runway", "sparseresidential", "storagetanks"]
 
+#pos_categories = ["freeway", "intersection", "overpass", "runway"]
+#pos_categories = ["mobilehomepark"]
+pos_categories = ["denseresidential", "mediumresidential", "sparseresidential"]
 
 def load_ucmerced(filelist="filepaths.txt", featfile="ucmerced_feature_vectors.numpy"):
     
