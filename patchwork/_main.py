@@ -3,13 +3,14 @@ import matplotlib.pyplot as plt
 import tensorflow as tf
 from PIL import Image
 from tqdm import tqdm
+from sklearn.metrics import roc_auc_score
 
 prompt_txt = "Enter comma-delimited list of class-1 patches:"
 EPSILON = 1e-5
 
 class PatchWork(object):
     
-    def __init__(self, feature_vecs, imfiles, epochs=25, min_count=10, epsilon=0, stratify=True):
+    def __init__(self, feature_vecs, imfiles, epochs=100, min_count=10, epsilon=0, stratify=True):
         """
         :feature_vecs: numpy array of feature data for each unlabeled training point
         :imfiles: list of strings of corresponding raw images
@@ -35,6 +36,7 @@ class PatchWork(object):
         self._sample_weights = np.ones(feature_vecs.shape[0])
         self._update_unlabeled()
         self.test_acc = []
+        self.test_auc = []
         
     def _update_unlabeled(self):
         # update our array keeping track of unlabeled images
@@ -155,6 +157,8 @@ class PatchWork(object):
         for _ in tqdm(range(num_calls)):
             self.iterate(groundtruth)
             if (testx is not None) and (testy is not None):
-                acc = self.model.evaluate(testx, testy, verbose=0)
-                self.test_acc.append(acc[-1])
+                #acc = self.model.evaluate(testx, testy, verbose=0)
+                #self.test_acc.append(acc[-1])
+                preds = self.model.predict(testx).ravel()
+                self.test_auc.append(roc_auc_score(testy, preds))
             
