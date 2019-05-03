@@ -9,14 +9,16 @@ EPSILON = 1e-5
 
 class PatchWork(object):
     
-    def __init__(self, feature_vecs, imfiles, epochs=100, min_count=10, epsilon=0):
+    def __init__(self, feature_vecs, imfiles, epochs=100, min_count=10, epsilon=0, stratify=True):
         """
         :feature_vecs: numpy array of feature data for each unlabeled training point
         :imfiles: list of strings of corresponding raw images
         :epochs: how many epochs to train for each iteration
         :min_count: minimum number of examples per class before network starts training
         :epsilon:
+        :stratify:
         """
+        self._stratify = stratify
         self.counter = 0
         self._epsilon = epsilon
         self._min_count = min_count
@@ -82,6 +84,12 @@ class PatchWork(object):
             
     def _training_set(self):
         labeled = ~np.isnan(self.labels)
+        if self._stratify:
+            pos_indices = np.arange(self._feature_vecs.shape[0])[self.labels == 1]
+            neg_indices = np.arange(self._feature_vecs.shape[0])[self.labels == 0]
+            class_imbalance = max(int(len(neg_indices)/len(pos_indices)),1)
+            labeled = np.concatenate([pos_indices for _ in range(class_imbalance)] + [neg_indices])
+        
         return self._feature_vecs[labeled, :], self.labels[labeled], self._sample_weights[labeled]
     
     def uncert_sample(self, epsilon=0):
