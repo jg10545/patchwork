@@ -5,13 +5,15 @@ import tensorflow as tf
 from PIL import Image
 from tqdm import tqdm
 from sklearn.metrics import roc_auc_score
+import warnings
 
 prompt_txt = "Enter comma-delimited list of class-1 patches:"
 EPSILON = 1e-5
 
 class PatchWork(object):
     
-    def __init__(self, feature_vecs, imfiles, epochs=100, min_count=10, epsilon=0, stratify=True, **kwargs):
+    def __init__(self, feature_vecs, imfiles, epochs=100, min_count=10, epsilon=0, stratify=True, 
+                 df=None, **kwargs):
         """
         :feature_vecs: numpy array of feature data for each unlabeled training point
         :imfiles: list of strings of corresponding raw images
@@ -19,6 +21,7 @@ class PatchWork(object):
         :min_count: minimum number of examples per class before network starts training
         :epsilon:
         :stratify:
+        :df:
         :kwargs: passed to model building function
         """
         self._stratify = stratify
@@ -39,6 +42,9 @@ class PatchWork(object):
         self._update_unlabeled()
         self.test_acc = []
         self.test_auc = []
+        
+        if df is not None:
+            self._load_labels_from_df(df)
         
     def _update_unlabeled(self):
         # update our array keeping track of unlabeled images
@@ -173,4 +179,18 @@ class PatchWork(object):
                    "label":self.labels[labeled], 
                    "weights":self._sample_weights[labeled]})
         return df
+    
+    def _load_labels_from_df(self, df):
+        """
+        Update weights by importing previously-labeled data
+        """
+        imfiles = list(self._imfiles)
+        for i, s in df.iterrows():
+            if s["file"] in imfiles:
+                ind = imfiles.index(s["file"])
+                self.labels[ind] = s["label"]
+                self._sample_weights[ind] = s["weights"]
+            else:
+                warnings.warn("%s not found")
             
+        self._update_unlabeled()
