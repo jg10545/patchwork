@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 import tensorflow as tf
 from PIL import Image
@@ -10,7 +11,7 @@ EPSILON = 1e-5
 
 class PatchWork(object):
     
-    def __init__(self, feature_vecs, imfiles, epochs=100, min_count=10, epsilon=0, stratify=True):
+    def __init__(self, feature_vecs, imfiles, epochs=100, min_count=10, epsilon=0, stratify=True, **kwargs):
         """
         :feature_vecs: numpy array of feature data for each unlabeled training point
         :imfiles: list of strings of corresponding raw images
@@ -18,6 +19,7 @@ class PatchWork(object):
         :min_count: minimum number of examples per class before network starts training
         :epsilon:
         :stratify:
+        :kwargs: passed to model building function
         """
         self._stratify = stratify
         self.counter = 0
@@ -42,7 +44,7 @@ class PatchWork(object):
         # update our array keeping track of unlabeled images
         self.unlabeled_indices = np.arange(self.N)[np.isnan(self.labels)]
         
-    def _build_model(self, inpt_shape=(6,6,1024)):
+    def _build_model(self, inpt_shape=(6,6,1024), **kwargs):
         """
         Code to construct a tf.keras Model object
         
@@ -161,4 +163,14 @@ class PatchWork(object):
                 #self.test_acc.append(acc[-1])
                 preds = self.model.predict(testx).ravel()
                 self.test_auc.append(roc_auc_score(testy, preds))
+                
+    def export_labels(self):
+        """
+        Return labels as a pandas dataframe
+        """
+        labeled = ~np.isnan(self.labels)
+        df = pd.DataFrame({"file":self._imfiles[labeled], 
+                   "label":self.labels[labeled], 
+                   "weights":self._sample_weights[labeled]})
+        return df
             
