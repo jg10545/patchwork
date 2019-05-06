@@ -1,25 +1,32 @@
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 import tensorflow as tf
 from PIL import Image
 from tqdm import tqdm
 from sklearn.metrics import roc_auc_score
+import warnings
 
 prompt_txt = "Enter comma-delimited list of class-1 patches:"
 EPSILON = 1e-5
 
 class PatchWork(object):
     
-    def __init__(self, feature_vecs, imfiles, epochs=100, min_count=10, epsilon=0, stratify=True):
+    def __init__(self, feature_vecs, imfiles, epochs=1, min_count=10, epsilon=0, 
+                 batch_size=64, verbose=0, df=None, **kwargs):
         """
         :feature_vecs: numpy array of feature data for each unlabeled training point
         :imfiles: list of strings of corresponding raw images
         :epochs: how many epochs to train for each iteration
         :min_count: minimum number of examples per class before network starts training
-        :epsilon:
-        :stratify:
+        :epsilon: epsilon-greedy hyperparameter. 0 for greedy sampling
+        :batch_size: batch size for training
+        :verbose: whether to print training information
+        :df: dataframe of previously-labeled image metadata
+        :kwargs: passed to model building function
         """
-        self._stratify = stratify
+        self._batch_size = batch_size
+        self._verbose = verbose
         self.counter = 0
         self._epsilon = epsilon
         self._min_count = min_count
@@ -38,11 +45,14 @@ class PatchWork(object):
         self.test_acc = []
         self.test_auc = []
         
+        if df is not None:
+            self._load_labels_from_df(df)
+        
     def _update_unlabeled(self):
         # update our array keeping track of unlabeled images
         self.unlabeled_indices = np.arange(self.N)[np.isnan(self.labels)]
         
-    def _build_model(self, inpt_shape=(6,6,1024)):
+    def _build_model(self, inpt_shape=(6,6,1024), **kwargs):
         """
         Code to construct a tf.keras Model object
         
@@ -54,7 +64,8 @@ class PatchWork(object):
         
         model = tf.keras.Model(inputs=inpt, outputs=net)
         model.compile(
-            optimizer=tf.keras.optimizers.SGD(1e-3),
+            optimizer=tf.keras.optimizers.RMSprop(1e-3),
+            #optimizer=tf.keras.optimizers.SGD(1e-3),
             loss=tf.keras.losses.binary_crossentropy,
             metrics=["accuracy"]
         )
@@ -83,16 +94,18 @@ class PatchWork(object):
         if (inpt < 0).any() or (inpt > 15).any():
             assert False, "what is this crap"
         return inpt
-            
-    def _training_set(self):
-        labeled = ~np.isnan(self.labels)
-        if self._stratify:
-            pos_indices = np.arange(self._feature_vecs.shape[0])[self.labels == 1]
-            neg_indices = np.arange(self._feature_vecs.shape[0])[self.labels == 0]
-            class_imbalance = max(int(len(neg_indices)/len(pos_indices)),1)
-            labeled = np.concatenate([pos_indices for _ in range(class_imbalance)] + [neg_indices])
-        
-        return self._feature_vecs[labeled, :], self.labels[labeled], self._sample_weights[labeled]
+       
+    def _training_generator(self, bs):
+        N = self._feature_vecs.shape[0]
+        pos = np.arange(N)[self.labels==1]
+        neg = np.arange(N)[self.labels==0]
+        all_inds = np.concatenate([pos,neg])
+        probs = np.concatenate([(0.5/len(pos))*np.ones(len(pos)),
+                        0.5/len(neg)*np.ones(len(neg))])
+        while True:
+            inds = np.random.choice(all_inds, size=bs, replace=True, p=probs)
+            yield self._feature_vecs[inds,:], self.labels[inds], self._sample_weights[inds]
+
     
     def uncert_sample(self, epsilon=0):
         # compute probs for all vectors
@@ -128,10 +141,10 @@ class PatchWork(object):
             sample = self.random_sample()
         # otherwise update model and do uncertainty sampling
         else:
-            x, y, w = self._training_set()
-            batch_size = min(x.shape[0], 64)
-            self._hist = self.model.fit(x, y, batch_size=batch_size, 
-                           epochs=self._epochs, verbose=0, sample_weight=w)
+            #x, y, w = self._training_set()
+            gen = self._training_generator(self._batch_size)
+            self._hist = self.model.fit_generator(gen, steps_per_epoch=100, 
+                                                  epochs=self._epochs, verbose=self._verbose)
             sample, weights = self.uncert_sample(self._epsilon)
             self._sample_weights[sample] = weights
             
@@ -161,4 +174,28 @@ class PatchWork(object):
                 #self.test_acc.append(acc[-1])
                 preds = self.model.predict(testx).ravel()
                 self.test_auc.append(roc_auc_score(testy, preds))
+                
+    def export_labels(self):
+        """
+        Return labels as a pandas dataframe
+        """
+        labeled = ~np.isnan(self.labels)
+        df = pd.DataFrame({"file":self._imfiles[labeled], 
+                   "label":self.labels[labeled], 
+                   "weights":self._sample_weights[labeled]})
+        return df
+    
+    def _load_labels_from_df(self, df):
+        """
+        Update weights by importing previously-labeled data
+        """
+        imfiles = list(self._imfiles)
+        for i, s in df.iterrows():
+            if s["file"] in imfiles:
+                ind = imfiles.index(s["file"])
+                self.labels[ind] = s["label"]
+                self._sample_weights[ind] = s["weights"]
+            else:
+                warnings.warn("%s not found")
             
+        self._update_unlabeled()
