@@ -12,7 +12,7 @@ EPSILON = 1e-5
 
 class PatchWork(object):
     
-    def __init__(self, feature_vecs, imfiles, epochs=10, min_count=10, epsilon=0, 
+    def __init__(self, feature_vecs, imfiles, epochs=1, min_count=10, epsilon=0, 
                  batch_size=64, verbose=0, df=None, **kwargs):
         """
         :feature_vecs: numpy array of feature data for each unlabeled training point
@@ -64,7 +64,8 @@ class PatchWork(object):
         
         model = tf.keras.Model(inputs=inpt, outputs=net)
         model.compile(
-            optimizer=tf.keras.optimizers.SGD(1e-3),
+            optimizer=tf.keras.optimizers.RMSprop(1e-3),
+            #optimizer=tf.keras.optimizers.SGD(1e-3),
             loss=tf.keras.losses.binary_crossentropy,
             metrics=["accuracy"]
         )
