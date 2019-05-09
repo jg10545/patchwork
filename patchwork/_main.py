@@ -165,15 +165,13 @@ class PatchWork(object):
         self._update_unlabeled()
         
         self.counter += 1
-        
+
     def __call__(self, num_calls=1, groundtruth=None, testx=None, testy=None):
         for _ in tqdm(range(num_calls)):
             self.iterate(groundtruth)
             if (testx is not None) and (testy is not None):
-                #acc = self.model.evaluate(testx, testy, verbose=0)
-                #self.test_acc.append(acc[-1])
-                preds = self.model.predict(testx).ravel()
-                self.test_auc.append(roc_auc_score(testy, preds))
+                preds = self.model.predict(testx)
+                self.test_auc.append(roc_auc_score(testy, preds[:,-1]))
                 
     def export_labels(self):
         """
