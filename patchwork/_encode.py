@@ -56,6 +56,10 @@ def build_context_encoder():
             m * tf.square(tf.layers.flatten(y_pred) - tf.layers.flatten(y_true)), axis=-1
         )
     
+    encoder = build_encoder()
+    transition = build_transition()
+    decoder = build_decoder()
+    
     inpt = tf.keras.layers.Input((256,256,3))
     encoded = encoder(inpt)
     updated = transition(encoded)
