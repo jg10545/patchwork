@@ -110,7 +110,7 @@ class PatchWork(object):
     def uncert_sample(self, epsilon=0):
         # compute probs for all vectors
         weights = np.ones(self.M)
-        predictions = self.model.predict(self._feature_vecs).ravel()#[:,1]
+        predictions = self.model.predict(self._feature_vecs)[:,-1]
         predictions[predictions == 0] = EPSILON
         predictions[predictions == 1] = 1-EPSILON
         # compute entropies
@@ -131,7 +131,7 @@ class PatchWork(object):
                 order = np.random.choice(np.arange(self.M), size=self.M, replace=False)
                 uncert_ind = uncert_ind[order]
                 weights = weights[order]
-        return uncert_ind, weights #self.unlabeled_indices[highest_entropy[:self.M]]#, predictions
+        return uncert_ind, weights 
     
     
     def iterate(self, groundtruth=None):
@@ -141,7 +141,6 @@ class PatchWork(object):
             sample = self.random_sample()
         # otherwise update model and do uncertainty sampling
         else:
-            #x, y, w = self._training_set()
             gen = self._training_generator(self._batch_size)
             self._hist = self.model.fit_generator(gen, steps_per_epoch=100, 
                                                   epochs=self._epochs, verbose=self._verbose)
@@ -158,22 +157,19 @@ class PatchWork(object):
         else:
             positives = np.array([s for s in np.arange(len(sample)) if (groundtruth[sample[s]]==1)])
         # update labels
-        #print(sample.dtype)
         self.labels[sample] = 0
         if len(positives) > 1:
             self.labels[sample[positives]] = 1
         self._update_unlabeled()
         
         self.counter += 1
-        
+
     def __call__(self, num_calls=1, groundtruth=None, testx=None, testy=None):
         for _ in tqdm(range(num_calls)):
             self.iterate(groundtruth)
             if (testx is not None) and (testy is not None):
-                #acc = self.model.evaluate(testx, testy, verbose=0)
-                #self.test_acc.append(acc[-1])
-                preds = self.model.predict(testx).ravel()
-                self.test_auc.append(roc_auc_score(testy, preds))
+                preds = self.model.predict(testx)
+                self.test_auc.append(roc_auc_score(testy, preds[:,-1]))
                 
     def export_labels(self):
         """
