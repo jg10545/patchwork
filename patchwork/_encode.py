@@ -67,7 +67,8 @@ def build_context_encoder():
 
     context_encoder = tf.keras.Model(inpt, decoded)
     context_encoder.compile(tf.keras.optimizers.Adam(1e-3),
-                       loss=masked_l2_loss)
+                            loss=tf.keras.losses.mse)
+    #                   loss=masked_l2_loss)
     
     return context_encoder, encoder
 
@@ -79,7 +80,8 @@ def train_and_test(filepaths):
     mask[mask_start:3*mask_start, mask_start:3*mask_start,:] = True
     
     all_files = [x.strip() for x in open(filepaths, "r").readlines()]
-    all_ims = np.stack([np.array(Image.open(x).resize((256,256))) for x in all_files])
+    all_ims = np.stack([np.array(Image.open(x).resize((256,256))) 
+                        for x in all_files])/255
     test_ims = all_ims[np.arange(all_ims.shape[0]) % 10 == 0,:,:,:]
     train_ims = all_ims[np.arange(all_ims.shape[0]) % 10 != 0,:,:,:]
 
