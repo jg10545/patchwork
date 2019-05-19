@@ -33,14 +33,16 @@ class CosineDense(tf.keras.layers.Layer):
         return tf.TensorShape(shape)
 
     
-class ChannelWiseLayer(tf.keras.layers.Layer):
+class ChannelWiseDense(tf.keras.layers.Layer):
     """
     Channel-wise dense layer as described in "Context Encoders: feature
-    learning by inpainting" by Pathak et al
+    learning by inpainting" by Pathak et al.
+    
+    ReLU activation hard-coded.
     """
     
     def __init__(self, **kwargs):
-        super(ChannelWiseLayer, self).__init__(**kwargs)
+        super(ChannelWiseDense, self).__init__(**kwargs)
         
     def build(self, input_shape):
         assert len(input_shape)==4, "don't know what to do with this"
@@ -58,7 +60,7 @@ class ChannelWiseLayer(tf.keras.layers.Layer):
             initializer="uniform",
             trainable=True
             )
-        super(ChannelWiseLayer, self).build(input_shape)
+        super(ChannelWiseDense, self).build(input_shape)
         
     def call(self, inputs):
         # reshape to (-1, wh, c)
