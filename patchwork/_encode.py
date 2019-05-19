@@ -73,6 +73,11 @@ def build_context_encoder():
 
 
 def train_and_test(filepaths):
+    N = 256
+    mask_start = int(N/4)
+    mask = np.zeros((N,N,3), dtype=bool)
+    mask[mask_start:3*mask_start, mask_start:3*mask_start,:] = True
+    
     all_files = [x.strip() for x in open(filepaths, "r").readlines()]
     all_ims = np.stack([np.array(Image.open(x).resize((256,256))) for x in all_files])
     test_ims = all_ims[np.arange(all_ims.shape[0]) % 10 == 0,:,:,:]
