@@ -3,24 +3,11 @@ patchwork
 =========
 
 
-.. image:: https://img.shields.io/pypi/v/patchwork.svg
-        :target: https://pypi.python.org/pypi/patchwork
-
-.. image:: https://img.shields.io/travis/jg10545/patchwork.svg
-        :target: https://travis-ci.org/jg10545/patchwork
-
-.. image:: https://readthedocs.org/projects/patchwork/badge/?version=latest
-        :target: https://patchwork.readthedocs.io/en/latest/?badge=latest
-        :alt: Documentation Status
-
-
-
 
 Interactive machine learning for quickly building image paatch classifiers
 
 
 * Free software: MIT license
-* Documentation: https://patchwork.readthedocs.io.
 
 
 Features
