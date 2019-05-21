@@ -9,8 +9,11 @@ def build_encoder(layers=[32, 64, 128, 256, 512], im_size=(256,256,3)):
     inpt = tf.keras.layers.Input(im_size)
     net = inpt
     for k in layers:
-        net = tf.keras.layers.Conv2D(k, 3, strides=2, padding="same",
-                                activation=tf.keras.activations.relu)(net)
+        #net = tf.keras.layers.Conv2D(k, 3, strides=2, padding="same",
+        #                        activation=tf.keras.activations.relu)(net)
+        net = tf.keras.layers.Conv2D(k, 3, strides=2, padding="same")(net)
+        net = tf.keras.layers.LeakyReLU()(net)
+        net = tf.keras.layers.BatchNormalization()(net)
     return tf.keras.Model(inpt, net, name="encoder")
 
 
@@ -25,7 +28,6 @@ def build_decoder(layers=[256, 128, 64, 32, 32], inpt_size=(8,8,512)):
     net = tf.keras.layers.Conv2D(3, 3, strides=1, padding="same", 
                              activation=tf.keras.activations.sigmoid)(net)
     return tf.keras.Model(inpt, net, name="decoder")
-
 
 
 
@@ -47,7 +49,8 @@ def build_context_encoder():
     # channel-wise layer, then a 1x1 Convolution before decoding.
     encoded = encoder(inpt)
     updated = ChannelWiseDense()(encoded)
-    conv1d = tf.keras.layers.Conv2D(512,1)(updated)
+    dropout = tf.keras.layers.Dropout(0.5)(updated)
+    conv1d = tf.keras.layers.Conv2D(512,1)(dropout)
     decoded = decoder(conv1d)
     # create a masked output to compare with ground truth (which should
     # already have it's unmasked areas set to 0)
@@ -116,4 +119,4 @@ def train_and_test(filepaths):
             yield ((x, masks), y)
     
     #return train_x, train_y, test_x, test_y, mask # added mask
-    return train_generator, ((test_x, mask), test_y)#, mask # added mask
+    return train_generator, ((test_x, np.stack([mask]*test_x.shape[0])), test_y)#, mask # added mask

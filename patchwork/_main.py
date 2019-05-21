@@ -36,7 +36,7 @@ class PatchWork(object):
         self.N = feature_vecs.shape[0]
         self._epochs = epochs
         # initialize model
-        self.model = self._build_model()
+        self.model = self._build_model(**kwargs)
         # initialize labels
         self.labels = np.array([np.nan for x in 
                                 range(feature_vecs.shape[0])])

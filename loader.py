@@ -11,13 +11,14 @@ from sklearn.preprocessing import normalize
 #pos_categories = ["mobilehomepark"]
 pos_categories = ["denseresidential", "mediumresidential", "sparseresidential"]
 
-def load_ucmerced(filelist="filepaths.txt", featfile="ucmerced_feature_vectors.numpy"):
+def load_ucmerced(filelist="filepaths.txt", featfile="ucmerced_feature_vectors.numpy",
+                 feat_dims=[-1,6,6,1024]):
     
     img_files = [x.strip() for x in open(filelist).readlines()]
     img_files = [x.split("data/")[-1] for x in img_files]
     
-    feature_vectors = np.fromfile(featfile).reshape(-1,1024)
-    feature_vectors = normalize(feature_vectors).reshape(-1,6,6,1024)
+    feature_vectors = np.fromfile(featfile).reshape(-1,feat_dims[-1])
+    feature_vectors = normalize(feature_vectors).reshape(*feat_dims)
     
     labels = np.zeros(len(img_files))
     for i in range(len(img_files)):
