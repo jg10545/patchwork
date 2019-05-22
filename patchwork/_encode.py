@@ -10,7 +10,7 @@ def build_encoder(layers=[32, 64, 128, 256, 512], im_size=(256,256,3)):
     net = inpt
     for k in layers:
         net = tf.keras.layers.Conv2D(k, 3, strides=2, padding="same")(net)
-        net = tf.keras.layers.LeakyReLU()(net)
+        net = tf.keras.layers.LeakyReLU(alpha=0.2)(net)
         net = tf.keras.layers.BatchNormalization()(net)
     return tf.keras.Model(inpt, net, name="encoder")
 
@@ -22,6 +22,7 @@ def build_decoder(layers=[256, 128, 64, 32, 32], inpt_size=(8,8,512)):
     for k in layers:
         net = tf.keras.layers.Conv2DTranspose(k, 3, strides=2, padding="same",
                                 activation=tf.keras.activations.relu)(net)
+        net = tf.keras.layers.BatchNormalization()(net)
     
     net = tf.keras.layers.Conv2D(3, 3, strides=1, padding="same", 
                              activation=tf.keras.activations.sigmoid)(net)
@@ -83,6 +84,7 @@ def build_context_encoder():
     context_encoder.compile(tf.keras.optimizers.Adam(1e-3),
                             loss={"masked_decoded":tf.keras.losses.mse,
                                  "discriminator":tf.keras.losses.binary_crossentropy},
+                            #loss_weights={"masked_decoded":0.99, "discriminator":0.01})
                            loss_weights={"masked_decoded":0.999, "discriminator":0.001})
 
     
