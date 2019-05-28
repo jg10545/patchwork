@@ -108,7 +108,7 @@ class PatchWork(object):
         while True:
             indices, labels = sample_batch_indices_and_labels(self.df, 
                                                     self.classes, bs)
-            yield self._feature_vecs[indices,:], labels
+            yield self.feature_vecs[indices,:], labels
 
     
     def uncert_sample(self, epsilon=0):

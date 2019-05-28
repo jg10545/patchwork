@@ -8,6 +8,7 @@ GUI code for training a model
 """
 import numpy as np
 import panel as pn
+import tensorflow as tf
 
 
 
@@ -56,6 +57,9 @@ class TrainManager():
         self._footer.object = "### TRAININ THE MODEL"
         # update the model in the Patchwork object
         self.pw.model = self.pw.modelpicker.model
+        # compile the model
+        self.pw.model.compile(tf.keras.optimizers.RMSprop(1e-3),
+                   loss=tf.keras.losses.sparse_categorical_crossentropy)
         # initialize a training generator
         gen = self.pw._training_generator(self._batch_size.value)
         self.pw.model.fit_generator(gen,
