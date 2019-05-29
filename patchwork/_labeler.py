@@ -112,7 +112,7 @@ class Labeler():
         for c in self._classes:
             opts.append("low: "+c)
         self._sort_by = pn.widgets.Select(name="Sort by", options=opts)
-        self._retrieve_button = pn.widgets.Button(name="Retrieve")
+        self._retrieve_button = pn.widgets.Button(name="Sample")
         self._retrieve_watcher = self._retrieve_button.param.watch(
                         self._retrieve_callback, ["clicks"])
         self._whether_labeled_radio = pn.widgets.RadioBoxGroup(name="labeled", 

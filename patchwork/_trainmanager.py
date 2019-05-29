@@ -36,7 +36,7 @@ class TrainManager():
         self._training_steps = pn.widgets.LiteralInput(name='Steps per epoch', value=100, type=int)
         self._epochs = pn.widgets.LiteralInput(name='Epochs', value=10, type=int)
         
-        self._eval_after_training = pn.widgets.Checkbox(name="Run predictions after training?", value=True)
+        self._eval_after_training = pn.widgets.Checkbox(name="Update predictions after training?", value=True)
         self._train_button = pn.widgets.Button(name="Make it so")
         self._train_button_watcher = self._train_button.param.watch(
                         self._train_callback, ["clicks"])
