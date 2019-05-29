@@ -39,6 +39,16 @@ def pick_indices(df, M, sort_by, labeled=True):
         if "entropy" in df.columns:
             subset = subset["entropy"].nlargest(M)
             indices = subset.index.to_numpy()
+    elif "high:" in sort_by:
+        col = sort_by.replace("high: ", "")
+        if col in df.columns:
+            subset = subset[col].nlargest(M)
+            indices = subset.index.to_numpy()
+    elif "low:" in sort_by:
+        col = sort_by.replace("low: ", "")
+        if col in df.columns:
+            subset = subset[col].nsmallest(M)
+            indices = subset.index.to_numpy()
     return indices
 
 
@@ -97,6 +107,10 @@ class Labeler():
         Generate all the widgets to sample images and output results
         """
         opts= ["random", "max entropy"]
+        for c in self._classes:
+            opts.append("high: "+c)
+        for c in self._classes:
+            opts.append("low: "+c)
         self._sort_by = pn.widgets.Select(name="Sort by", options=opts)
         self._retrieve_button = pn.widgets.Button(name="Retrieve")
         self._retrieve_watcher = self._retrieve_button.param.watch(
