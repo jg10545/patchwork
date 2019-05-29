@@ -32,10 +32,11 @@ class TrainManager():
         """
         self.pw = pw
         self._header = pn.pane.Markdown("#### Train model on current set of labeled patches")
-        self._batch_size = pn.widgets.LiteralInput(name='Batch size', value=64, type=int)
-        self._training_steps = pn.widgets.LiteralInput(name='Training steps', value=10, type=int)
+        self._batch_size = pn.widgets.LiteralInput(name='Batch size', value=16, type=int)
+        self._training_steps = pn.widgets.LiteralInput(name='Steps per epoch', value=100, type=int)
+        self._epochs = pn.widgets.LiteralInput(name='Epochs', value=10, type=int)
         
-        self._eval_after_training = pn.widgets.Checkbox(name="Run predictions after training?", value=True)
+        self._eval_after_training = pn.widgets.Checkbox(name="Update predictions after training?", value=True)
         self._train_button = pn.widgets.Button(name="Make it so")
         self._train_button_watcher = self._train_button.param.watch(
                         self._train_callback, ["clicks"])
@@ -49,12 +50,12 @@ class TrainManager():
         return pn.Column(self._header,
                          self._batch_size, 
                          self._training_steps,
+                         self._epochs,
                         self._eval_after_training,
                         self._train_button,
                         self._footer)
     
     def _train_callback(self, *event):
-        self._footer.object = "### TRAININ THE MODEL"
         # update the model in the Patchwork object
         self.pw.model = self.pw.modelpicker.model
         # compile the model
@@ -62,9 +63,15 @@ class TrainManager():
                    loss=tf.keras.losses.sparse_categorical_crossentropy)
         # initialize a training generator
         gen = self.pw._training_generator(self._batch_size.value)
-        self.pw.model.fit_generator(gen,
+        
+        loss = []
+        epochs = self._epochs.value
+        for e in range(epochs):
+            self._footer.object = "### TRAININ (%s / %s)"%(e+1, epochs)
+            history = self.pw.model.fit_generator(gen,
                                     steps_per_epoch=self._training_steps.value,
                                     epochs=1)
+            loss.append(history.history["loss"][-1])
         # update evaluations
         if self._eval_after_training.value:
             self._footer.object = "### EVALUATING"
@@ -75,6 +82,7 @@ class TrainManager():
             
             self.pw.df["entropy"] = shannon_entropy(preds)
 
+        self.loss = loss
         self._footer.object = "### DONE"
         
         

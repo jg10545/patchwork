@@ -2,9 +2,7 @@
 patchwork
 =========
 
-
-
-Interactive machine learning for quickly building image paatch classifiers
+Interactive machine learning for quickly building image patch classifiers
 
 
 * Free software: MIT license
@@ -13,7 +11,7 @@ Interactive machine learning for quickly building image paatch classifiers
 Features
 --------
 
-* TODO
+* TODO: finish context encoder
 
 Credits
 -------
