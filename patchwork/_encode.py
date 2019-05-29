@@ -9,10 +9,8 @@ def build_encoder(layers=[32, 64, 128, 256, 512], im_size=(256,256,3)):
     inpt = tf.keras.layers.Input(im_size)
     net = inpt
     for k in layers:
-        #net = tf.keras.layers.Conv2D(k, 3, strides=2, padding="same",
-        #                        activation=tf.keras.activations.relu)(net)
         net = tf.keras.layers.Conv2D(k, 3, strides=2, padding="same")(net)
-        net = tf.keras.layers.LeakyReLU()(net)
+        net = tf.keras.layers.LeakyReLU(alpha=0.2)(net)
         net = tf.keras.layers.BatchNormalization()(net)
     return tf.keras.Model(inpt, net, name="encoder")
 
@@ -24,10 +22,27 @@ def build_decoder(layers=[256, 128, 64, 32, 32], inpt_size=(8,8,512)):
     for k in layers:
         net = tf.keras.layers.Conv2DTranspose(k, 3, strides=2, padding="same",
                                 activation=tf.keras.activations.relu)(net)
+        net = tf.keras.layers.BatchNormalization()(net)
     
     net = tf.keras.layers.Conv2D(3, 3, strides=1, padding="same", 
                              activation=tf.keras.activations.sigmoid)(net)
     return tf.keras.Model(inpt, net, name="decoder")
+
+
+def build_discriminator(layers=[32, 64, 128, 256, 512], im_size=(256,256,3)):
+    inpt = tf.keras.layers.Input(im_size)
+    net = inpt
+    for k in layers:
+        net = tf.keras.layers.Conv2D(k, 3, strides=2, padding="same",
+                                activation=tf.keras.activations.relu)(net)
+        #net = tf.keras.layers.Conv2D(k, 3, strides=2, padding="same")(net)
+        #net = tf.keras.layers.LeakyReLU()(net)
+        net = tf.keras.layers.BatchNormalization()(net)
+    net = tf.keras.layers.GlobalMaxPool2D()(net)
+    net = tf.keras.layers.Dense(1, activation=tf.keras.activations.sigmoid,
+                               name="disc_pred")(net)
+    return tf.keras.Model(inpt, net, name="discriminator")
+
 
 
 
@@ -56,14 +71,24 @@ def build_context_encoder():
     # already have it's unmasked areas set to 0)
     masked_decoded = tf.keras.layers.Multiply(name="masked_decoded")(
                                     [inpt_mask, decoded])
+    
+    # NOW FOR THE ADVERSARIAL PART
+    discriminator = build_discriminator()
+    discriminator.compile(tf.keras.optimizers.Adam(1e-4), 
+                          loss=tf.keras.losses.binary_crossentropy)
+    disc_pred = discriminator(decoded)
+    
 
     context_encoder = tf.keras.Model([inpt, inpt_mask], 
-                                     [decoded, masked_decoded])
+                                     [decoded, masked_decoded, disc_pred])
     context_encoder.compile(tf.keras.optimizers.Adam(1e-3),
-                            loss={"masked_decoded":tf.keras.losses.mse})
+                            loss={"masked_decoded":tf.keras.losses.mse,
+                                 "discriminator":tf.keras.losses.binary_crossentropy},
+                            #loss_weights={"masked_decoded":0.99, "discriminator":0.01})
+                           loss_weights={"masked_decoded":0.999, "discriminator":0.001})
 
     
-    return context_encoder, encoder
+    return context_encoder, encoder, discriminator
 
 
 def train_and_test(filepaths):

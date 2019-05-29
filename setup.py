@@ -11,7 +11,13 @@ with open('README.rst') as readme_file:
 with open('HISTORY.rst') as history_file:
     history = history_file.read()
 
-requirements = [ ]
+requirements = [
+        "numpy",
+        "pandas",
+        "tensorflow",
+        "panel",
+        "param"
+        ]
 
 setup_requirements = [ ]
 
@@ -33,7 +39,7 @@ setup(
         'Programming Language :: Python :: 3.6',
         'Programming Language :: Python :: 3.7',
     ],
-    description="Active learning for quickly building image paatch classifiers",
+    description="Active learning for quickly building image patch classifiers",
     install_requires=requirements,
     license="MIT license",
     long_description=readme + '\n\n' + history,
