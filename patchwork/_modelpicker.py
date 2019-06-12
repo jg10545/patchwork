@@ -13,7 +13,7 @@ from patchwork._models import model_list
 
 class ModelPicker(param.Parameterized):
     """
-    
+    For building fine-tuning models
     """
     model = "no model yet"
     num_classes = param.Integer(default=2, bounds=(2,100),
@@ -34,3 +34,8 @@ class ModelPicker(param.Parameterized):
     def _build_model(self):
         self.model = self.model_type._build(self.num_classes, self.inpt_channels)
         
+        
+        
+        
+
+#def assemble_model(num_classes, inpt_shape, feature_extractor=None):

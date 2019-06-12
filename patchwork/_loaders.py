@@ -48,15 +48,18 @@ def _PIL_dataset(fps, imshape=(256,256), num_channels=3,
 
 
 
-def predict_dataset(fps, imshape=(256,256), num_channels=3, 
-                 num_parallel_calls=None, batch_size=256):
+def dataset(fps, ys = None, imshape=(256,256), num_channels=3, 
+                 num_parallel_calls=None, batch_size=256,
+                 augment=False):
     """
-    return a tf dataset that iterates over all the images once
+    return a tf dataset that iterates over a list of images once
     
     :fps: list of filepaths
+    :ys: array of corresponding labels
     :imshape: constant shape to resize images to
     :num_channels: channel depth of images
     :batch_size: just what you think it is
+    :augment: Boolean; whether to augment data
     
     Returns
     :ds: tf.data.Dataset object to iterate over data
@@ -64,11 +67,19 @@ def predict_dataset(fps, imshape=(256,256), num_channels=3,
     """
     ds = _PIL_dataset(fps, imshape, num_channels, 
                       num_parallel_calls)
+    if augment:
+        ds = ds.map(_augment, num_parallel_calls)
+        
+    if ys is not None:
+        ys = tf.data.Dataset.from_tensor_slices(ys)
+        ds = ds.zip((ds, ys))
+        
     ds = ds.batch(batch_size)
     ds = ds.prefetch(1)
     
     num_steps = int(np.ceil(len(fps)/batch_size))
     return ds, num_steps
+
 
 
 
