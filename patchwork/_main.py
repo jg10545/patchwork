@@ -2,12 +2,14 @@ import numpy as np
 import pandas as pd
 import warnings
 import panel as pn
+import tensorflow as tf
 
 from patchwork._labeler import Labeler
 from patchwork._modelpicker import ModelPicker
 from patchwork._trainmanager import TrainManager
 from patchwork._sample import stratified_sample
 from patchwork._loader import dataset
+from patchwork._losses import entropy_loss, masked_binary_crossentropy
 
 prompt_txt = "Enter comma-delimited list of class-1 patches:"
 EPSILON = 1e-5
@@ -51,7 +53,7 @@ class PatchWork(object):
         :dim: grid dimension for labeler- show a (dim x dim) square of images
         :imsize: pixel size of images in labeler
         """
-        #self.feature_vecs = feature_vecs
+        self.fine_tuning_model = None
         self.df = df
         self.feature_vecs = feature_vecs
         self.feature_extractor = feature_extractor
@@ -61,20 +63,19 @@ class PatchWork(object):
         self._imshape = imshape
         self._num_channels = num_channels
         self._num_parallel_calls = num_parallel_calls
+        self._semi_supervised = False
         
-        if "label" not in df.columns:
-            self.df["label"] = None
+        for c in classes:
+            if c not in df.columns:
+                df[c] = None
+        self.classes = [x for x in df.columns if x != "filepath"]
         
-        self.classes = classes
-        #self.model = model
-        self.N = feature_vecs.shape[0]
-        assert self.N == len(df), "Size of feature array should match dataframe"
         
         # BUILD THE GUI
         # initialize Labeler object
         self.labeler = Labeler(classes, df, dim, imsize)
         # initialize model picker
-        self.modelpicker = ModelPicker(num_classes=len(classes),
+        self.modelpicker = ModelPicker(num_classes=len(self.classes),
                                        inpt_channels=feature_vecs.shape[-1])
         # make a train manager- pass this object to it
         self.trainmanager = TrainManager(self)
@@ -122,17 +123,76 @@ class PatchWork(object):
                        augment=True)
 
     
-    def _pred_generator(self):
-        pass
+    def _pred_dataset(self, batch_size=32):
+        return dataset(self.df["filepath"].values, imshape=self._imshape, 
+                       num_channels=self._num_channels,
+                       num_parallel_calls=self._num_parallel_calls, 
+                       batch_size=batch_size,
+                       augment=False)
     
-    def build_model(self):
-        pass
+    def build_model(self, entropy_reg=0):
+        """
+        Sets up a Keras model in self.model
+        
+        NOTE the semisup case will have different predict outputs. maybe
+        separate self.model from a self.training_model?
+        """
+        opt = tf.keras.optimizers.RMSprop(1e-3)
+
+        # JUST A FINE-TUNING NETWORK
+        if self.feature_vecs is not None:
+            inpt_shape = self.feature_vecs.shape[1:]
+            inpt = tf.keras.layers.Input(inpt_shape)
+            output = self.fine_tuning_model(inpt)
+            self.model = tf.keras.Model(inpt, output)
+            
+        elif self.feature_extractor is not None:
+            inpt_shape = [self._imshape[0], self._imshape[1], self._num_channels]
+            # FEATURE EXTRACTOR + FINE-TUNING NETWORK
+            inpt = tf.keras.layers.Input(inpt_shape)
+            features = self.feature_extractor(inpt)
+            output = self.fine_tuning_model(features)
+            self.model = tf.keras.Model(inpt, output)
+
+        else:
+            assert False, "i don't know what you want from me"
+            
+        # semi-supervised learning or not? 
+        if entropy_reg > 0:
+            self._semi_supervised = True
+            unlabeled_inpt = tf.keras.layers.Input(inpt_shape)
+            unlabeled_output = self.model(unlabeled_inpt)
+                
+            self._training_model = tf.keras.Model([inpt, unlabeled_inpt],
+                                            [output, unlabeled_output])
+            self._training_model.compile(opt, 
+                                loss=[masked_binary_crossentropy, entropy_loss],
+                                loss_weights=[1, entropy_reg])
+        else:
+            self._semi_supervised = False
+            self._training_model = self.model
+            self._training_model.compile(opt, loss=masked_binary_crossentropy)
+
+            
+            
+            
     
-    def fit():
-        pass
+    def fit(self, batch_size=32):
+        """
+        Run one training epoch
+        """
+        if self.feature_vecs is not None:
+            self._training_model.fit("foo", batch_size=batch_size)
+        else:
+            dataset, num_steps = self._training_dataset(batch_size)
+            self._training_model.fit(dataset, steps_per_epoch=num_steps, epochs=1)
     
-    def predict_on_all(self):
-        pass
+    def predict_on_all(self, batch_size=32):
+        """
+        Run inference on all the data; save to self.pred_df
+        """
+        dataset, num_steps = self._pred_dataset(batch_size)
+        predictions = self.model.predict(dataset, steps_per_epoch=num_steps, epochs=1)
     
     def _stratified_sample(self, N=None):
         return stratified_sample(self.df, N)

@@ -50,7 +50,7 @@ def _PIL_dataset(fps, imshape=(256,256), num_channels=3,
 
 def dataset(fps, ys = None, imshape=(256,256), num_channels=3, 
                  num_parallel_calls=None, batch_size=256,
-                 augment=False):
+                 augment=False, unlab_fps=None):
     """
     return a tf dataset that iterates over a list of images once
     
@@ -60,6 +60,8 @@ def dataset(fps, ys = None, imshape=(256,256), num_channels=3,
     :num_channels: channel depth of images
     :batch_size: just what you think it is
     :augment: Boolean; whether to augment data
+    :unlab_fps: list of filepaths (same length as fps) for semi-
+        supervised learning
     
     Returns
     :ds: tf.data.Dataset object to iterate over data
@@ -70,8 +72,17 @@ def dataset(fps, ys = None, imshape=(256,256), num_channels=3,
     if augment:
         ds = ds.map(_augment, num_parallel_calls)
         
+    if unlab_fps is not None:
+        u_ds = _PIL_dataset(unlab_fps, imshape, num_channels, 
+                      num_parallel_calls)
+        if augment:
+            u_ds = u_ds.map(_augment, num_parallel_calls)
+        ds = tf.data.Dataset.zip((ds, u_ds))
+        
     if ys is not None:
         ys = tf.data.Dataset.from_tensor_slices(ys)
+        if unlab_fps is not None:
+            ys = ds.zip((ys,ys))
         ds = ds.zip((ds, ys))
         
     ds = ds.batch(batch_size)
