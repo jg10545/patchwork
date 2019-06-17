@@ -8,7 +8,7 @@ from patchwork._labeler import Labeler
 from patchwork._modelpicker import ModelPicker
 from patchwork._trainmanager import TrainManager
 from patchwork._sample import stratified_sample
-from patchwork._loader import dataset
+from patchwork._loaders import dataset
 from patchwork._losses import entropy_loss, masked_binary_crossentropy
 
 prompt_txt = "Enter comma-delimited list of class-1 patches:"
@@ -68,7 +68,11 @@ class PatchWork(object):
         for c in classes:
             if c not in df.columns:
                 df[c] = None
-        self.classes = [x for x in df.columns if x != "filepath"]
+        self.classes = [x for x in df.columns if x not in ["filepath", "exclude"]]
+        # initialize dataframe of predictions
+        self.pred_df = pd.DataFrame(
+                {c:np.random.uniform(0,1,len(df)) for c in self.classes},
+                index=df.index)
         
         
         # BUILD THE GUI

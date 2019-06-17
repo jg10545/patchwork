@@ -25,6 +25,44 @@ def find_partially_labeled(df):
     return (~find_unlabeled(df))&(~find_fully_labeled(df))
 
 
+def find_subset(df, s):
+    """
+    Macro to return a Boolean Series defining a subset of a dataframe
+    
+    :df: the dataframe
+    :s: string; how to subset it. values could be:
+        -unlabeled
+        -fully labeled
+        -partially labeled
+        -excluded
+        -not excluded
+        -unlabeled X (for class X)
+        -contains X (for class X)
+        -doesn't contain X (for class X)
+    """
+    if s == "unlabeled":
+        return find_unlabeled(df)
+    elif s == "fully labeled":
+        return find_fully_labeled(df)
+    elif s == "partially labeled":
+        return find_partially_labeled(df)
+    elif s == "excluded":
+        return df["excluded"] == 1
+    elif s == "not excluded":
+        return df["excluded"] == 0
+    elif "unlabeled:" in s:
+        s = s.replace("unlabeled:", "").strip()
+        return pd.isnull(df[s])
+    elif "contains" in s:
+        s = s.replace("contains:", "").strip()
+        return df[s] == 1
+    elif "doesn't contain" in s:
+        s = s.replace("doesn't contain:", "").strip()
+        return df[s] == 0
+    else:
+        assert False, "sorry can't help you"
+
+
 
 def stratified_sample(df, N=1000):
     """
