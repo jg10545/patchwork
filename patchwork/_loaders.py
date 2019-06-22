@@ -100,6 +100,7 @@ def stratified_training_dataset(fps, y, imshape=(256,256), num_channels=3,
                  num_parallel_calls=None, batch_size=256, mult=10,
                     augment=True):
     """
+    Training dataset for DeepCluster.
     Build a dataset that provides stratified samples over labels
     
     :fps: list of strings containing paths to image files

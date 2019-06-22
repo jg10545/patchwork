@@ -7,7 +7,7 @@ def find_unlabeled(df):
     Return boolean series of totally unlabeled data points
     """
     label_types = [x for x in df.columns if 
-                   x not in ["filepath", "exclude"]]
+                   x not in ["filepath", "exclude", "viewpath"]]
     return pd.isnull(df[label_types]).values.prod(axis=1).astype(bool)
 
 def find_fully_labeled(df):
@@ -66,7 +66,8 @@ def find_subset(df, s):
 
 def stratified_sample(df, N=1000):
     """
-    Build a stratified sample from a dataset.
+    Build a stratified sample from a dataset. Maps NAs in partially
+    labeled records to -1.
     
     :df: DataFrame containing file paths (in a "filepath" column) and
         labels in other columns

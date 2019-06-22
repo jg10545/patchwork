@@ -65,10 +65,13 @@ class PatchWork(object):
         self._num_parallel_calls = num_parallel_calls
         self._semi_supervised = False
         
+        if "exclude" not in df.columns:
+            df["exclude"] = False
+            
         for c in classes:
             if c not in df.columns:
                 df[c] = None
-        self.classes = [x for x in df.columns if x not in ["filepath", "exclude"]]
+        self.classes = [x for x in df.columns if x not in ["filepath", "exclude", "viewpath"]]
         # initialize dataframe of predictions
         self.pred_df = pd.DataFrame(
                 {c:np.random.uniform(0,1,len(df)) for c in self.classes},
@@ -79,8 +82,13 @@ class PatchWork(object):
         # initialize Labeler object
         self.labeler = Labeler(classes, df, dim, imsize)
         # initialize model picker
-        self.modelpicker = ModelPicker(num_classes=len(self.classes),
-                                       inpt_channels=feature_vecs.shape[-1])
+        if self.feature_vecs is not None:
+            inpt_channels = self.feature_vecs.shape[-1]
+        else:
+            inpt_channels = self.feature_extractor.output.get_shape().as_list()[-1]
+        #self.modelpicker = ModelPicker(num_classes=len(self.classes),
+        #                               inpt_channels=inpt_channels)
+        self.modelpicker = ModelPicker(len(self.classes), inpt_channels, self)
         # make a train manager- pass this object to it
         self.trainmanager = TrainManager(self)
         

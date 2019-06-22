@@ -40,6 +40,8 @@ def _load_to_fig(f):
 def _single_class_radiobuttons(width=125, height=25):
     return pn.widgets.RadioButtonGroup(options=["None", "0", "1"], width=width, align="center", 
                                        height=height, value="None")
+    #return pn.widgets.RadioBoxGroup(options=["None", "0", "1"], width=width, align="center", 
+    #                                   height=height, value="None", inline=True)
 
 
 
@@ -63,10 +65,11 @@ class SinglePatchLabeler(object):
                                      for c in classes], width=200) 
 
         
-        fig, ax = plt.subplots()
-        ax.plot([])
-        ax.axis("off")
-        self._fig_panel = pn.pane.Matplotlib(fig, width=150, height=100, margin=0)#, width=size, height=size)
+        #fig, ax = plt.subplots()
+        #ax.plot([])
+        #ax.axis("off")
+        #self._fig_panel = pn.pane.Matplotlib(fig, width=150, height=125, margin=0)#, width=size, height=size)
+        self._fig_panel = pn.panel("default_img.gif", width=100, height=100)
         self.panel = pn.Row(self._fig_panel, button_panel,
                             width_policy="fixed")
         
@@ -79,10 +82,13 @@ class SinglePatchLabeler(object):
         :record: row from dataframe, containing filepath, exclude, and class columns
         """
         self._index = index
-        self._filepath = record["filepath"]
+        if "viewpath" in record:
+            self._path = record["viewpath"]
+        else:
+            self._path = record["filepath"]
         
-        #plt.close(self._fig_panel.object)
-        self._fig_panel.object = _load_to_fig(self._filepath)
+        #self._fig_panel.object = _load_to_fig(self._filepath)
+        self._fig_panel.object = self._path
         self._exclude.value = bool(record["exclude"])
         
         for c in self._classes:
@@ -129,36 +135,25 @@ def pick_indices(df, pred_df, M, sort_by, subset_by):
     subset = find_subset(df, subset_by)
     df = df[subset]
     pred_df = pred_df[subset]
-    #if labeled:
-    #    subset = df[pd.notnull(df["label"])]
-    #else:
-    #    subset = df[pd.isnull(df["label"])]
-            
-    #if len(subset) > 0:
+
     M = min(len(subset), M)
     # RANDOM SAMPLING
     if sort_by == "random":
         sample = df.sample(M)
-        #indices = sample.index.to_numpy()
     # UNCERTAINTY SAMPLING
     elif sort_by == "max entropy":
         pred_df["entropy"] = shannon_entropy(pred_df.values)
         sample = pred_df["entropy"].nlargest(M)
-        #indices = sample.index.to_numpy()
     # SINGLE-CLASS UNCERTAINTY SAMPLING
     elif "maxent:" in sort_by:
         col = sort_by.replace("maxent:","").strip()
         pred_df["entropy"] = shannon_entropy(pred_df[[col]].values)
         sample = pred_df["entropy"].nlargest(M)
-        #indices = sample.index.to_numpy()
     elif "high:" in sort_by:
         col = sort_by.replace("high: ", "")
-        #if col in df.columns:
         sample = pred_df[col].nlargest(M)
-        #indices = sample.index.to_numpy()
     elif "low:" in sort_by:
         col = sort_by.replace("low: ", "")
-        #if col in df.columns:
         sample = pred_df[col].nsmallest(M)
     indices = sample.index.to_numpy()
     return indices
@@ -174,29 +169,32 @@ class Labeler():
         """
         
         """
-        self._classes = [x for x in df.columns if x not in ["filepath", "exclude"]]
-        #self._classes = classes
-        #self._label_types = [None, "(exclude)"] + list(classes)
+        self._classes = [x for x in df.columns if x not in ["filepath", "exclude", "viewpath"]]
         self._dim = dim
         self._df = df
         self._pred_df = pred_df
         self._indices = "nuthin here"
         
-        #self._choosers = [single_image_chooser(self._label_types, imsize)
-        #                  for _ in range(dim**2)]
         # create an object for every patch labeler we'll display simultaneously
+        #self._choosers = [SinglePatchLabeler(self._classes)
+        #                    for _ in range(dim**2)]
         self._choosers = [SinglePatchLabeler(self._classes)
-                            for _ in range(dim**2)]
+                            for _ in range(dim)]
         # now lay them out on a grid
         # sizing mode had been "stretch_both"
-        self.GridSpec = pn.GridSpec(sizing_mode="stretch_both")#"fixed")#,
+        #self.GridSpec = pn.GridSpec(sizing_mode="stretch_both")#"fixed")#,
                                     #width=800, height=600)
                                  #max_width=50)
-        i = 0
-        for r in range(dim):
-            for c in range(dim):
-                self.GridSpec[r,c] = self._choosers[i].panel
-                i += 1
+        self.GridSpec = pn.Column(
+                pn.Row(*[c.panel for c in self._choosers]),
+                pn.Row(*[c.panel for c in self._choosers]),
+                pn.Row(*[c.panel for c in self._choosers]))
+                                
+        #i = 0
+        #for r in range(dim):
+        #    for c in range(dim):
+        #        self.GridSpec[r,c] = self._choosers[i].panel
+        #        i += 1
               
         self._build_select_controls()
         
@@ -247,8 +245,6 @@ class Labeler():
         self._retrieve_button = pn.widgets.Button(name="Sample")
         self._retrieve_watcher = self._retrieve_button.param.watch(
                         self._retrieve_callback, ["clicks"])
-        #self._whether_labeled_radio = pn.widgets.RadioBoxGroup(name="labeled", 
-        #                                        options=["unlabeled", "labeled"])
         self._subset_by = pn.widgets.Select(name="Subset by", options=subset_opts,
                                             value="unlabeled")
         
@@ -272,24 +268,14 @@ class Labeler():
         """
         sort_by = self._sort_by.value
         subset_by = self._subset_by.value
-        #labeled = self._whether_labeled_radio.value == "labeled"
         indices = pick_indices(self._df, self._pred_df, self._dim**2, 
                                sort_by, subset_by)
-        #indices = pick_indices(self._df, self._dim**2, 
-        #                       sort_by, labeled)
         if len(indices) > 0:
-            #self._fill_images(indices)
             for j,i in enumerate(indices):
                 self._choosers[j].update(i, self._df.iloc[i])
             
     def _update_label_callback(self, *events):
         for c in self._choosers:
             c(self._df)
-        #labels = self._df["label"].values
-        #for i, ind in enumerate(self._indices):
-        #    newval = self._choosers[i][1].value
-        #    labels[ind] = newval
-        #self._df["label"] = labels
-        
-        #self._label_counts.object = _reformat(self._df["label"].value_counts())
+
         self._label_counts.object = _generate_label_summary(self._df, self._classes)

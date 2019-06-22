@@ -33,7 +33,7 @@ class TrainManager():
         self.pw = pw
         self._header = pn.pane.Markdown("#### Train model on current set of labeled patches")
         self._batch_size = pn.widgets.LiteralInput(name='Batch size', value=16, type=int)
-        self._training_steps = pn.widgets.LiteralInput(name='Steps per epoch', value=100, type=int)
+        self._training_steps = pn.widgets.LiteralInput(name='Steps per epoch DEPRECATED', value=100, type=int)
         self._epochs = pn.widgets.LiteralInput(name='Epochs', value=10, type=int)
         
         self._eval_after_training = pn.widgets.Checkbox(name="Update predictions after training?", value=True)
@@ -55,7 +55,26 @@ class TrainManager():
                         self._train_button,
                         self._footer)
     
+    
     def _train_callback(self, *event):
+        # for each epoch
+        epochs = self._epochs.value
+        self.loss = []
+        for e in range(epochs):
+            self._footer.object = "### TRAININ (%s / %s)"%(e+1, epochs)
+            history = self.pw.fit(self._batch_size.value)
+            self.loss.append(history.history["loss"][-1])
+            
+        if self._eval_after_training.value:
+            self._footer.object = "### EVALUATING"
+            self.pw.predict_on_all(self._batch_size.value)
+            
+        
+        self._footer.object = "### DONE"
+        
+        
+            
+    def _train_callback_orig(self, *event):
         # update the model in the Patchwork object
         self.pw.model = self.pw.modelpicker.model
         # compile the model
