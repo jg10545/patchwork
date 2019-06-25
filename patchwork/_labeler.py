@@ -6,23 +6,26 @@
 GUI code for training a model
 
 """
-import numpy as np
+#import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
-import pandas as pd
+#import pandas as pd
 import panel as pn
 from PIL import Image
 
 
 from patchwork._sample import find_subset
-from patchwork._util import shannon_entropy
+from patchwork._util import shannon_entropy, tiff_to_array
 
 
 def _load_to_fig(f, figsize=(3,3), lw=5):
     """
     :f: string; path to file
     """
-    im = Image.open(f)
+    if ".tif" in f:
+        im = tiff_to_array(f, channels=3)
+    else:
+        im = Image.open(f)
     
     fig1, ax1 = plt.subplots(figsize=(2,2))
     ax1.imshow(im)
