@@ -80,7 +80,8 @@ class PatchWork(object):
         
         # BUILD THE GUI
         # initialize Labeler object
-        self.labeler = Labeler(classes, df, dim, imsize)
+        self.labeler = Labeler(self.classes, df, self.pred_df, 
+                               dim=dim, imsize=imsize)
         # initialize model picker
         if self.feature_vecs is not None:
             inpt_channels = self.feature_vecs.shape[-1]
@@ -118,21 +119,27 @@ class PatchWork(object):
         """
         
         """
-        return pn.Tabs(("Model", self.modelpicker), 
+        return pn.Tabs(("Model", self.modelpicker.panel()), 
                        ("Train", self.trainmanager.panel()), 
                        ("Annotate", self.labeler.panel()))
         
     
-    def _training_dataset(self, batch_size=32):
+    def _training_dataset(self, batch_size=32, num_samples=None):
         """
         Build a single-epoch training set
         """
-        files, ys = stratified_sample(self.df, len(self.df))
-        return dataset(files, ys, imshape=self._imshape, 
+        if num_samples is None:
+            num_samples = len(self.df)
+        if self.feature_vecs is None:
+            files, ys = stratified_sample(self.df, num_samples)
+            return dataset(files, ys, imshape=self._imshape, 
                        num_channels=self._num_channels,
                        num_parallel_calls=self._num_parallel_calls, 
                        batch_size=batch_size,
                        augment=True)
+        else:
+            inds, ys = stratified_sample(self.df, num_samples, return_indices=True)
+            return self.feature_vecs[inds], ys
 
     
     def _pred_dataset(self, batch_size=32):
@@ -189,22 +196,29 @@ class PatchWork(object):
             
             
     
-    def fit(self, batch_size=32):
+    def fit(self, batch_size=32, num_samples=None):
         """
         Run one training epoch
         """
         if self.feature_vecs is not None:
-            self._training_model.fit("foo", batch_size=batch_size)
+            x, y = self._training_dataset(batch_size, num_samples)
+            return self._training_model.fit(x, y, batch_size=batch_size)
         else:
-            dataset, num_steps = self._training_dataset(batch_size)
-            self._training_model.fit(dataset, steps_per_epoch=num_steps, epochs=1)
+            dataset, num_steps = self._training_dataset(batch_size, num_samples)
+            return self._training_model.fit(dataset, steps_per_epoch=num_steps, epochs=1)
     
     def predict_on_all(self, batch_size=32):
         """
         Run inference on all the data; save to self.pred_df
         """
-        dataset, num_steps = self._pred_dataset(batch_size)
-        predictions = self.model.predict(dataset, steps_per_epoch=num_steps, epochs=1)
+        if self.feature_vecs is not None:
+            predictions = self.model.predict(self.feature_vecs, 
+                                             batch_size=batch_size)
+        else:
+            dataset, num_steps = self._pred_dataset(batch_size)
+            predictions = self.model.predict(dataset)
+            
+        self.pred_df.loc[:, self.classes] = predictions
     
     def _stratified_sample(self, N=None):
         return stratified_sample(self.df, N)

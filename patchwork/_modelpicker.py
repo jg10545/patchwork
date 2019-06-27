@@ -8,7 +8,7 @@ GUI code for choosing a model
 """
 import param
 import panel as pn
-from patchwork._models import model_list
+from patchwork._models import model_dict
 
 
 class _ModelPicker(param.Parameterized):
@@ -22,8 +22,8 @@ class _ModelPicker(param.Parameterized):
                                label="Number of classes", constant=True)
     inpt_channels = param.Integer(default=512, bounds=(1,4096), constant=True,
                                label="Dimension of input embeddings")
-    model_type = param.ObjectSelector(default=model_list[0], 
-                                objects=model_list)
+    model_type = param.ObjectSelector(default=model_dict["Linear"], 
+                                objects=model_dict)
     
     build_model = param.Action(lambda x: x._build_model(),
                               label="Build Model",
@@ -83,7 +83,9 @@ class ModelPicker(object):
             self._hyperparams.objects = []
         
     def _build_callback(self, *events):
-        self._pw.fine_tuning_model = self._model_chooser.value._build(self._num_classes, self._inpt_channels)
+        self._pw.fine_tuning_model = self._model_chooser.value._build(self._num_classes, 
+                                                                      self._inpt_channels)
+        self._pw.build_model(0)
         self._current_model.object = "**Current fine-tuning model:** %s"%self._model_chooser.value.name
 
 
