@@ -14,13 +14,6 @@ import tensorflow as tf
 
 
 
-#def shannon_entropy(x):
-#    """
-#    Shannon entropy of a 2D array
-#    """
-#    xprime = np.maximum(np.minimum(x, 1-1e-8), 1e-8)
-#    return -np.sum(xprime*np.log2(xprime), axis=1)
-
 def _empty_fig():
     """
     make an empty matplotlib figure
@@ -39,7 +32,7 @@ def _loss_fig(l):
     fig, ax = plt.subplots()
     ax.plot(l, "o-")
     ax.set_xlabel("epoch", fontsize=14)
-    ax.set_ylabel("training loss", fontsize=14)
+    ax.set_ylabel("cross-entropy", fontsize=14)
     ax.grid(True)
     plt.close(fig)
     return fig
@@ -108,7 +101,9 @@ class TrainManager():
                         self._train_button,
                         self._footer)
         
-        figures = pn.Column(self._loss_fig,
+        figures = pn.Column(pn.pane.Markdown("### Training Loss"),
+                            self._loss_fig,
+                            pn.pane.Markdown("### Outputs By Class"),
                             self._hist_selector,
                             self._hist_fig)
         return pn.Row(controls, figures)

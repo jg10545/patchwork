@@ -15,6 +15,7 @@ from patchwork._layers import CosineDense
 
 
 # base model classes
+
 class Linear(param.Parameterized):
     """
     A basic model- input a [batch_size, a, b, num_channels] tensor output from
@@ -90,13 +91,45 @@ class LinearBPP(param.Parameterized):
         return tf.keras.Model(inpt, net)
     
     
+class FCN(param.Parameterized):
+    """
+    Simple fully-convolutional network. Build a class activation map using
+    a 1D convolution and then use GlobalMaxPool for classification.
+    """
+    
+    regularization = param.Parameter(default=0, 
+                                doc="L2 norm weight for regularization",
+                                label="Regularization Weight")
+    
+    description = """
+    Simple fully-convolutional network. Build a class activation map using
+    a 1x1 convolution and then use GlobalMaxPool for classification.
+    """
+    
+    def _build(self, num_classes, inpt_channels):
+        inpt = tf.keras.layers.Input((None, None, inpt_channels))
+
+        if self.regularization > 0:
+            reg = tf.keras.regularizers.l2(self.regularization)    
+        else:
+            reg = None
+            
+        conv = tf.keras.layers.Conv2D(num_classes, 1, 
+                                      kernel_regularizer=reg,
+                                      activation=tf.keras.activations.sigmoid)(inpt)
+        net = tf.keras.layers.GlobalMaxPool2D()(conv)
+
+        return tf.keras.Model(inpt, net)
+    
+    
 model_list = [Linear(name="Linear Softmax"), MLP(name="Multilayer Perceptron"), 
               LinearBPP(name="Baseline++")]
 
 
 model_dict = {"Linear":Linear(name="Linear"), 
               "Multilayer Perceptron":MLP(name="Multilayer Perceptron"), 
-              "Baseline++":LinearBPP(name="Baseline++")}
+              "Baseline++":LinearBPP(name="Baseline++"),
+              "FCN":FCN(name="Fully-convolutional network")}
 
 
 

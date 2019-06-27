@@ -7,7 +7,7 @@ import tensorflow as tf
 from patchwork._labeler import Labeler
 from patchwork._modelpicker import ModelPicker
 from patchwork._trainmanager import TrainManager
-from patchwork._sample import stratified_sample
+from patchwork._sample import stratified_sample, find_unlabeled
 from patchwork._loaders import dataset
 from patchwork._losses import entropy_loss, masked_binary_crossentropy
 
@@ -130,16 +130,33 @@ class PatchWork(object):
         """
         if num_samples is None:
             num_samples = len(self.df)
+        # LIVE FEATURE EXTRACTOR CASE
         if self.feature_vecs is None:
             files, ys = stratified_sample(self.df, num_samples)
+            if self._semi_supervised:
+                assert False, "not yet implemented"
+                # use find_unlabeled
+                unlabeled_indices = find_unlabeled(self.df)
+                unlabeled_sample = np.random.choice(unlabeled_indices,
+                                                    replace=True,
+                                                    size=num_samples)
             return dataset(files, ys, imshape=self._imshape, 
                        num_channels=self._num_channels,
                        num_parallel_calls=self._num_parallel_calls, 
                        batch_size=batch_size,
                        augment=True)
+        # PRE-EXTRACTED FEATURE CASE
         else:
             inds, ys = stratified_sample(self.df, num_samples, return_indices=True)
-            return self.feature_vecs[inds], ys
+            if self._semi_supervised:
+                unlabeled_indices = np.arange(len(self.df))[find_unlabeled(self.df)]
+                unlabeled_sample = np.random.choice(unlabeled_indices,
+                                                    replace=True,
+                                                    size=num_samples)
+                x = [self.feature_vecs[inds], self.feature_vecs[unlabeled_sample]]
+                return x, [ys, ys]
+            else:
+                return self.feature_vecs[inds], ys
 
     
     def _pred_dataset(self, batch_size=32):

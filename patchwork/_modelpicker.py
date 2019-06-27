@@ -64,14 +64,26 @@ class ModelPicker(object):
         self._build_watcher = self._build_button.param.watch(self._build_callback, 
                                                                  ["clicks"])
         
+        # semi-supervised
+        self._entropy_reg = pn.widgets.LiteralInput(name='Entropy Regularization Weight', 
+                                                    value=0., type=float)
+        
     def panel(self):
-        return pn.Column(
+        model_options = pn.Column(
+            pn.pane.Markdown("### Model Options"),
             self._current_model,
             self._model_chooser,
             self._model_desc,
             self._hyperparams,
             self._build_button
         )
+        
+        semi_supervized_options = pn.Column(
+                pn.pane.Markdown("### Semi-Supervised Learning\n\n*rebuild model after updating*"),
+                self._entropy_reg
+                )
+        
+        return pn.Row(model_options, semi_supervized_options)
     
     def _chooser_callback(self, *events):
         # update description and hyperparameters
@@ -85,7 +97,7 @@ class ModelPicker(object):
     def _build_callback(self, *events):
         self._pw.fine_tuning_model = self._model_chooser.value._build(self._num_classes, 
                                                                       self._inpt_channels)
-        self._pw.build_model(0)
+        self._pw.build_model(entropy_reg=self._entropy_reg.value)
         self._current_model.object = "**Current fine-tuning model:** %s"%self._model_chooser.value.name
 
 
