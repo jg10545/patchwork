@@ -18,7 +18,7 @@ from patchwork._sample import find_subset
 from patchwork._util import shannon_entropy, tiff_to_array
 
 
-def _load_to_fig(f, figsize=(3,3), lw=5):
+def _load_to_fig(f, figsize=(5,5), lw=5):
     """
     :f: string; path to file
     """
@@ -27,12 +27,12 @@ def _load_to_fig(f, figsize=(3,3), lw=5):
     else:
         im = Image.open(f)
     
-    fig1, ax1 = plt.subplots(figsize=(2,2))
+    fig1, ax1 = plt.subplots(figsize=figsize)
     ax1.imshow(im)
     ax1.axis("off")
     plt.close(fig1)
     
-    fig2, ax2 = plt.subplots(figsize=(2,2))
+    fig2, ax2 = plt.subplots(figsize=figsize)
     ax2.imshow(im)
     ax2.axis("off")
     a = ax2.axis()
@@ -51,14 +51,14 @@ class SingleImgDisplayer(object):
     figures for selected and unselected cases
     """
     
-    def __init__(self, width=150, height=150):
+    def __init__(self):
         fig, ax = plt.subplots()
         ax.plot([])
         ax.axis("off")
         self._fig_selected = fig
         self._fig_unselected = fig
         self.selected = False
-        self.panel = pn.pane.Matplotlib(self._fig_unselected, width=width, height=height)
+        self.panel = pn.pane.Matplotlib(self._fig_unselected)#
         
     def load(self, filepath):
         """
@@ -250,7 +250,7 @@ class Labeler():
     Class to manage displaying images and gathering user feedback
     """
     
-    def __init__(self, classes, df, pred_df, dim=3, imsize=100):
+    def __init__(self, classes, df, pred_df, dim=3):
         """
         :classes: list of strings; class labels
         :df: DataFrame containing filepaths and class labels

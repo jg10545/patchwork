@@ -40,7 +40,7 @@ def sample_batch_indices_and_labels(df, classes, batch_size):
 class PatchWork(object):
     
     def __init__(self, df, feature_vecs=None, feature_extractor=None, classes=[],
-                 dim=3, imsize=100, imshape=(256,256), num_channels=3,
+                 dim=3, imshape=(256,256), num_channels=3,
                  num_parallel_calls=2):
         """
         Initialize either with a set of feature vectors or a feature extractor
@@ -81,7 +81,7 @@ class PatchWork(object):
         # BUILD THE GUI
         # initialize Labeler object
         self.labeler = Labeler(self.classes, df, self.pred_df, 
-                               dim=dim, imsize=imsize)
+                               dim=dim)
         # initialize model picker
         if self.feature_vecs is not None:
             inpt_channels = self.feature_vecs.shape[-1]
