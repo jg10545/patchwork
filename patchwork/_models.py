@@ -115,9 +115,9 @@ class FCN(param.Parameterized):
             reg = None
             
         conv = tf.keras.layers.Conv2D(num_classes, 1, 
-                                      kernel_regularizer=reg,
-                                      activation=tf.keras.activations.sigmoid)(inpt)
+                                      kernel_regularizer=reg)(inpt)
         net = tf.keras.layers.GlobalMaxPool2D()(conv)
+        net = tf.keras.layers.Activation(tf.keras.activations.sigmoid)(net)
 
         return tf.keras.Model(inpt, net)
     
