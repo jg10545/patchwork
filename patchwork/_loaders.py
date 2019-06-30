@@ -7,6 +7,7 @@ Code for loading data into tensorflow datasets
 import numpy as np
 import tensorflow as tf
 from PIL import Image
+from patchwork._util import tiff_to_array
 
 
 
@@ -22,34 +23,41 @@ def _augment(im):
 
 
 
-def _PIL_dataset(fps, imshape=(256,256), num_channels=3, 
-                 num_parallel_calls=None):
+def _image_file_dataset(fps, imshape=(256,256), 
+                 num_parallel_calls=None, norm=255,
+                 channels=3):
     """
     Basic tool to load images into a tf.data.Dataset using
-    PIL.Image instead of the tensorflow decode functions
+    PIL.Image or gdal instead of the tensorflow decode functions
     
     :fps: list of filepaths
     :imshape: constant shape to resize images to
-    :num_channels: channel depth of images
+    :num_parallel_calls: number of processes to use for loading
+    :norm: value for normalizing images
+    :channels: channel depth to truncate images to
     """
     ds = tf.data.Dataset.from_tensor_slices(fps)
-    def _load_tiff(f):
+    def _load_img(f):
         f = f.numpy().decode("utf-8") 
-        img = Image.open(f).resize(imshape)
-        return np.array(img).astype(np.float32)/255
+        if ".tif" in f:
+            return tiff_to_array(f, swapaxes=True, 
+                                 norm=norm, channels=channels)
+        else:
+            img = Image.open(f).resize(imshape)
+            return np.array(img).astype(np.float32)/norm
     
-    tf_tiff_load = lambda x: tf.py_function(_load_tiff, [x], tf.float32)
-    ds = ds.map(tf_tiff_load, num_parallel_calls)
+    tf_img_load = lambda x: tf.py_function(_load_img, [x], tf.float32)
+    ds = ds.map(tf_img_load, num_parallel_calls)
     
-    tensorshape = [imshape[0], imshape[1], num_channels]
+    tensorshape = [imshape[0], imshape[1], channels]
     ds = ds.map(lambda x: tf.reshape(x, tensorshape))
     return ds
 
 
 
 
-def dataset(fps, ys = None, imshape=(256,256), num_channels=3, 
-                 num_parallel_calls=None, batch_size=256,
+def dataset(fps, ys = None, imshape=(256,256), channels=3, 
+                 num_parallel_calls=None, norm=255, batch_size=256,
                  augment=False, unlab_fps=None):
     """
     return a tf dataset that iterates over a list of images once
@@ -57,24 +65,26 @@ def dataset(fps, ys = None, imshape=(256,256), num_channels=3,
     :fps: list of filepaths
     :ys: array of corresponding labels
     :imshape: constant shape to resize images to
-    :num_channels: channel depth of images
+    :channels: channel depth of images
     :batch_size: just what you think it is
     :augment: Boolean; whether to augment data
     :unlab_fps: list of filepaths (same length as fps) for semi-
         supervised learning
     
     Returns
-    :ds: tf.data.Dataset object to iterate over data
+    :ds: tf.data.Dataset object to iterate over data. The dataset returns
+        (x,y) tuples unless unlab_fps is included, in which case the structure
+        will be ((x, x_unlab), (y,y))
     :num_steps: number of steps (for passing to tf.keras.Model.fit())
     """
-    ds = _PIL_dataset(fps, imshape, num_channels, 
-                      num_parallel_calls)
+    ds = _image_file_dataset(fps, imshape=imshape, channels=channels, 
+                      num_parallel_calls=num_parallel_calls, norm=norm)
     if augment:
         ds = ds.map(_augment, num_parallel_calls)
         
     if unlab_fps is not None:
-        u_ds = _PIL_dataset(unlab_fps, imshape, num_channels, 
-                      num_parallel_calls)
+        u_ds = _image_file_dataset(unlab_fps, imshape=imshape, channels=channels, 
+                      num_parallel_calls=num_parallel_calls, norm=norm)
         if augment:
             u_ds = u_ds.map(_augment, num_parallel_calls)
         ds = tf.data.Dataset.zip((ds, u_ds))
@@ -96,9 +106,9 @@ def dataset(fps, ys = None, imshape=(256,256), num_channels=3,
 
 
 
-def stratified_training_dataset(fps, y, imshape=(256,256), num_channels=3, 
+def stratified_training_dataset(fps, y, imshape=(256,256), channels=3, 
                  num_parallel_calls=None, batch_size=256, mult=10,
-                    augment=True):
+                    augment=True, norm=255):
     """
     Training dataset for DeepCluster.
     Build a dataset that provides stratified samples over labels
@@ -106,7 +116,7 @@ def stratified_training_dataset(fps, y, imshape=(256,256), num_channels=3,
     :fps: list of strings containing paths to image files
     :y: array of cluster assignments- should have same length as fp
     :imshape: constant shape to resize images to
-    :num_channels: channel depth of images
+    :channels: channel depth of images
     :batch_size: just what you think it is
     :mult: not in paper; multiplication factor to increase
         number of steps/epoch. set to 1 to get paper algorithm
@@ -145,8 +155,8 @@ def stratified_training_dataset(fps, y, imshape=(256,256), num_channels=3,
     fps = np.array(fps)[sampled_indices]
     
     # NOW CREATE THE DATASET
-    im_ds = _PIL_dataset(fps, imshape, num_channels, 
-                      num_parallel_calls)
+    im_ds = _image_file_dataset(fps, imshape=imshape, channels=channels, 
+                      num_parallel_calls=num_parallel_calls, norm=norm)
 
     if augment:
         im_ds = im_ds.map(_augment, num_parallel_calls)
