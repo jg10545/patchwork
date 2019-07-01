@@ -8,8 +8,10 @@ class CosineDense(tf.keras.layers.Layer):
     by Chen et al
     """
     
-    def __init__(self, output_dim, **kwargs):
+    def __init__(self, output_dim, activation=tf.keras.activations.softmax,
+                 **kwargs):
         self.output_dim = output_dim
+        self._activation = activation
         super(CosineDense, self).__init__(**kwargs)
 
     def build(self, input_shape):
@@ -25,7 +27,7 @@ class CosineDense(tf.keras.layers.Layer):
     def call(self, inputs):
         inputs_norm = tf.keras.backend.l2_normalize(inputs, -1)
         kernel_norm = tf.keras.backend.l2_normalize(self.kernel, 0)
-        return tf.keras.activations.softmax(tf.matmul(inputs_norm, kernel_norm))
+        return self._activation(tf.matmul(inputs_norm, kernel_norm))
 
     def compute_output_shape(self, input_shape):
         shape = tf.TensorShape(input_shape).as_list()
