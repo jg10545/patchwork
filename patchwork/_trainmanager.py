@@ -48,9 +48,9 @@ def _hist_fig(df, pred, c):
     bins = np.linspace(0, 1, 15)
 
     fig, ax = plt.subplots()
-    ax.hist(pos_labeled, bins=bins, alpha=0.5, label="labeled positive", normed=True)
-    ax.hist(neg_labeled, bins=bins, alpha=0.5, label="labeled negative", normed=True)
-    ax.hist(unlabeled, bins=bins, alpha=0.5, label="unlabeled", normed=True)
+    ax.hist(pos_labeled, bins=bins, alpha=0.5, label="labeled positive", density=True)
+    ax.hist(neg_labeled, bins=bins, alpha=0.5, label="labeled negative", density=True)
+    ax.hist(unlabeled, bins=bins, alpha=0.5, label="unlabeled", density=True)
     ax.legend(loc="upper left")
     ax.set_xlabel("assessed probability", fontsize=14)
     ax.set_ylabel("frequency", fontsize=14)

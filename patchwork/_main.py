@@ -57,7 +57,9 @@ class PatchWork(object):
         :outfile: file path to save labels to during annotation
         """
         self.fine_tuning_model = None
-        self.df = df
+        # by default, pandas maps empty values to np.nan. in case the user
+        # is passing saved labels in, replace those with None
+        self.df = df.replace({pd.np.nan: None})
         self.feature_vecs = feature_vecs
         self.feature_extractor = feature_extractor
         if feature_extractor is not None:
@@ -83,7 +85,7 @@ class PatchWork(object):
         
         # BUILD THE GUI
         # initialize Labeler object
-        self.labeler = Labeler(self.classes, df, self.pred_df, 
+        self.labeler = Labeler(self.classes, self.df, self.pred_df, 
                                dim=dim, outfile=outfile)
         # initialize model picker
         if self.feature_vecs is not None:
@@ -136,18 +138,22 @@ class PatchWork(object):
         # LIVE FEATURE EXTRACTOR CASE
         if self.feature_vecs is None:
             files, ys = stratified_sample(self.df, num_samples)
+            unlab_fps = None
             if self._semi_supervised:
-                assert False, "not yet implemented"
+                #assert False, "not yet implemented"
                 # use find_unlabeled
-                unlabeled_indices = find_unlabeled(self.df)
-                unlabeled_sample = np.random.choice(unlabeled_indices,
-                                                    replace=True,
-                                                    size=num_samples)
+                #unlabeled_indices = find_unlabeled(self.df)
+                #unlabeled_sample = np.random.choice(unlabeled_indices,
+                #                                    replace=True,
+                #                                    size=num_samples)
+                unlabeled_filepaths = self.df.filepath.values[find_unlabeled(self.df)]
+                unlab_fps = np.random.choice(unlabeled_filepaths,
+                                             replace=True, size=num_samples)
             return dataset(files, ys, imshape=self._imshape, 
-                       num_channels=self._num_channels,
+                       channels=self._num_channels,
                        num_parallel_calls=self._num_parallel_calls, 
                        batch_size=batch_size,
-                       augment=True)
+                       augment=True, unlab_fps=unlab_fps)
         # PRE-EXTRACTED FEATURE CASE
         else:
             inds, ys = stratified_sample(self.df, num_samples, return_indices=True)
@@ -164,7 +170,7 @@ class PatchWork(object):
     
     def _pred_dataset(self, batch_size=32):
         return dataset(self.df["filepath"].values, imshape=self._imshape, 
-                       num_channels=self._num_channels,
+                       channels=self._num_channels,
                        num_parallel_calls=self._num_parallel_calls, 
                        batch_size=batch_size,
                        augment=False)
@@ -236,7 +242,7 @@ class PatchWork(object):
                                              batch_size=batch_size)
         else:
             dataset, num_steps = self._pred_dataset(batch_size)
-            predictions = self.model.predict(dataset)
+            predictions = self.model.predict(dataset, steps=num_steps)
             
         self.pred_df.loc[:, self.classes] = predictions
     

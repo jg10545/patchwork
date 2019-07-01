@@ -43,11 +43,19 @@ def _image_file_dataset(fps, imshape=(256,256),
             return tiff_to_array(f, swapaxes=True, 
                                  norm=norm, channels=channels)
         else:
-            img = Image.open(f).resize(imshape)
+            img = Image.open(f)#.resize(imshape)
             return np.array(img).astype(np.float32)/norm
+        
+    def _resize(img):
+        img = tf.expand_dims(img, 0)
+        img = tf.image.resize_bicubic(img, imshape)
+        img = tf.squeeze(img, 0)
+        return img
     
     tf_img_load = lambda x: tf.py_function(_load_img, [x], tf.float32)
+    #tf_img_resize = lambda x: tf.image.resize(x, imshape, method="bicubic")
     ds = ds.map(tf_img_load, num_parallel_calls)
+    ds = ds.map(_resize, num_parallel_calls)
     
     tensorshape = [imshape[0], imshape[1], channels]
     ds = ds.map(lambda x: tf.reshape(x, tensorshape))
