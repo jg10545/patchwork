@@ -77,8 +77,7 @@ class TrainManager():
         
         self._eval_after_training = pn.widgets.Checkbox(name="Update predictions after training?", value=True)
         self._train_button = pn.widgets.Button(name="Make it so")
-        self._train_button_watcher = self._train_button.param.watch(
-                        self._train_callback, ["clicks"])
+        self._train_button.on_click(self._train_callback)
         
         self._footer = pn.pane.Markdown("")
         
@@ -112,7 +111,7 @@ class TrainManager():
     def _train_callback(self, *event):
         # for each epoch
         epochs = self._epochs.value
-        self.loss = []
+        #self.loss = []
         for e in range(epochs):
             self._footer.object = "### TRAININ (%s / %s)"%(e+1, epochs)
             history = self.pw.fit(self._batch_size.value, self._samples_per_epoch.value)
@@ -123,6 +122,7 @@ class TrainManager():
             self.pw.predict_on_all(self._batch_size.value)
             
         self._loss_fig.object = _loss_fig(self.loss)
+        self._hist_callback()
         self._footer.object = "### DONE"
         
         
@@ -131,36 +131,7 @@ class TrainManager():
                                           self.pw.pred_df,
                                           self._hist_selector.value)
             
-    def _train_callback_orig(self, *event):
-        # update the model in the Patchwork object
-        self.pw.model = self.pw.modelpicker.model
-        # compile the model
-        self.pw.model.compile(tf.keras.optimizers.RMSprop(1e-3),
-                   loss=tf.keras.losses.sparse_categorical_crossentropy)
-        # initialize a training generator
-        gen = self.pw._training_generator(self._batch_size.value)
-        
-        loss = []
-        epochs = self._epochs.value
-        for e in range(epochs):
-            self._footer.object = "### TRAININ (%s / %s)"%(e+1, epochs)
-            history = self.pw.model.fit_generator(gen,
-                                    steps_per_epoch=self._training_steps.value,
-                                    epochs=1)
-            loss.append(history.history["loss"][-1])
-        # update evaluations
-        if self._eval_after_training.value:
-            self._footer.object = "### EVALUATING"
-            preds = self.pw.model.predict(self.pw.feature_vecs)
-            
-            for i, c in enumerate(self.pw.classes):
-                self.pw.df[c] = preds[:,i]
-            
-            self.pw.df["entropy"] = shannon_entropy(preds)
 
-        self.loss = loss
-        self._footer.object = "### DONE"
-        
         
         
         

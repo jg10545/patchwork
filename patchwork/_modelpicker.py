@@ -61,8 +61,7 @@ class ModelPicker(object):
         
         # model-builder button
         self._build_button = pn.widgets.Button(name="Build Model")
-        self._build_watcher = self._build_button.param.watch(self._build_callback, 
-                                                                 ["clicks"])
+        self._build_button.on_click(self._build_callback)
         
         # semi-supervised
         self._entropy_reg = pn.widgets.LiteralInput(name='Entropy Regularization Weight', 
@@ -99,7 +98,7 @@ class ModelPicker(object):
                                                                       self._inpt_channels)
         self._pw.build_model(entropy_reg=self._entropy_reg.value)
         self._current_model.object = "**Current fine-tuning model:** %s"%self._model_chooser.value.name
-
+        self._pw.trainmanager.loss = []
 
      
 # NEW VERSION: I think I might have to abandon param. not sure how the objectselector

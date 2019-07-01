@@ -110,12 +110,10 @@ class ButtonPanel(object):
         self._selections = {c:_single_class_radiobuttons() for c in classes}
         self._exclude = pn.widgets.Checkbox(name="exclude", align="center")
       
-        self._back_button = pn.widgets.Button(name='\u25c0', width=50)#40
+        self._back_button = pn.widgets.Button(name='\u25c0', width=50)
+        self._back_button.on_click(self._back_button_callback)
         self._forward_button = pn.widgets.Button(name='\u25b6', width=50)
-        self._back_watcher = self._back_button.param.watch(
-                        self._back_button_callback, ["clicks"])
-        self._forward_watcher = self._forward_button.param.watch(
-                        self._forward_button_callback, ["clicks"])
+        self._forward_button.on_click(self._forward_button_callback)
         self.label_counts = pn.pane.Markdown("")
         
         self._button_panel = pn.Column(pn.Spacer(height=50),
@@ -295,8 +293,7 @@ class Labeler():
         self._sort_by = pn.widgets.Select(name="Sort by", options=sort_opts,
                                           value="random")
         self._retrieve_button = pn.widgets.Button(name="Sample")
-        self._retrieve_watcher = self._retrieve_button.param.watch(
-                        self._retrieve_callback, ["clicks"])
+        self._retrieve_button.on_click(self._retrieve_callback)
         self._subset_by = pn.widgets.Select(name="Subset by", options=subset_opts,
                                             value="unlabeled")
         
