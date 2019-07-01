@@ -41,7 +41,7 @@ class PatchWork(object):
     
     def __init__(self, df, feature_vecs=None, feature_extractor=None, classes=[],
                  dim=3, imshape=(256,256), num_channels=3,
-                 num_parallel_calls=2):
+                 num_parallel_calls=2, outfile=None):
         """
         Initialize either with a set of feature vectors or a feature extractor
         
@@ -51,7 +51,10 @@ class PatchWork(object):
         :feature_extractor: keras Model object- should be frozen
         :classes: list of strings containing class names
         :dim: grid dimension for labeler- show a (dim x dim) square of images
-        :imsize: pixel size of images in labeler
+        :imshape: pixel size to reshape image to
+        :num_channels: number of channels per image
+        :num_parallel_calls: parallel processes for image loading
+        :outfile: file path to save labels to during annotation
         """
         self.fine_tuning_model = None
         self.df = df
@@ -81,7 +84,7 @@ class PatchWork(object):
         # BUILD THE GUI
         # initialize Labeler object
         self.labeler = Labeler(self.classes, df, self.pred_df, 
-                               dim=dim)
+                               dim=dim, outfile=outfile)
         # initialize model picker
         if self.feature_vecs is not None:
             inpt_channels = self.feature_vecs.shape[-1]
