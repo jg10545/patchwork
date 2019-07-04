@@ -9,9 +9,9 @@ import tensorflow as tf
 from PIL import Image
 from patchwork._util import tiff_to_array
 
+from patchwork._augment import _augment
 
-
-def _augment(im):
+def DEPRECATED_augment(im):
     im = tf.image.random_brightness(im, 0.1)
     im = tf.image.random_contrast(im, 0.5, 1.2)
     im = tf.image.random_flip_left_right(im)
