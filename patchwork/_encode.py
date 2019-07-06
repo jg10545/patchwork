@@ -18,14 +18,14 @@ def build_encoder(num_channels=3):
     return tf.keras.Model(inpt, net, name="encoder")
 
 
-def build_decoder(num_channels=3):
+def build_decoder(input_channels=512, num_channels=3):
     """
     Inpainting decoder from Pathak et al
     """
-    inpt = tf.keras.layers.Input((None, None, num_channels))
+    inpt = tf.keras.layers.Input((None, None, input_channels))
     net = inpt
 
-    for k in [512, 256, 128, 64]:
+    for k in [512, 256, 128, 64, 64]:
         net = tf.keras.layers.Conv2DTranspose(k, 4, strides=2, 
                                               padding="same",
                                 activation=tf.keras.activations.relu)(net)
@@ -62,13 +62,22 @@ def build_inpainting_network(input_shape=(256,256,3), disc_loss=0.001,
     Build an inpaainting network as described in the supplementary 
     material of Pathak et al's paper.
     
-    Returns the context encoder as well as an encoder model.
+    :input_shape: 3-tuple giving the shape of images to be inpainted
+    :disc_loss: weight for the discriminator component of the loss function.
+        1-disc_loss will be applied to the reconstruction loss
+    :learn_rate: learning rate for inpainter. discriminator will be set to
+        1/10th of this
+    :encoder: encoder model (if not specified one will be built)
+    :decoder: decoder model
+    :discriminator: discriminator model
+    
+    Returns inpainter, encoder, and discriminator models.
     """
     # initialize encoder and decoder objects
     if encoder is None: 
         encoder = build_encoder(input_shape[-1])
     if decoder is None:
-        decoder = build_decoder(input_shape[-1])
+        decoder = build_decoder(num_channels=input_shape[-1])
 
     inpt = tf.keras.layers.Input(input_shape, name="inpt")
     
@@ -78,7 +87,7 @@ def build_inpainting_network(input_shape=(256,256,3), disc_loss=0.001,
     dense = ChannelWiseDense()(encoded)
     dropout = tf.keras.layers.Dropout(0.5)(dense)
     conv1d = tf.keras.layers.Conv2D(512,1)(dropout)
-    decoded = decoder(conv1d, name="decoded")
+    decoded = decoder(conv1d)
     
     # NOW FOR THE ADVERSARIAL PART
     if discriminator is None:
@@ -91,9 +100,9 @@ def build_inpainting_network(input_shape=(256,256,3), disc_loss=0.001,
 
     inpainter = tf.keras.Model(inpt, [decoded, disc_pred])
     inpainter.compile(tf.keras.optimizers.Adam(learn_rate),
-                      loss={"decoded":tf.keras.losses.mse,
+                      loss={"decoder":tf.keras.losses.mse,
                             "discriminator":tf.keras.losses.binary_crossentropy},
-                            loss_weights={"decoded":1-disc_loss, 
+                            loss_weights={"decoder":1-disc_loss, 
                                           "discriminator":disc_loss})
     return inpainter, encoder, discriminator
 

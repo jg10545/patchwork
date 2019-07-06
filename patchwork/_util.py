@@ -39,7 +39,7 @@ def tiff_to_array(f, swapaxes=True, norm=255, channels=-1):
     return im_arr
 
 
-def _load_img(f, norm=255, channels=3):
+def _load_img(f, norm=255, channels=3, resize=None):
     """
     Generic image-file-to-numpy-array loader. Uses filename
     to choose whether to use PIL or GDAL.
@@ -47,11 +47,16 @@ def _load_img(f, norm=255, channels=3):
     :f: string; path to file
     :norm: value to normalize images by
     :channels: number of input channels (for GDAL only)
+    :resize: pass a tuple to resize to
     """
     f = f.numpy().decode("utf-8") 
     if ".tif" in f:
-        return tiff_to_array(f, swapaxes=True, 
+        img_arr = tiff_to_array(f, swapaxes=True, 
                              norm=norm, channels=channels)
     else:
         img = Image.open(f)
-        return np.array(img).astype(np.float32)/norm
+        img_arr = np.array(img).astype(np.float32)/norm
+        
+    if resize is not None:
+        img_arr = np.array(Image.fromarray(img_arr).resize(resize))
+    return img_arr
