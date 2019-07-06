@@ -35,6 +35,8 @@ def _image_file_dataset(fps, imshape=(256,256),
     :num_parallel_calls: number of processes to use for loading
     :norm: value for normalizing images
     :channels: channel depth to truncate images to
+    
+    Returns images as a 3D float32 tensor
     """
     ds = tf.data.Dataset.from_tensor_slices(fps)
     def _load_img(f):

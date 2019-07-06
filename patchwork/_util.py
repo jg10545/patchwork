@@ -1,4 +1,5 @@
 import numpy as np
+from PIL import Image
 from osgeo import gdal
 
 def shannon_entropy(x):
@@ -36,3 +37,21 @@ def tiff_to_array(f, swapaxes=True, norm=255, channels=-1):
             im_arr = im_arr[:,:,:channels]
         
     return im_arr
+
+
+def _load_img(f, norm=255, channels=3):
+    """
+    Generic image-file-to-numpy-array loader. Uses filename
+    to choose whether to use PIL or GDAL.
+    
+    :f: string; path to file
+    :norm: value to normalize images by
+    :channels: number of input channels (for GDAL only)
+    """
+    f = f.numpy().decode("utf-8") 
+    if ".tif" in f:
+        return tiff_to_array(f, swapaxes=True, 
+                             norm=norm, channels=channels)
+    else:
+        img = Image.open(f)
+        return np.array(img).astype(np.float32)/norm

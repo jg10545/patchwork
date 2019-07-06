@@ -5,7 +5,8 @@ import tensorflow as tf
 from patchwork._layers import ChannelWiseDense
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 
-def build_encoder(layers=[32, 64, 128, 256, 512], im_size=(256,256,3)):
+def build_encoder(layers=[64, 128, 256, 512, 512], im_size=(256,256,3)):
+    # original
     inpt = tf.keras.layers.Input(im_size)
     net = inpt
     for k in layers:
@@ -15,13 +16,44 @@ def build_encoder(layers=[32, 64, 128, 256, 512], im_size=(256,256,3)):
     return tf.keras.Model(inpt, net, name="encoder")
 
 
-def build_decoder(layers=[256, 128, 64, 32, 32], inpt_size=(8,8,512)):
+def _build_encoder(layers=[64, 128, 256, 512, 512], im_size=(256,256,3)):
+    inpt = tf.keras.layers.Input(im_size)
+    net = inpt
+    for e, k in enumerate(layers):
+        if e > 0:
+            net = tf.keras.layers.Conv2D(int(k/2), 1, strides=1, padding="same")(net)
+            net = tf.keras.layers.LeakyReLU(alpha=0.2)(net)
+        net = tf.keras.layers.Conv2D(k, 3, strides=2, padding="same")(net)
+        net = tf.keras.layers.LeakyReLU(alpha=0.2)(net)
+        net = tf.keras.layers.BatchNormalization()(net)
+    return tf.keras.Model(inpt, net, name="encoder")
+
+
+def build_decoder(layers=[512, 256, 128, 64, 64], inpt_size=(8,8,512)):
+    # original
     inpt = tf.keras.layers.Input(inpt_size)
     net = inpt
 
     for k in layers:
         net = tf.keras.layers.Conv2DTranspose(k, 3, strides=2, padding="same",
                                 activation=tf.keras.activations.relu)(net)
+        net = tf.keras.layers.BatchNormalization()(net)
+    
+    net = tf.keras.layers.Conv2D(3, 3, strides=1, padding="same", 
+                             activation=tf.keras.activations.sigmoid)(net)
+    return tf.keras.Model(inpt, net, name="decoder")
+
+def _build_decoder(layers=[512, 256, 128, 64, 64], inpt_size=(8,8,512)):
+    inpt = tf.keras.layers.Input(inpt_size)
+    net = inpt
+
+    for e, k in enumerate(layers):
+        if e > 0:
+            net = tf.keras.layers.Conv2D(int(k/2), 1, strides=1, padding="same")(net)
+            net = tf.keras.layers.LeakyReLU(alpha=0.2)(net)
+        net = tf.keras.layers.Conv2DTranspose(k, 3, strides=2, 
+                                              padding="same")(net)
+        net = tf.keras.layers.LeakyReLU(alpha=0.2)(net)
         net = tf.keras.layers.BatchNormalization()(net)
     
     net = tf.keras.layers.Conv2D(3, 3, strides=1, padding="same", 
@@ -46,7 +78,7 @@ def build_discriminator(layers=[32, 64, 128, 256, 512], im_size=(256,256,3)):
 
 
 
-def build_context_encoder():
+def build_context_encoder(disc_loss=0.001):
     """
     Build a context encoder, mostly following Pathak et al. FOR NOW assumes images
     are (256,256,3).
@@ -85,8 +117,10 @@ def build_context_encoder():
     context_encoder.compile(tf.keras.optimizers.Adam(1e-4),
                             loss={"masked_decoded":tf.keras.losses.mse,
                                  "discriminator":tf.keras.losses.binary_crossentropy},
-                            #loss_weights={"masked_decoded":0.99, "discriminator":0.01})
-                           loss_weights={"masked_decoded":0.999, "discriminator":0.001})
+                        #loss_weights={"masked_decoded":1.0, "discriminator":0.0})
+                        loss_weights={"masked_decoded":1-disc_loss, "discriminator":disc_loss})
+                           #loss_weights={"masked_decoded":0.999, "discriminator":0.001})
+                           
 
     
     return context_encoder, encoder, discriminator
@@ -107,7 +141,9 @@ def mask_generator(H,W,C):
         yield mask
 
 def make_test_mask(H,W,C):
-    #mask_start = int(N/4)
+    """
+    Generate a mask for a (H,W,C) image that crops out the center fourth.
+    """
     mask = np.zeros((H,W,C), dtype=bool)
     mask[int(0.25*H):int(0.75*H), int(0.25*W):int(0.75*W),:] = True
     return mask
