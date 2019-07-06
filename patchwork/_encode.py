@@ -5,75 +5,97 @@ import tensorflow as tf
 from patchwork._layers import ChannelWiseDense
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 
-def build_encoder(layers=[64, 128, 256, 512, 512], im_size=(256,256,3)):
-    # original
-    inpt = tf.keras.layers.Input(im_size)
+def build_encoder(num_channels=3):
+    """
+    Inpainting encoder model from Pathak et al
+    """
+    inpt = tf.keras.layers.Input((None, None, num_channels))
     net = inpt
-    for k in layers:
-        net = tf.keras.layers.Conv2D(k, 3, strides=2, padding="same")(net)
+    for k in [64, 64, 128, 256, 512]:
+        net = tf.keras.layers.Conv2D(k, 4, strides=2, padding="same")(net)
         net = tf.keras.layers.LeakyReLU(alpha=0.2)(net)
         net = tf.keras.layers.BatchNormalization()(net)
     return tf.keras.Model(inpt, net, name="encoder")
 
 
-def _build_encoder(layers=[64, 128, 256, 512, 512], im_size=(256,256,3)):
-    inpt = tf.keras.layers.Input(im_size)
-    net = inpt
-    for e, k in enumerate(layers):
-        if e > 0:
-            net = tf.keras.layers.Conv2D(int(k/2), 1, strides=1, padding="same")(net)
-            net = tf.keras.layers.LeakyReLU(alpha=0.2)(net)
-        net = tf.keras.layers.Conv2D(k, 3, strides=2, padding="same")(net)
-        net = tf.keras.layers.LeakyReLU(alpha=0.2)(net)
-        net = tf.keras.layers.BatchNormalization()(net)
-    return tf.keras.Model(inpt, net, name="encoder")
-
-
-def build_decoder(layers=[512, 256, 128, 64, 64], inpt_size=(8,8,512)):
-    # original
-    inpt = tf.keras.layers.Input(inpt_size)
+def build_decoder(num_channels=3):
+    """
+    Inpainting decoder from Pathak et al
+    """
+    inpt = tf.keras.layers.Input((None, None, num_channels))
     net = inpt
 
-    for k in layers:
-        net = tf.keras.layers.Conv2DTranspose(k, 3, strides=2, padding="same",
+    for k in [512, 256, 128, 64]:
+        net = tf.keras.layers.Conv2DTranspose(k, 4, strides=2, 
+                                              padding="same",
                                 activation=tf.keras.activations.relu)(net)
         net = tf.keras.layers.BatchNormalization()(net)
     
-    net = tf.keras.layers.Conv2D(3, 3, strides=1, padding="same", 
-                             activation=tf.keras.activations.sigmoid)(net)
-    return tf.keras.Model(inpt, net, name="decoder")
-
-def _build_decoder(layers=[512, 256, 128, 64, 64], inpt_size=(8,8,512)):
-    inpt = tf.keras.layers.Input(inpt_size)
-    net = inpt
-
-    for e, k in enumerate(layers):
-        if e > 0:
-            net = tf.keras.layers.Conv2D(int(k/2), 1, strides=1, padding="same")(net)
-            net = tf.keras.layers.LeakyReLU(alpha=0.2)(net)
-        net = tf.keras.layers.Conv2DTranspose(k, 3, strides=2, 
-                                              padding="same")(net)
-        net = tf.keras.layers.LeakyReLU(alpha=0.2)(net)
-        net = tf.keras.layers.BatchNormalization()(net)
-    
-    net = tf.keras.layers.Conv2D(3, 3, strides=1, padding="same", 
+    net = tf.keras.layers.Conv2D(num_channels, 3, strides=1, padding="same", 
                              activation=tf.keras.activations.sigmoid)(net)
     return tf.keras.Model(inpt, net, name="decoder")
 
 
-def build_discriminator(layers=[32, 64, 128, 256, 512], im_size=(256,256,3)):
-    inpt = tf.keras.layers.Input(im_size)
+def build_discriminator(num_channels=3):
+    """
+    Inpainting discriminator from Pathak et al
+    """
+    inpt = tf.keras.layers.Input((None, None, num_channels))
     net = inpt
-    for k in layers:
-        net = tf.keras.layers.Conv2D(k, 3, strides=2, padding="same",
+    for k in [64, 128, 256, 512]:
+        net = tf.keras.layers.Conv2D(k, 4, strides=2, padding="same",
                                 activation=tf.keras.activations.relu)(net)
-        #net = tf.keras.layers.Conv2D(k, 3, strides=2, padding="same")(net)
-        #net = tf.keras.layers.LeakyReLU()(net)
         net = tf.keras.layers.BatchNormalization()(net)
     net = tf.keras.layers.GlobalMaxPool2D()(net)
     net = tf.keras.layers.Dense(1, activation=tf.keras.activations.sigmoid,
                                name="disc_pred")(net)
     return tf.keras.Model(inpt, net, name="discriminator")
+
+
+
+
+
+def build_inpainting_network(input_shape=(256,256,3), disc_loss=0.001, 
+                             learn_rate=1e-4, encoder=None, 
+                             decoder=None, discriminator=None):
+    """
+    Build an inpaainting network as described in the supplementary 
+    material of Pathak et al's paper.
+    
+    Returns the context encoder as well as an encoder model.
+    """
+    # initialize encoder and decoder objects
+    if encoder is None: 
+        encoder = build_encoder(input_shape[-1])
+    if decoder is None:
+        decoder = build_decoder(input_shape[-1])
+
+    inpt = tf.keras.layers.Input(input_shape, name="inpt")
+    
+    # Pathak's structure runs images through the encoder, then a dense
+    # channel-wise layer, then dropout and a 1x1 Convolution before decoding.
+    encoded = encoder(inpt)
+    dense = ChannelWiseDense()(encoded)
+    dropout = tf.keras.layers.Dropout(0.5)(dense)
+    conv1d = tf.keras.layers.Conv2D(512,1)(dropout)
+    decoded = decoder(conv1d, name="decoded")
+    
+    # NOW FOR THE ADVERSARIAL PART
+    if discriminator is None:
+        discriminator = build_discriminator(input_shape[-1])
+    discriminator.compile(tf.keras.optimizers.Adam(0.1*learn_rate), 
+                          loss=tf.keras.losses.binary_crossentropy)
+    discriminator.trainable = False
+    disc_pred = discriminator(decoded)
+    
+
+    inpainter = tf.keras.Model(inpt, [decoded, disc_pred])
+    inpainter.compile(tf.keras.optimizers.Adam(learn_rate),
+                      loss={"decoded":tf.keras.losses.mse,
+                            "discriminator":tf.keras.losses.binary_crossentropy},
+                            loss_weights={"decoded":1-disc_loss, 
+                                          "discriminator":disc_loss})
+    return inpainter, encoder, discriminator
 
 
 
