@@ -74,6 +74,7 @@ def _build_context_encoder_dataset(filepaths, input_shape=(256,256,3), norm=255,
     masked_batched_ds = masked_img_ds.batch(batch_size)
     if prefetch:
         masked_batched_ds = masked_batched_ds.prefetch(1)
+    return masked_batched_ds
     
     
 def _build_test_dataset(filepaths, input_shape=(256,256,3), norm=255):
@@ -218,7 +219,7 @@ def train_context_encoder(trainfiles, testfiles=None, inpainter=None,
                                [test_imgs, np.ones(test_imgs.shape[0])])
             # predict on the first few
             preds = inpainter.predict(test_masked_imgs[:num_test_images])[0]
-            predviz = np.concatenate([test_imgs[:num_test_images], preds], 
+            predviz = np.concatenate([test_masked_imgs[:num_test_images], preds], 
                              2).astype(np.float32)
             
             with tf.contrib.summary.always_record_summaries():

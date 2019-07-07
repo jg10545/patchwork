@@ -49,7 +49,8 @@ def _load_img(f, norm=255, channels=3, resize=None):
     :channels: number of input channels (for GDAL only)
     :resize: pass a tuple to resize to
     """
-    f = f.numpy().decode("utf-8") 
+    if type(f) is not str:
+        f = f.numpy().decode("utf-8") 
     if ".tif" in f:
         img_arr = tiff_to_array(f, swapaxes=True, 
                              norm=norm, channels=channels)
@@ -57,6 +58,8 @@ def _load_img(f, norm=255, channels=3, resize=None):
         img = Image.open(f)
         img_arr = np.array(img).astype(np.float32)/norm
         
-    if resize is not None:
-        img_arr = np.array(Image.fromarray(img_arr).resize(resize))
+    if resize is not None and channels ==3:
+        img_arr = np.array(Image.fromarray(
+                (255*np.swapaxes(img_arr, 0,1)).astype(np.uint8)).resize(resize)
+                    ).astype(np.float32)/norm
     return img_arr

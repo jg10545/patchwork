@@ -1,1 +1,1 @@
-from patchwork._contextencoder import build_inpainting_network, train_context_encoder
+from patchwork.feature._contextencoder import build_inpainting_network, train_context_encoder
