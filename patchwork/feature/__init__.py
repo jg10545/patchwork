@@ -1,2 +1,1 @@
-# -*- coding: utf-8 -*-
-
+from patchwork._contextencoder import build_inpainting_network, train_context_encoder

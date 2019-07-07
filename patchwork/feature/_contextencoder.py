@@ -5,7 +5,7 @@
 """
 import numpy as np
 import tensorflow as tf
-from PIL import Image
+import tensorflow.contrib
 
 from patchwork._augment import _augment
 from patchwork._loaders import _image_file_dataset
@@ -45,7 +45,8 @@ def maskinator(img, mask):
     
     masked_img = img * antimask
     #target_img = img * mask_float
-    return img, mask, masked_img#, target_img
+    #return img, mask, masked_img, target_img
+    return masked_img, img
 
 
 def _build_context_encoder_dataset(filepaths, input_shape=(256,256,3), norm=255,
@@ -152,66 +153,80 @@ def build_inpainting_network(input_shape=(256,256,3), disc_loss=0.001,
 
 
 
-
-num_test_images = 10
-num_epochs = 1000
-assert tf.executing_eagerly(), "foo"
-#steps_per_epoch = 250
-
-summary_writer = tf.contrib.summary.create_file_writer("pathak_no_adv/", 
+def train_context_encoder(trainfiles, testfiles=None, inpainter=None, 
+                          discriminator=None, num_epochs=1000, 
+                          num_test_images=10, logdir=None, 
+                          input_shape=(256,256,3), norm=255,
+                          num_parallel_calls=4, batch_size=32):
+    """
+    Train your very own context encoder
+    
+    :trainfiles: list of paths to training files
+    :testfiles: list of paths to test files
+    :inpainter, discriminator: if not specified, will be auto-generated
+    """
+    if inpainter is None or discriminator is None:
+        inpainter, enc, discriminator = build_inpainting_network(
+                input_shape=input_shape, disc_loss=0.001)
+        
+    assert tf.executing_eagerly(), "eager execution needs to be enabled"
+    # build training generator
+    train_ds = _build_context_encoder_dataset(trainfiles, input_shape=input_shape, 
+                                norm=norm, shuffle_queue=1000, 
+                                num_parallel_calls=num_parallel_calls,
+                                batch_size=batch_size, prefetch=True)
+    
+    if testfiles is not None:
+        assert logdir is not None, "need a place to store test results"
+        test = True
+        test_masked_imgs, test_imgs = _build_test_dataset(testfiles, 
+                                            input_shape=input_shape, norm=norm)
+        summary_writer = tf.contrib.summary.create_file_writer(logdir, 
                                                        flush_millis=10000)
-summary_writer.set_as_default()
-global_step = tf.train.get_or_create_global_step()
+        summary_writer.set_as_default()
+        global_step = tf.train.get_or_create_global_step()
+    else:
+        test = False
 
-#_gen = train()
-# combined training loop
-for e in range(num_epochs):
-    # for each step in the epoch:
-    for img, mask, masked_img, target_img in masked_batched_ds:
-        img = img.numpy()
-        mask = mask.numpy()
-        masked_img = masked_img.numpy()
-        target_img = target_img.numpy()
-        # pull next training batch
-        #(x, target) = next(_gen)
-        bs = img.shape[0]
-        ce_labels = np.ones(bs)
-        disc_labels = np.concatenate([
-            np.zeros(bs),
-            np.ones(bs)
-        ])
-        # run training step on CE
-        inpainter.train_on_batch(masked_img, 
-                                       (img, ce_labels))
+    # combined training loop
+    for e in range(num_epochs):
+        # for each step in the epoch:
+        for masked_img, img in train_ds:
+            masked_img = masked_img.numpy()
+            img = img.numpy()
+            # effective batch size
+            bs = img.shape[0]
+
+            ce_labels = np.ones(bs)
+            disc_labels = np.concatenate([
+                    np.zeros(bs),
+                    np.ones(bs)
+            ])
+        # run training step on inpainting network
+        inpainter.train_on_batch(masked_img, (img, ce_labels))
         # generate reconstructed images
         reconstructed_images = inpainter.predict(masked_img)
         # make discriminator batch
-        #real_images = x[0][0] + target
-        #disc_batch_x = np.concatenate([reconstructed_images[0], real_images],0) 
         disc_batch_x = np.concatenate([reconstructed_images[0], img], 0)
         # run discriminator training step
         discriminator.train_on_batch(disc_batch_x, disc_labels)
-    # at the end of the epoch, evaluate and predict
     
-    # evaluation- list of 3 values:
-    # ['loss', 'decoder_loss', 'discriminator_loss']
-    test_results = inpainter.evaluate(test[0][0], 
-                               [test[1], np.ones(test[1].shape[0])])
-    # predict on the first few
-    preds = inpainter.predict(test[0][0][:num_test_images])[0]
-    # replace the parts of the image we aren't prioritizing
-    # with the original
-    #preds[~mask] = img[~mask]
-    predviz = np.concatenate([test[0][0][:num_test_images], preds], 
+        # at the end of the epoch, evaluate on test data
+        if test:
+            # evaluation- list of 3 values: ['loss', 'decoder_loss', 'discriminator_loss']
+            test_results = inpainter.evaluate(test_masked_imgs, 
+                               [test_imgs, np.ones(test_imgs.shape[0])])
+            # predict on the first few
+            preds = inpainter.predict(test_masked_imgs[:num_test_images])[0]
+            predviz = np.concatenate([test_imgs[:num_test_images], preds], 
                              2).astype(np.float32)
-    
-    with tf.contrib.summary.always_record_summaries():
-        tf.contrib.summary.scalar("total_loss", test_results[0])
-        tf.contrib.summary.scalar("decoder_loss", test_results[1])
-        tf.contrib.summary.scalar("discriminator_loss", test_results[2])
-        for j in range(num_test_images):
-            #tf.contrib.summary.image("img_%i"%j, 
-            #                         np.expand_dims(preds[j,:,:,:],0))
-            tf.contrib.summary.image("img_%i"%j, 
+            
+            with tf.contrib.summary.always_record_summaries():
+                tf.contrib.summary.scalar("total_loss", test_results[0])
+                tf.contrib.summary.scalar("decoder_loss", test_results[1])
+                tf.contrib.summary.scalar("discriminator_loss", test_results[2])
+                for j in range(num_test_images):
+                    tf.contrib.summary.image("img_%i"%j, 
                                      np.expand_dims(predviz[j,:,:,:],0))
-    global_step.assign_add(1)
+        global_step.assign_add(1)
+    return inpainter, discriminator
