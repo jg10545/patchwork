@@ -197,7 +197,6 @@ def train_context_encoder(trainfiles, testfiles=None, inpainter=None,
             img = img.numpy()
             # effective batch size
             bs = img.shape[0]
-
             ce_labels = np.ones(bs)
             disc_labels = np.concatenate([
                     np.zeros(bs),
