@@ -1,6 +1,5 @@
-=========
-patchwork
-=========
+# patchwork
+
 
 ### Interactive Machine Learning for an Imperfect World
 
@@ -25,11 +24,9 @@ Right now,
 
 * Free software: MIT license
 
-Installation
-------------
+## Installation
 
-Usage
------
+## Usage
 
 To start with you'll need:
 
@@ -101,8 +98,7 @@ pw.panel()
 ```
                                         
 
-Credits
--------
+## Credits
 
 This package was created with Cookiecutter_ and the `audreyr/cookiecutter-pypackage`_ project template.
 
