@@ -9,3 +9,4 @@ __version__ = '0.1.0'
 
 from patchwork._main import PatchWork
 from patchwork._experiment import run_experiment, show_experiments
+from patchwork._prep import prep_label_dataframe

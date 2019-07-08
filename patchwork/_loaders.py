@@ -9,9 +9,9 @@ import tensorflow as tf
 from PIL import Image
 from patchwork._util import tiff_to_array
 
+from patchwork._augment import _augment
 
-
-def _augment(im):
+def DEPRECATED_augment(im):
     im = tf.image.random_brightness(im, 0.1)
     im = tf.image.random_contrast(im, 0.5, 1.2)
     im = tf.image.random_flip_left_right(im)
@@ -35,6 +35,8 @@ def _image_file_dataset(fps, imshape=(256,256),
     :num_parallel_calls: number of processes to use for loading
     :norm: value for normalizing images
     :channels: channel depth to truncate images to
+    
+    Returns images as a 3D float32 tensor
     """
     ds = tf.data.Dataset.from_tensor_slices(fps)
     def _load_img(f):
