@@ -156,9 +156,9 @@ def build_inpainting_network(input_shape=(256,256,3), disc_loss=0.001,
     inpainter = tf.keras.Model([inpt, inpt_mask], 
                                [decoded, masked_decoded, disc_pred])
     inpainter.compile(tf.keras.optimizers.Adam(learn_rate),
-                      loss={"decoder":tf.keras.losses.mse,
+                      loss={"masked_decoded":tf.keras.losses.mse,
                             "discriminator":tf.keras.losses.binary_crossentropy},
-                            loss_weights={"decoder":1-disc_loss, 
+                            loss_weights={"masked_decoded":1-disc_loss, 
                                           "discriminator":disc_loss})
     return inpainter, encoder, discriminator
 
