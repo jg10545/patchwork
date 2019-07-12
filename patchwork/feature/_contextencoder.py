@@ -20,15 +20,15 @@ def mask_generator(H,W,C):
     
     :H,W,C: height, width, and number of channels
     """
-    a = int(0.05*(H+W)/2)
-    b = int(0.45*(H+W)/2)
+    dh = int(H/2)
+    dw = int(W/2)
     while True:
         mask = np.zeros((H,W,C), dtype=bool)
-        xmin = np.random.randint(a,b)
-        ymin = np.random.randint(a,b)
-        xmax = np.random.randint(W-b, W-a)
-        ymax = np.random.randint(H-b, H-a)
-        mask[ymin:ymax, xmin:xmax,:] = True
+        xmin = np.random.randint(0, dw)
+        ymin = np.random.randint(0, dh)
+        xmax = xmin + dw
+        ymax = ymin + dh
+        mask[ymin:ymax, xmin:xmax,:] = True        
         yield mask
 
 def _make_test_mask(H,W,C):
@@ -40,13 +40,17 @@ def _make_test_mask(H,W,C):
     return mask
 
 def maskinator(img, mask):
+    """
+    Input an image and a mask; output the image, mask
+    masked image (mask removed) and target image 
+    (everything but the mask removed)
+    """
     mask_float = tf.cast(mask, tf.float32)
     antimask = 1 - mask_float
     
     masked_img = img * antimask
-    #target_img = img * mask_float
-    #return img, mask, masked_img, target_img
-    return masked_img, img
+    target_img = img * mask_float
+    return img, mask, masked_img, target_img
 
 
 def _build_context_encoder_dataset(filepaths, input_shape=(256,256,3), norm=255,
@@ -87,17 +91,19 @@ def _build_test_dataset(filepaths, input_shape=(256,256,3), norm=255):
     :norm: normalizing value for images
     
     Returns
-    (masked_imgs, img_arr) stacked arrays of images with and without masking    
+    img_arr, mask, masked_img, target_img
     """
     img_arr = np.stack([_load_img(f, norm=norm, channels=input_shape[2], 
                                   resize=input_shape[:2]) for f in filepaths])
     mask = _make_test_mask(*input_shape)
+    mask = np.stack([mask for _ in range(img_arr.shape[0])])
     
     masked_imgs = img_arr.copy()
-    masked_imgs[:, mask] = 0
-    return masked_imgs, img_arr
+    masked_imgs[mask] = 0
+    target_imgs = img_arr.copy()
+    target_imgs[~mask] = 0
+    return img_arr, mask, masked_imgs, target_imgs
 
-    
     
 
 def build_inpainting_network(input_shape=(256,256,3), disc_loss=0.001, 
@@ -125,7 +131,7 @@ def build_inpainting_network(input_shape=(256,256,3), disc_loss=0.001,
         decoder = build_decoder(num_channels=input_shape[-1])
 
     inpt = tf.keras.layers.Input(input_shape, name="inpt")
-    
+    inpt_mask = tf.keras.layers.Input(input_shape, name="inpt_mask")
     # Pathak's structure runs images through the encoder, then a dense
     # channel-wise layer, then dropout and a 1x1 Convolution before decoding.
     encoded = encoder(inpt)
@@ -133,6 +139,10 @@ def build_inpainting_network(input_shape=(256,256,3), disc_loss=0.001,
     dropout = tf.keras.layers.Dropout(0.5)(dense)
     conv1d = tf.keras.layers.Conv2D(512,1)(dropout)
     decoded = decoder(conv1d)
+    # create a masked output to compare with ground truth (which should
+    # already have it's unmasked areas set to 0)
+    masked_decoded = tf.keras.layers.Multiply(name="masked_decoded")(
+                                    [inpt_mask, decoded])
     
     # NOW FOR THE ADVERSARIAL PART
     if discriminator is None:
@@ -143,7 +153,8 @@ def build_inpainting_network(input_shape=(256,256,3), disc_loss=0.001,
     disc_pred = discriminator(decoded)
     
 
-    inpainter = tf.keras.Model(inpt, [decoded, disc_pred])
+    inpainter = tf.keras.Model([inpt, inpt_mask], 
+                               [decoded, masked_decoded, disc_pred])
     inpainter.compile(tf.keras.optimizers.Adam(learn_rate),
                       loss={"decoder":tf.keras.losses.mse,
                             "discriminator":tf.keras.losses.binary_crossentropy},
@@ -180,21 +191,26 @@ def train_context_encoder(trainfiles, testfiles=None, inpainter=None,
     if testfiles is not None:
         assert logdir is not None, "need a place to store test results"
         test = True
-        test_masked_imgs, test_imgs = _build_test_dataset(testfiles, 
+        test_ims, test_mask, test_masked_ims, test_target_ims = \
+                                    _build_test_dataset(testfiles, 
                                             input_shape=input_shape, norm=norm)
         summary_writer = tf.contrib.summary.create_file_writer(logdir, 
                                                        flush_millis=10000)
         summary_writer.set_as_default()
         global_step = tf.train.get_or_create_global_step()
+
     else:
         test = False
 
     # combined training loop
     for e in range(num_epochs):
         # for each step in the epoch:
-        for masked_img, img in train_ds:
+        for img, mask, masked_img, target_img in train_ds:
+            # prepare batch inputs
             masked_img = masked_img.numpy()
             img = img.numpy()
+            mask = mask.numpy()
+            target_img = target_img.numpy()
             # effective batch size
             bs = img.shape[0]
             ce_labels = np.ones(bs)
@@ -202,23 +218,31 @@ def train_context_encoder(trainfiles, testfiles=None, inpainter=None,
                     np.zeros(bs),
                     np.ones(bs)
             ])
-        # run training step on inpainting network
-        inpainter.train_on_batch(masked_img, (img, ce_labels))
-        # generate reconstructed images
-        reconstructed_images = inpainter.predict(masked_img)
-        # make discriminator batch
-        disc_batch_x = np.concatenate([reconstructed_images[0], img], 0)
-        # run discriminator training step
-        discriminator.train_on_batch(disc_batch_x, disc_labels)
+            # run training step on inpainting network
+            inpainter.train_on_batch((masked_img, mask), 
+                                 (target_img, ce_labels))
+            # generate reconstructed images
+            reconstructed_images = inpainter.predict((masked_img, mask))
+            # make discriminator batch
+            disc_batch_x = np.concatenate([reconstructed_images[0], img], 0)
+            # run discriminator training step
+            discriminator.train_on_batch(disc_batch_x, disc_labels)
     
-        # at the end of the epoch, evaluate on test data
+        # at the end of the epoch, evaluate on test data. this has two steps:
+        #  -compute loss metrics on all of the test set
+        #  -visualize reconstructions for the first few test examples
         if test:
             # evaluation- list of 3 values: ['loss', 'decoder_loss', 'discriminator_loss']
-            test_results = inpainter.evaluate(test_masked_imgs, 
-                               [test_imgs, np.ones(test_imgs.shape[0])])
+            test_results = inpainter.evaluate((test_masked_ims, test_mask), 
+                               [test_target_ims, np.ones(test_ims.shape[0])])
             # predict on the first few
-            preds = inpainter.predict(test_masked_imgs[:num_test_images])[0]
-            predviz = np.concatenate([test_masked_imgs[:num_test_images], preds], 
+            preds = inpainter.predict((test_masked_ims[:num_test_images],
+                                       test_mask[:num_test_images]))[0]
+            # for the visualization in tensorboard: replace the unmasked areas
+            # with the input image as a guide to the eye
+            preds = preds*test_mask[:num_test_images] + \
+                        test_ims[:num_test_images]*(1-test_mask[:num_test_images])
+            predviz = np.concatenate([test_masked_ims[:num_test_images], preds], 
                              2).astype(np.float32)
             
             with tf.contrib.summary.always_record_summaries():
