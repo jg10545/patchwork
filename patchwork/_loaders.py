@@ -25,7 +25,7 @@ def DEPRECATED_augment(im):
 
 def _image_file_dataset(fps, imshape=(256,256), 
                  num_parallel_calls=None, norm=255,
-                 channels=3):
+                 num_channels=3):
     """
     Basic tool to load images into a tf.data.Dataset using
     PIL.Image or gdal instead of the tensorflow decode functions
@@ -34,7 +34,7 @@ def _image_file_dataset(fps, imshape=(256,256),
     :imshape: constant shape to resize images to
     :num_parallel_calls: number of processes to use for loading
     :norm: value for normalizing images
-    :channels: channel depth to truncate images to
+    :num_channels: channel depth to truncate images to
     
     Returns images as a 3D float32 tensor
     """
@@ -43,7 +43,7 @@ def _image_file_dataset(fps, imshape=(256,256),
         f = f.numpy().decode("utf-8") 
         if ".tif" in f:
             return tiff_to_array(f, swapaxes=True, 
-                                 norm=norm, channels=channels)
+                                 norm=norm, num_channels=num_channels)
         else:
             img = Image.open(f)#.resize(imshape)
             return np.array(img).astype(np.float32)/norm
@@ -59,14 +59,14 @@ def _image_file_dataset(fps, imshape=(256,256),
     ds = ds.map(tf_img_load, num_parallel_calls)
     ds = ds.map(_resize, num_parallel_calls)
     
-    tensorshape = [imshape[0], imshape[1], channels]
+    tensorshape = [imshape[0], imshape[1], num_channels]
     ds = ds.map(lambda x: tf.reshape(x, tensorshape))
     return ds
 
 
 
 
-def dataset(fps, ys = None, imshape=(256,256), channels=3, 
+def dataset(fps, ys = None, imshape=(256,256), num_channels=3, 
                  num_parallel_calls=None, norm=255, batch_size=256,
                  augment=False, unlab_fps=None):
     """
@@ -75,7 +75,7 @@ def dataset(fps, ys = None, imshape=(256,256), channels=3,
     :fps: list of filepaths
     :ys: array of corresponding labels
     :imshape: constant shape to resize images to
-    :channels: channel depth of images
+    :num_channels: channel depth of images
     :batch_size: just what you think it is
     :augment: Boolean; whether to augment data
     :unlab_fps: list of filepaths (same length as fps) for semi-
@@ -87,13 +87,13 @@ def dataset(fps, ys = None, imshape=(256,256), channels=3,
         will be ((x, x_unlab), (y,y))
     :num_steps: number of steps (for passing to tf.keras.Model.fit())
     """
-    ds = _image_file_dataset(fps, imshape=imshape, channels=channels, 
+    ds = _image_file_dataset(fps, imshape=imshape, num_channels=num_channels, 
                       num_parallel_calls=num_parallel_calls, norm=norm)
     if augment:
         ds = ds.map(_augment, num_parallel_calls)
         
     if unlab_fps is not None:
-        u_ds = _image_file_dataset(unlab_fps, imshape=imshape, channels=channels, 
+        u_ds = _image_file_dataset(unlab_fps, imshape=imshape, num_channels=num_channels, 
                       num_parallel_calls=num_parallel_calls, norm=norm)
         if augment:
             u_ds = u_ds.map(_augment, num_parallel_calls)
@@ -116,7 +116,7 @@ def dataset(fps, ys = None, imshape=(256,256), channels=3,
 
 
 
-def stratified_training_dataset(fps, y, imshape=(256,256), channels=3, 
+def stratified_training_dataset(fps, y, imshape=(256,256), num_channels=3, 
                  num_parallel_calls=None, batch_size=256, mult=10,
                     augment=True, norm=255):
     """
@@ -126,7 +126,7 @@ def stratified_training_dataset(fps, y, imshape=(256,256), channels=3,
     :fps: list of strings containing paths to image files
     :y: array of cluster assignments- should have same length as fp
     :imshape: constant shape to resize images to
-    :channels: channel depth of images
+    :num_channels: channel depth of images
     :batch_size: just what you think it is
     :mult: not in paper; multiplication factor to increase
         number of steps/epoch. set to 1 to get paper algorithm
@@ -165,7 +165,7 @@ def stratified_training_dataset(fps, y, imshape=(256,256), channels=3,
     fps = np.array(fps)[sampled_indices]
     
     # NOW CREATE THE DATASET
-    im_ds = _image_file_dataset(fps, imshape=imshape, channels=channels, 
+    im_ds = _image_file_dataset(fps, imshape=imshape, num_channels=num_channels, 
                       num_parallel_calls=num_parallel_calls, norm=norm)
 
     if augment:

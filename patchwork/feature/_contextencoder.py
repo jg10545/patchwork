@@ -11,7 +11,7 @@ from patchwork._augment import _augment
 from patchwork._loaders import _image_file_dataset
 from patchwork._util import _load_img
 from patchwork._layers import ChannelWiseDense
-from patchwork.feature._ce_models import build_encoder, build_decoder, build_discriminator
+from patchwork.feature._models import build_encoder, build_decoder, build_discriminator
 
 
 def mask_generator(H,W,C):
@@ -67,7 +67,7 @@ def _build_context_encoder_dataset(filepaths, input_shape=(256,256,3), norm=255,
                                         output_shapes=input_shape)
     # now a Dataset to load images
     img_ds = _image_file_dataset(filepaths, imshape=input_shape[:2], 
-                                 channels=input_shape[2], norm=norm,
+                                 num_channels=input_shape[2], norm=norm,
                                  num_parallel_calls=num_parallel_calls)
     img_ds = img_ds.shuffle(shuffle_queue)
     img_ds = img_ds.map(_augment, num_parallel_calls=num_parallel_calls)
@@ -93,7 +93,7 @@ def _build_test_dataset(filepaths, input_shape=(256,256,3), norm=255):
     Returns
     img_arr, mask, masked_img, target_img
     """
-    img_arr = np.stack([_load_img(f, norm=norm, channels=input_shape[2], 
+    img_arr = np.stack([_load_img(f, norm=norm, num_channels=input_shape[2], 
                                   resize=input_shape[:2]) for f in filepaths])
     mask = _make_test_mask(*input_shape)
     mask = np.stack([mask for _ in range(img_arr.shape[0])])

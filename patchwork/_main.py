@@ -140,17 +140,11 @@ class PatchWork(object):
             files, ys = stratified_sample(self.df, num_samples)
             unlab_fps = None
             if self._semi_supervised:
-                #assert False, "not yet implemented"
-                # use find_unlabeled
-                #unlabeled_indices = find_unlabeled(self.df)
-                #unlabeled_sample = np.random.choice(unlabeled_indices,
-                #                                    replace=True,
-                #                                    size=num_samples)
                 unlabeled_filepaths = self.df.filepath.values[find_unlabeled(self.df)]
                 unlab_fps = np.random.choice(unlabeled_filepaths,
                                              replace=True, size=num_samples)
             return dataset(files, ys, imshape=self._imshape, 
-                       channels=self._num_channels,
+                       num_channels=self._num_channels,
                        num_parallel_calls=self._num_parallel_calls, 
                        batch_size=batch_size,
                        augment=True, unlab_fps=unlab_fps)

@@ -1,1 +1,3 @@
 from patchwork.feature._contextencoder import build_inpainting_network, train_context_encoder
+from patchwork.feature._models import BNAlexNetFCN
+from patchwork.feature._deepcluster import train_deepcluster
