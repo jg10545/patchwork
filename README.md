@@ -47,13 +47,19 @@ Labels are stored in a `pandas.DataFrame` containing:
 
 ### Context Encoder
 
+The main thing this implementation is missing from the inpainting setup in Pathak et al's paper is the amplified loss function in the border region between masked and unmasked areas.
+
 ```{python}
+import tensorflow as tf
+import patchwork
 tf.enable_eager_execution()
+
+
 # load paths to train and test files
 trainfiles = [x.strip() for x in open("mytrainfiles.txt").readlines()]
 testfiles = [x.strip() for x in open("mytestfiles.txt").readlines()]
 
-# build inpainter, encoder, and discriminator networks
+# build inpainter, encoder, and discriminator networks (as Keras models)
 inpaint, encode, disc = patchwork.feature.build_inpainting_network(input_shape=(256,256,3))
 # train
 inpaint,disc = patchwork.feature.train_context_encoder(trainfiles,
@@ -66,9 +72,50 @@ inpaint,disc = patchwork.feature.train_context_encoder(trainfiles,
                                         num_parallel_jobs=6)
 ```
 
+If you provide a `logdir` argument, tensorboard logs will be stored for the loss function on `testfiles` as well as visualization on inpainting:
+
+![alt text](docs/inpainting.png)
+
+
+
 ### DeepCluster
 
-*coming soon*
+
+```{python}
+import tensorflow as tf
+import patchwork
+
+# load paths to train files
+trainfiles = [x.strip() for x in open("mytrainfiles.txt").readlines()]
+
+# initialize a feature extractor
+fcn = patchwork.feature.BNAlexNetFCN()
+
+# train
+fcn = patchwork.feature.train_deepcluster(trainfiles, fcn, 
+                                            "logs_deepclust/",
+                                            epochs=50,
+                                             num_parallel_calls=6,
+                                             pca_dim=64,
+                                             k=100)
+```
+
+### Visualizing learned features
+                                            
+(not yet fully tested) a quick macro for throwing a couple hundred image embeddings into the tensorboard projector:
+
+```{python}
+import tensorflow as tf
+import patchwork
+
+# load a note-huge set of images to test
+testfiles = [x.strip() for x in open("mytestfiles.txt").readlines()]
+# load your saved feature extractor                                            
+fcn = tf.keras.models.load_model("deepcluster_ucmerced_BNAlexNetFCN.h5")                                        
+patchwork.viz.build_tensorboard_projections(fcn, testfiles, "embed_logs/")
+```
+                                            
+![alt text](docs/embedding.png)
                                         
 ## Interactive Labeling and Fine-Tuning
 
