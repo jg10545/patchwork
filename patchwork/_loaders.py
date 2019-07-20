@@ -11,17 +11,6 @@ from patchwork._util import tiff_to_array
 
 from patchwork._augment import _augment
 
-def DEPRECATED_augment(im):
-    im = tf.image.random_brightness(im, 0.1)
-    im = tf.image.random_contrast(im, 0.5, 1.2)
-    im = tf.image.random_flip_left_right(im)
-    im = tf.image.random_flip_up_down(im)
-    # some augmentation can put values outside unit interval
-    im = tf.minimum(im, 1)
-    im = tf.maximum(im, 0)
-    return im
-
-
 
 def _image_file_dataset(fps, imshape=(256,256), 
                  num_parallel_calls=None, norm=255,
