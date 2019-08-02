@@ -48,3 +48,10 @@ def test_load_img_on_png_with_resize(test_png_path):
     assert isinstance(img_arr, np.ndarray)
     assert len(img_arr.shape) == 3
     assert img_arr.shape == (71,71,3)    
+    
+    
+def test_load_img_on_geotif(test_geotif_path):
+    img_arr = _load_img(test_geotif_path, num_channels=4, norm=1)
+    assert isinstance(img_arr, np.ndarray)
+    assert len(img_arr.shape) == 3
+    assert img_arr.shape[2] == 4
