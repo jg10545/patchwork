@@ -27,6 +27,14 @@ def test_tiff_to_array_fixed_channels(test_tif_path):
     assert img_arr.shape[2] == 2
     
     
+def test_geotiff_to_array_fixed_channels(test_geotif_path):
+    img_arr = tiff_to_array(test_geotif_path, num_channels=4, norm=1)
+    
+    assert isinstance(img_arr, np.ndarray)
+    assert len(img_arr.shape) == 3
+    assert img_arr.shape[2] == 4
+    
+    
 def test_load_img_on_png(test_png_path):
     img_arr = _load_img(test_png_path)
     assert isinstance(img_arr, np.ndarray)
