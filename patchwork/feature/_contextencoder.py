@@ -24,7 +24,7 @@ def mask_generator(H,W,C):
     dh = int(H/2)
     dw = int(W/2)
     while True:
-        mask = np.zeros((H,W,C), dtype=bool)
+        mask = np.zeros((H,W,C), dtype=np.float32)
         xmin = np.random.randint(0, dw)
         ymin = np.random.randint(0, dh)
         xmax = xmin + dw
@@ -36,8 +36,10 @@ def _make_test_mask(H,W,C):
     """
     Generate a mask for a (H,W,C) image that crops out the center fourth.
     """
-    mask = np.zeros((H,W,C), dtype=bool)
-    mask[int(0.25*H):int(0.75*H), int(0.25*W):int(0.75*W),:] = True
+    #mask = np.zeros((H,W,C), dtype=bool)
+    mask = np.zeros((H,W,C), dtype=np.float32)
+    #mask[int(0.25*H):int(0.75*H), int(0.25*W):int(0.75*W),:] = True
+    mask[int(0.25*H):int(0.75*H), int(0.25*W):int(0.75*W),:] = 1
     return mask
 
 def maskinator(img, mask):
@@ -64,7 +66,8 @@ def _build_context_encoder_dataset(filepaths, input_shape=(256,256,3), norm=255,
     def _gen():
         return mask_generator(*input_shape)
     mask_ds = tf.data.Dataset.from_generator(_gen,
-                                        output_types=(tf.bool),
+                                        #output_types=(tf.bool),
+                                        output_types=(tf.float32),
                                         output_shapes=input_shape)
     # now a Dataset to load images
     img_ds = _image_file_dataset(filepaths, imshape=input_shape[:2], 
@@ -206,12 +209,12 @@ def inpainter_training_step(opt, inpainter, discriminator, img, mask, recon_weig
         inpainted_img = inpainter(masked_img)
         # compute difference between inpainted image and original
         reconstruction_residual = mask*(img - inpainted_img)
-        reconstructed_loss = K.sum(K.square(reconstruction_residual))
+        reconstructed_loss = K.mean(K.square(reconstruction_residual))
         # compute adversarial loss
         disc_output_on_inpainted = discriminator(inpainted_img)
         #disc_loss_on_inpainted = K.sum(K.log(_stabilize(1-disc_output_on_inpainted)))
         # is the above line correct?
-        disc_loss_on_inpainted = K.sum(K.log(_stabilize(disc_output_on_inpainted)))
+        disc_loss_on_inpainted = K.mean(K.log(_stabilize(disc_output_on_inpainted)))
         # total loss
         total_loss = recon_weight*reconstructed_loss + adv_weight*disc_loss_on_inpainted
     
@@ -302,7 +305,7 @@ def train_context_encoder(trainfiles, testfiles=None, inpainter=None,
         summary_writer = tf.contrib.summary.create_file_writer(logdir, 
                                                        flush_millis=10000)
         summary_writer.set_as_default()
-        global_step = tf.train.get_or_create_global_step()
+        global_step = tf.compat.v1.train.get_or_create_global_step()
 
     else:
         test = False
@@ -380,7 +383,7 @@ def train_context_encoder(trainfiles, testfiles=None, inpainter=None,
                     tf.contrib.summary.image("img_%i"%j, 
                                      np.expand_dims(predviz[j,:,:,:],0), step=global_step)
         global_step.assign_add(1)
-    return inpainter, discriminator
+    return encoder, inpainter, discriminator
 
 
 

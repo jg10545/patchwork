@@ -14,16 +14,16 @@ def _random_rotate(im):
 def _random_crop(im):
     imshape = im.get_shape().as_list()
     im = tf.image.crop_and_resize(tf.expand_dims(im, 0),
-                        [[tf.random_uniform((), minval=0, maxval=0.15),
-                          tf.random_uniform((), minval=0, maxval=0.15),
-                          tf.random_uniform((), minval=0.85, maxval=1),
-                          tf.random_uniform((), minval=0.85, maxval=1)]],
+                        [[tf.random.uniform((), minval=0, maxval=0.15),
+                          tf.random.uniform((), minval=0, maxval=0.15),
+                          tf.random.uniform((), minval=0.85, maxval=1),
+                          tf.random.uniform((), minval=0.85, maxval=1)]],
                         [0],
                         imshape[:2])
     return tf.squeeze(im, 0)
     
 def _random_distort(im):
-    theta2 = tf.random_uniform((), minval=-0.1, maxval=0.1)
+    theta2 = tf.random.uniform((), minval=-0.1, maxval=0.1)
     trans = [1, tf.sin(theta2), 0, 0, tf.cos(theta2), 0, 0, 0]
     return tf.contrib.image.transform(im, transforms=trans)
     
