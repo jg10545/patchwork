@@ -209,7 +209,7 @@ def inpainter_training_step(opt, inpainter, discriminator, img, mask, recon_weig
         inpainted_img = inpainter(masked_img)
         # compute difference between inpainted image and original
         reconstruction_residual = mask*(img - inpainted_img)
-        reconstructed_loss = K.mean(K.square(reconstruction_residual))
+        reconstructed_loss = K.mean(K.abs(reconstruction_residual))
         # compute adversarial loss
         disc_output_on_inpainted = discriminator(inpainted_img)
         #disc_loss_on_inpainted = K.sum(K.log(_stabilize(1-disc_output_on_inpainted)))
@@ -369,7 +369,7 @@ def train_context_encoder(trainfiles, testfiles=None, inpainter=None,
             
             with tf.contrib.summary.always_record_summaries():
                 tf.contrib.summary.scalar("total_loss", inpaint_losses[2], step=global_step)
-                tf.contrib.summary.scalar("reconstruction_l2_loss", 
+                tf.contrib.summary.scalar("reconstruction_l1_loss", 
                                           inpaint_losses[0], step=global_step)
                 tf.contrib.summary.scalar("discriminator_loss", 
                                           inpaint_losses[1], step=global_step)
