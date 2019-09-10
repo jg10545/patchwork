@@ -214,7 +214,7 @@ def inpainter_training_step(opt, inpainter, discriminator, img, mask, recon_weig
         disc_output_on_inpainted = discriminator(inpainted_img)
         #disc_loss_on_inpainted = K.sum(K.log(_stabilize(1-disc_output_on_inpainted)))
         # is the above line correct?
-        disc_loss_on_inpainted = K.mean(K.log(_stabilize(disc_output_on_inpainted)))
+        disc_loss_on_inpainted = -1*K.mean(K.log(_stabilize(disc_output_on_inpainted)))
         # total loss
         total_loss = recon_weight*reconstructed_loss + adv_weight*disc_loss_on_inpainted
     
@@ -252,7 +252,7 @@ def discriminator_training_step(opt, inpainter, discriminator, img, mask, clip_n
         disc_output_on_raw = discriminator(img) # try to get this close to zero
         disc_output_on_inpainted = discriminator(inpainted_img) # try to get this close to one
         
-        disc_loss = K.sum(K.log(_stabilize(disc_output_on_raw))) - \
+        disc_loss = -1*K.sum(K.log(_stabilize(disc_output_on_raw))) - \
                         K.sum(K.log(_stabilize(1-disc_output_on_inpainted)))
     
     variables = discriminator.trainable_variables
