@@ -2,6 +2,9 @@
 import os
 import pytest
 
+import tensorflow as tf
+tf.enable_eager_execution()
+
 
 @pytest.fixture()
 def test_png_path():
