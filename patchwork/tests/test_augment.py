@@ -11,34 +11,26 @@ test_img_tensor = tf.constant(test_img, dtype=tf.float32)
 
 def test_random_rotate():
     rotated = _random_rotate(test_img_tensor)
-    with tf.Session() as sess:
-        rotated_computed = sess.run(rotated)
         
     assert isinstance(rotated, tf.Tensor)
-    assert rotated_computed.shape == test_shape
+    assert rotated.numpy().shape == test_shape
     
     
 def test_random_crop():
     cropped = _random_crop(test_img_tensor)
-    with tf.Session() as sess:
-        cropped_computed = sess.run(cropped)
         
     assert isinstance(cropped, tf.Tensor)
-    assert cropped_computed.shape == test_shape
+    assert cropped.numpy().shape == test_shape
     
     
 def test_random_distort():
     distorted = _random_distort(test_img_tensor)
-    with tf.Session() as sess:
-        distorted_computed = sess.run(distorted)
         
     assert isinstance(distorted, tf.Tensor)
-    assert distorted_computed.shape == test_shape
+    assert distorted.numpy().shape == test_shape
     
 def test_random_augment():
     augmented = _augment(test_img_tensor)
-    with tf.Session() as sess:
-        augmented_computed = sess.run(augmented)
         
     assert isinstance(augmented, tf.Tensor)
-    assert augmented_computed.shape == test_shape
+    assert augmented.numpy().shape == test_shape
