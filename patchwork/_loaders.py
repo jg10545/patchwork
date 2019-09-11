@@ -39,7 +39,7 @@ def _image_file_dataset(fps, imshape=(256,256),
         
     def _resize(img):
         img = tf.expand_dims(img, 0)
-        img = tf.image.resize_bicubic(img, imshape)
+        img = tf.compat.v1.image.resize_bicubic(img, imshape)
         img = tf.squeeze(img, 0)
         return img
     
