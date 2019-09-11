@@ -59,13 +59,9 @@ tf.enable_eager_execution()
 trainfiles = [x.strip() for x in open("mytrainfiles.txt").readlines()]
 testfiles = [x.strip() for x in open("mytestfiles.txt").readlines()]
 
-# build inpainter, encoder, and discriminator networks (as Keras models)
-inpaint, encode, disc = patchwork.feature.build_inpainting_network(input_shape=(256,256,3))
-# train
-inpaint,disc = patchwork.feature.train_context_encoder(trainfiles,
+# call training function (it will initialize models if none provided)
+encoder, inpainter, discriminator = patchwork.feature.train_context_encoder(trainfiles,
                                         testfiles=testfiles,
-                                        inpainter=inpaint,
-                                        discriminator=disc,
                                         num_epochs=1000,
                                         logdir="logs/",
                                         batch_size=64,
