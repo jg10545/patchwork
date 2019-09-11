@@ -36,9 +36,7 @@ def _make_test_mask(H,W,C):
     """
     Generate a mask for a (H,W,C) image that crops out the center fourth.
     """
-    #mask = np.zeros((H,W,C), dtype=bool)
     mask = np.zeros((H,W,C), dtype=np.float32)
-    #mask[int(0.25*H):int(0.75*H), int(0.25*W):int(0.75*W),:] = True
     mask[int(0.25*H):int(0.75*H), int(0.25*W):int(0.75*W),:] = 1
     return mask
 
@@ -130,47 +128,19 @@ def build_inpainting_network(input_shape=(256,256,3), disc_loss=0.001,
 
     inpt = tf.keras.layers.Input(input_shape, name="inpt")
     encoded = encoder(inpt)
-    #inpt_mask = tf.keras.layers.Input(input_shape, name="inpt_mask")
     # Pathak's structure runs images through the encoder, then a dense
     # channel-wise layer, then dropout and a 1x1 Convolution before decoding.
     dense = ChannelWiseDense()(encoded)
     dropout = tf.keras.layers.Dropout(0.5)(dense)
     conv1d = tf.keras.layers.Conv2D(512,1)(dropout)
     decoded = decoder(conv1d)
-    #encoded = encoder(inpt)
-    #dense = ChannelWiseDense()(encoded)
-    #dropout = tf.keras.layers.Dropout(0.5)(dense)
-    #conv1d = tf.keras.layers.Conv2D(512,1)(dropout)
-    #decoded = decoder(conv1d)
-    # create a masked output to compare with ground truth (which should
-    # already have it's unmasked areas set to 0)
-    #masked_decoded = tf.keras.layers.Multiply(name="masked_decoded")(
-    #                                [inpt_mask, decoded])
     
     # NOW FOR THE ADVERSARIAL PART
     if discriminator is None:
         discriminator = build_discriminator(input_shape[-1])
-    #discriminator.compile(tf.keras.optimizers.Adam(0.1*learn_rate), 
-    #                      loss=tf.keras.losses.binary_crossentropy)
-    #discriminator.trainable = False
-    #disc_pred = discriminator(decoded)
-    
-    #inpt = tf.keras.layers.Input((256,256,3))
-    #encoded = encoder(inpt)
-    #dense = ChannelWiseDense()(encoded)
-    #dropout = tf.keras.layers.Dropout(0.5)(dense)
-    #conv1d = tf.keras.layers.Conv2D(512,1)(dropout)
-    #decoded = decoder(conv1d)
-    inpainter = tf.keras.Model(inpt, decoded)
-    
 
-    #inpainter = tf.keras.Model([inpt, inpt_mask], 
-    #                           [decoded, masked_decoded, disc_pred])
-    #inpainter.compile(tf.keras.optimizers.Adam(learn_rate),
-    #                  loss={"masked_decoded":tf.keras.losses.mse,
-    #                        "discriminator":tf.keras.losses.binary_crossentropy},
-    #                        loss_weights={"masked_decoded":1-disc_loss, 
-    #                                      "discriminator":disc_loss})
+    inpainter = tf.keras.Model(inpt, decoded)
+
     return inpainter, encoder, discriminator
 
 
@@ -241,7 +211,7 @@ def discriminator_training_step(opt, inpainter, discriminator, img, mask, clip_n
     :mask: batch of masks (1 in places to be removed, 0 elsewhere)
     :clip_norm: if above 0, clip gradients to this norm
     
-    Returns
+    Returns discriminator loss
     """
     # inpainter update
     masked_img = (1-mask)*img
@@ -281,6 +251,7 @@ def train_context_encoder(trainfiles, testfiles=None, inpainter=None,
     :trainfiles: list of paths to training files
     :testfiles: list of paths to test files
     :inpainter, discriminator: if not specified, will be auto-generated
+    :num_epochs: how many training epochs to run for
     """
     inpaint_opt = tf.keras.optimizers.Adam(lr)
     disc_opt = tf.keras.optimizers.Adam(0.1*lr)
@@ -315,18 +286,7 @@ def train_context_encoder(trainfiles, testfiles=None, inpainter=None,
     for e in range(num_epochs):
         # for each step in the epoch:
         for img, mask in train_ds:
-            # prepare batch inputs
-            #masked_img = masked_img.numpy()
-            #img = img.numpy()
-            #mask = mask.numpy()
-            #target_img = target_img.numpy()
-            # effective batch size
-            #bs = img.shape[0]
-            #ce_labels = np.ones(bs)
-            #disc_labels = np.concatenate([
-            #        np.zeros(bs),
-            #        np.ones(bs)
-            #])
+            # alternatve between inpainter and discriminator training
             if inpaint_step:
                 inpaint_losses = inpainter_training_step(inpaint_opt, inpainter, 
                                     discriminator, 
@@ -337,25 +297,12 @@ def train_context_encoder(trainfiles, testfiles=None, inpainter=None,
                 disc_loss = discriminator_training_step(disc_opt, inpainter, discriminator, 
                                                 img, mask, clip_norm)
                 inpaint_step = True
-            # run training step on inpainting network
-            #inpainter.train_on_batch((masked_img, mask), 
-            #                     (target_img, ce_labels))
-            # generate reconstructed images
-            #reconstructed_images = inpainter.predict((masked_img, mask))
-            # make discriminator batch
-            #disc_batch_x = np.concatenate([reconstructed_images[0], img], 0)
-            # run discriminator training step
-            #discriminator.train_on_batch(disc_batch_x, disc_labels)
     
         # at the end of the epoch, evaluate on test data.
         if test:
             
             test_ims, test_mask
             
-            # evaluation- list of 3 values: ['loss', 'decoder_loss', 'discriminator_loss']
-            #test_results = inpainter.evaluate(test_masked_ims, test_ims)
-            # predict on the first few
-            #preds = inpainter.predict(test_masked_ims[:num_test_images])
             preds = inpainter(test_masked_ims)
             # see how the discriminator does on them
             disc_outputs_on_raw = discriminator(test_ims)
@@ -383,7 +330,7 @@ def train_context_encoder(trainfiles, testfiles=None, inpainter=None,
                     tf.contrib.summary.image("img_%i"%j, 
                                      np.expand_dims(predviz[j,:,:,:],0), step=global_step)
         global_step.assign_add(1)
-    return encoder, inpainter, discriminator
+    return enc, inpainter, discriminator
 
 
 
