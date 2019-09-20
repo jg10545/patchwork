@@ -176,7 +176,7 @@ def inpainter_training_step(opt, inpainter, discriminator, img, mask, recon_weig
     masked_img = (1-mask)*img
     with tf.GradientTape() as tape:
         # inpaint image
-        inpainted_img = inpainter(masked_img)
+        inpainted_img = inpainter(masked_img)[:,:120,:120,:]
         # compute difference between inpainted image and original
         reconstruction_residual = mask*(img - inpainted_img)
         reconstructed_loss = K.mean(K.abs(reconstruction_residual))
