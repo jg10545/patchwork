@@ -23,7 +23,7 @@ def _load_to_fig(f, figsize=(5,5), lw=5):
     :f: string; path to file
     """
     if ".tif" in f:
-        im = tiff_to_array(f, channels=3)
+        im = tiff_to_array(f, num_channels=3)
     else:
         im = Image.open(f)
     
