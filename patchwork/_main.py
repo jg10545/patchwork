@@ -167,7 +167,7 @@ class PatchWork(object):
     
     def _pred_dataset(self, batch_size=32):
         return dataset(self.df["filepath"].values, imshape=self._imshape, 
-                       channels=self._num_channels,
+                       num_channels=self._num_channels,
                        num_parallel_calls=self._num_parallel_calls, 
                        batch_size=batch_size,
                        augment=False)
