@@ -18,12 +18,13 @@ from patchwork._sample import find_subset
 from patchwork._util import shannon_entropy, tiff_to_array
 
 
-def _load_to_fig(f, figsize=(5,5), lw=5):
+def _load_to_fig(f, figsize=(5,5), lw=5, norm=255):
     """
     :f: string; path to file
     """
+    print("DEPRECATED")
     if ".tif" in f:
-        im = tiff_to_array(f, num_channels=3)
+        im = tiff_to_array(f, num_channels=3, norm=norm)
     else:
         im = Image.open(f)
     
@@ -44,6 +45,34 @@ def _load_to_fig(f, figsize=(5,5), lw=5):
     return fig1, fig2
 
 
+def _build_fig(arr, figsize=(5,5), lw=5):
+    """
+    Build matplotlib figure for displaying an iage
+    
+    :arr: numpy array containing normalized image
+    """
+    # imshow() should input either a (H,W) or (H,W,3) array
+    if arr.shape[-1] < 3:
+        arr = arr[:,:,0]
+    else:
+        arr = arr[:,:,:3]
+    
+    fig1, ax1 = plt.subplots(figsize=figsize)
+    ax1.imshow(arr)
+    ax1.axis("off")
+    plt.close(fig1)
+    
+    fig2, ax2 = plt.subplots(figsize=figsize)
+    ax2.imshow(arr)
+    ax2.axis("off")
+    a = ax2.axis()
+    rect = Rectangle((lw,lw),a[1]-2*lw,a[2]-2*lw,
+                     linewidth=lw,edgecolor='r',facecolor='none')
+    ax2.add_patch(rect)
+    plt.close(fig2)
+    
+    return fig1, fig2
+
 
 class SingleImgDisplayer(object):
     """
@@ -60,11 +89,11 @@ class SingleImgDisplayer(object):
         self.selected = False
         self.panel = pn.pane.Matplotlib(self._fig_unselected)#
         
-    def load(self, filepath):
+    def load(self, arr):
         """
-        
+        Load a numpy array into matplotlib figures
         """
-        self._fig_unselected, self._fig_selected = _load_to_fig(filepath)
+        self._fig_unselected, self._fig_selected = _build_fig(arr)
         self.panel.object = self._fig_unselected
         
     def select(self):
@@ -133,9 +162,12 @@ class ButtonPanel(object):
         self.panel = pn.Row(self._figpanel, pn.Spacer(width=50), self._button_panel)
         self._indices = None
         
-    def load(self, indices, select_first=True):
+    def load(self, indices, load_func, select_first=True):
         """
         Input an array of indices and load them
+        
+        :indices: array of indices to load from dataframe
+        :load_func: function to load a file from a path to an array
         """
         assert len(indices) <= self._num_images, "Too many indices"
         if self._indices is not None:
@@ -143,7 +175,7 @@ class ButtonPanel(object):
         self._indices = indices
         filepaths = self._df["filepath"].values[indices]
         for e, f in enumerate(filepaths):
-            self._single_img_patches[e].load(f)
+            self._single_img_patches[e].load(load_func(f))
             
         if select_first:
             self.select(0)
@@ -248,13 +280,13 @@ class Labeler():
     Class to manage displaying images and gathering user feedback
     """
     
-    def __init__(self, classes, df, pred_df, dim=3, outfile=None):
+    def __init__(self, classes, df, pred_df, load_func, dim=3, outfile=None):
         """
         :classes: list of strings; class labels
         :df: DataFrame containing filepaths and class labels
         :pred_df: dataframe of current model predictions
+        :load_func:
         :dim: dimension of the image grid to display
-        :imsize: NOT YET CONNECTED
         :outfile: path to save labels to
         """
         self._classes = classes
@@ -263,6 +295,7 @@ class Labeler():
         self._pred_df = pred_df
         self._outfile = outfile
         self._buttonpanel = ButtonPanel(classes, df, dim)
+        self._load_func = load_func
              
         self._build_select_controls()
 
@@ -319,7 +352,7 @@ class Labeler():
         subset_by = self._subset_by.value
         indices = pick_indices(self._df, self._pred_df, self._dim**2, 
                                sort_by, subset_by)
-        self._buttonpanel.load(indices)
+        self._buttonpanel.load(indices, self._load_func)
         self._buttonpanel.label_counts.object = _generate_label_summary(self._df, self._classes)
         if self._outfile is not None:
             self._df.to_csv(self._outfile, index=False)
