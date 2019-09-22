@@ -36,7 +36,7 @@ def _make_sprite(imfiles, norm=1, num_channels=3, resize=(50,50)):
         col = i // gridsize
         row = i % gridsize
         output[resize[0]*col:resize[0]*(col+1), 
-               resize[1]*row:resize[1]*(row+1),:] = sprite_arr[i,:,:,:]
+               resize[1]*row:resize[1]*(row+1),:] = sprite_arr[i,:,:,:3]
     img = Image.fromarray(output)
     img = img.resize((resize[0]*gridsize, resize[1]*gridsize))
     

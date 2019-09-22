@@ -10,6 +10,7 @@ from patchwork._trainmanager import TrainManager
 from patchwork._sample import stratified_sample, find_unlabeled
 from patchwork._loaders import dataset
 from patchwork._losses import entropy_loss, masked_binary_crossentropy
+from patchwork._util import _load_img
 
 prompt_txt = "Enter comma-delimited list of class-1 patches:"
 EPSILON = 1e-5
@@ -40,7 +41,7 @@ def sample_batch_indices_and_labels(df, classes, batch_size):
 class PatchWork(object):
     
     def __init__(self, df, feature_vecs=None, feature_extractor=None, classes=[],
-                 dim=3, imshape=(256,256), num_channels=3,
+                 dim=3, imshape=(256,256), num_channels=3, norm=255,
                  num_parallel_calls=2, outfile=None):
         """
         Initialize either with a set of feature vectors or a feature extractor
@@ -53,6 +54,7 @@ class PatchWork(object):
         :dim: grid dimension for labeler- show a (dim x dim) square of images
         :imshape: pixel size to reshape image to
         :num_channels: number of channels per image
+        :norm:
         :num_parallel_calls: parallel processes for image loading
         :outfile: file path to save labels to during annotation
         """
@@ -66,6 +68,7 @@ class PatchWork(object):
             if feature_extractor.trainable == True:
                 warnings.warn("Feature extractor wasn't frozen- was this on purpose?")
         self._imshape = imshape
+        self._norm = norm
         self._num_channels = num_channels
         self._num_parallel_calls = num_parallel_calls
         self._semi_supervised = False
@@ -85,7 +88,7 @@ class PatchWork(object):
         
         # BUILD THE GUI
         # initialize Labeler object
-        self.labeler = Labeler(self.classes, self.df, self.pred_df, 
+        self.labeler = Labeler(self.classes, self.df, self.pred_df, self._load_img,
                                dim=dim, outfile=outfile)
         # initialize model picker
         if self.feature_vecs is not None:
@@ -164,7 +167,7 @@ class PatchWork(object):
     
     def _pred_dataset(self, batch_size=32):
         return dataset(self.df["filepath"].values, imshape=self._imshape, 
-                       channels=self._num_channels,
+                       num_channels=self._num_channels,
                        num_parallel_calls=self._num_parallel_calls, 
                        batch_size=batch_size,
                        augment=False)
@@ -243,6 +246,14 @@ class PatchWork(object):
     def _stratified_sample(self, N=None):
         return stratified_sample(self.df, N)
     
+    def _load_img(self, f):
+        """
+        Wrapper for patchwork._util._load_img
+        
+        :f: string; path to file
+        """
+        return _load_img(f, norm=self._norm, num_channels=self._num_channels, 
+                resize=self._imshape)
     
     
     
