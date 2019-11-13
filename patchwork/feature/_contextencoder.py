@@ -7,6 +7,7 @@ import numpy as np
 import tensorflow as tf
 import tensorflow.contrib
 import tensorflow.keras.backend as K
+import os
 
 from patchwork._augment import _augment
 from patchwork._loaders import _image_file_dataset
@@ -154,7 +155,7 @@ def _stabilize(x):
 
 
 @tf.function
-def inpainter_training_step(opt, inpainter, discriminator, img, mask, recon_weight=1, adv_weight=1e-3, clip_norm=0):
+def inpainter_training_step(opt, inpainter, discriminator, img, mask, recon_weight=1, adv_weight=1e-3, imshape=(256,256)):
     """
     Tensorflow function for updating inpainter weights
     
@@ -165,7 +166,7 @@ def inpainter_training_step(opt, inpainter, discriminator, img, mask, recon_weig
     :mask: batch of masks (1 in places to be removed, 0 elsewhere)
     :recon_weight: squared-error reconstruction loss weight
     :adv_weight: discriminator weight
-    :clip_norm: if above 0, clip gradients to this norm
+    :imshape:
     
     Returns
     :reconstructed_loss: L2 norm loss for reconstruction
@@ -176,13 +177,13 @@ def inpainter_training_step(opt, inpainter, discriminator, img, mask, recon_weig
     masked_img = (1-mask)*img
     with tf.GradientTape() as tape:
         # inpaint image
-        inpainted_img = inpainter(masked_img)[:,:120,:120,:]
+        inpainted_img = inpainter(masked_img)[:,:imshape[0],:imshape[1],:]
         # compute difference between inpainted image and original
         reconstruction_residual = mask*(img - inpainted_img)
         reconstructed_loss = K.mean(K.abs(reconstruction_residual))
         # compute adversarial loss
         disc_output_on_inpainted = discriminator(inpainted_img)
-        #disc_loss_on_inpainted = K.sum(K.log(_stabilize(1-disc_output_on_inpainted)))
+
         # is the above line correct?
         disc_loss_on_inpainted = -1*K.mean(K.log(_stabilize(disc_output_on_inpainted)))
         # total loss
@@ -190,9 +191,6 @@ def inpainter_training_step(opt, inpainter, discriminator, img, mask, recon_weig
     
     variables = inpainter.trainable_variables
     gradients = tape.gradient(total_loss, variables)
-
-    if clip_norm > 0:
-        gradients = [tf.clip_by_norm(g, clip_norm) for g in gradients]
     
     opt.apply_gradients(zip(gradients, variables))
     
@@ -244,7 +242,8 @@ def train_context_encoder(trainfiles, testfiles=None, inpainter=None,
                           num_test_images=10, logdir=None, 
                           input_shape=(256,256,3), norm=255,
                           num_parallel_calls=4, batch_size=32,
-                         recon_weight=1, adv_weight=1e-3, clip_norm=0, lr=1e-4):
+                         recon_weight=1, adv_weight=1e-3, clip_norm=0, lr=1e-4,
+                         shuffle_queue=1000):
     """
     Train your very own context encoder
     
@@ -263,7 +262,7 @@ def train_context_encoder(trainfiles, testfiles=None, inpainter=None,
     assert tf.executing_eagerly(), "eager execution needs to be enabled"
     # build training generator
     train_ds = _build_context_encoder_dataset(trainfiles, input_shape=input_shape, 
-                                norm=norm, shuffle_queue=1000, 
+                                norm=norm, shuffle_queue=shuffle_queue, 
                                 num_parallel_calls=num_parallel_calls,
                                 batch_size=batch_size, prefetch=True)
     
@@ -291,7 +290,7 @@ def train_context_encoder(trainfiles, testfiles=None, inpainter=None,
                 inpaint_losses = inpainter_training_step(inpaint_opt, inpainter, 
                                     discriminator, 
                                     img, mask, 
-                                    recon_weight, adv_weight, clip_norm)
+                                    recon_weight, adv_weight, input_shape)
                 inpaint_step = False
             else:
                 disc_loss = discriminator_training_step(disc_opt, inpainter, discriminator, 
@@ -329,6 +328,9 @@ def train_context_encoder(trainfiles, testfiles=None, inpainter=None,
                 for j in range(num_test_images):
                     tf.contrib.summary.image("img_%i"%j, 
                                      np.expand_dims(predviz[j,:,:,:],0), step=global_step)
+            enc.save(os.path.join(logdir, "encoder.h5"))
+            inpainter.save(os.path.join(logdir, "inpainter.h5"))
+            discriminator.save(os.path.join(logdir, "discriminator.h5"))
         global_step.assign_add(1)
     return enc, inpainter, discriminator
 

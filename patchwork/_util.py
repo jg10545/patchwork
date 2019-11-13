@@ -60,6 +60,6 @@ def _load_img(f, norm=255, num_channels=3, resize=None):
         
     if resize is not None and num_channels ==3:
         img_arr = np.array(Image.fromarray(
-                (255*np.swapaxes(img_arr, 0,1)).astype(np.uint8)).resize(resize)
+                (255*np.swapaxes(img_arr, 0,1)).astype(np.uint8)).resize((resize[1], resize[0]))
                     ).astype(np.float32)/norm
     return img_arr.astype(np.float32)  # if norm is large, python recasts the array as float64
