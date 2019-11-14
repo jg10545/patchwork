@@ -95,8 +95,8 @@ def _build_test_dataset(filepaths, input_shape=(256,256,3), norm=255):
     Returns
     img_arr, mask
     """
-    img_arr = np.stack([_load_img(f, norm=norm, num_channels=input_shape[2], 
-                                  resize=input_shape[:2]) for f in filepaths])
+    img_arr = np.stack([_load_img(f, norm=norm, num_channels=input_shape[2]) 
+                        for f in filepaths])
     mask = _make_test_mask(*input_shape)
     mask = np.stack([mask for _ in range(img_arr.shape[0])])
 
@@ -303,6 +303,7 @@ def train_context_encoder(trainfiles, testfiles=None, inpainter=None,
             test_ims, test_mask
             
             preds = inpainter(test_masked_ims)
+            preds = preds[:,:input_shape[0], :input_shape[1],:]
             # see how the discriminator does on them
             disc_outputs_on_raw = discriminator(test_ims)
             disc_outputs_on_inpaint = discriminator(preds)
