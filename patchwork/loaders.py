@@ -14,7 +14,7 @@ from patchwork._augment import _augment
 
 def _image_file_dataset(fps, imshape=(256,256), 
                  num_parallel_calls=None, norm=255,
-                 num_channels=3):
+                 num_channels=3, shuffle=False):
     """
     Basic tool to load images into a tf.data.Dataset using
     PIL.Image or gdal instead of the tensorflow decode functions
@@ -24,10 +24,16 @@ def _image_file_dataset(fps, imshape=(256,256),
     :num_parallel_calls: number of processes to use for loading
     :norm: value for normalizing images
     :num_channels: channel depth to truncate images to
+    :shuffle: whether to shuffle the dataset
     
     Returns images as a 3D float32 tensor
     """
     ds = tf.data.Dataset.from_tensor_slices(fps)
+    # do the shuffling before loading so we can have a big queue without
+    # taking up much memory
+    if shuffle:
+        ds = ds.shuffle(len(fps))
+        
     def _load_img(f):
         f = f.numpy().decode("utf-8") 
         if ".tif" in f:
@@ -57,7 +63,7 @@ def _image_file_dataset(fps, imshape=(256,256),
 
 def dataset(fps, ys = None, imshape=(256,256), num_channels=3, 
                  num_parallel_calls=None, norm=255, batch_size=256,
-                 augment=False, unlab_fps=None):
+                 augment=False, unlab_fps=None, shuffle=False):
     """
     return a tf dataset that iterates over a list of images once
     
@@ -69,6 +75,7 @@ def dataset(fps, ys = None, imshape=(256,256), num_channels=3,
     :augment: Boolean; whether to augment data
     :unlab_fps: list of filepaths (same length as fps) for semi-
         supervised learning
+    :shuffle: whether to shuffle the dataset
     
     Returns
     :ds: tf.data.Dataset object to iterate over data. The dataset returns
@@ -77,7 +84,8 @@ def dataset(fps, ys = None, imshape=(256,256), num_channels=3,
     :num_steps: number of steps (for passing to tf.keras.Model.fit())
     """
     ds = _image_file_dataset(fps, imshape=imshape, num_channels=num_channels, 
-                      num_parallel_calls=num_parallel_calls, norm=norm)
+                      num_parallel_calls=num_parallel_calls, norm=norm,
+                      shuffle=shuffle)
     if augment:
         ds = ds.map(_augment, num_parallel_calls)
         
