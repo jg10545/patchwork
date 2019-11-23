@@ -6,7 +6,7 @@ from tqdm import tqdm
 import sklearn.preprocessing, sklearn.cluster, sklearn.decomposition
 
 from patchwork.feature._models import BNAlexNetFCN
-from patchwork._loaders import stratified_training_dataset, dataset
+from patchwork.loaders import stratified_training_dataset, dataset
 
 
 

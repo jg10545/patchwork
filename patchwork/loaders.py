@@ -9,7 +9,7 @@ import tensorflow as tf
 from PIL import Image
 from patchwork._util import tiff_to_array
 
-from patchwork._augment import _augment
+from patchwork._augment import _augment, augment_function
 
 
 def _image_file_dataset(fps, imshape=(256,256), 
@@ -72,7 +72,7 @@ def dataset(fps, ys = None, imshape=(256,256), num_channels=3,
     :imshape: constant shape to resize images to
     :num_channels: channel depth of images
     :batch_size: just what you think it is
-    :augment: Boolean; whether to augment data
+    :augment: augmentation parameters (or False to disable)
     :unlab_fps: list of filepaths (same length as fps) for semi-
         supervised learning
     :shuffle: whether to shuffle the dataset
@@ -87,7 +87,8 @@ def dataset(fps, ys = None, imshape=(256,256), num_channels=3,
                       num_parallel_calls=num_parallel_calls, norm=norm,
                       shuffle=shuffle)
     if augment:
-        ds = ds.map(_augment, num_parallel_calls)
+        _aug = augment_function(augment)
+        ds = ds.map(_aug, num_parallel_calls)
         
     if unlab_fps is not None:
         u_ds = _image_file_dataset(unlab_fps, imshape=imshape, num_channels=num_channels, 

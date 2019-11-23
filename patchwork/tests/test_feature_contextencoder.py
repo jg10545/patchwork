@@ -23,7 +23,7 @@ def test_context_encoder_make_test_mask_generator_outputs():
 def test_build_context_encoder_dataset(test_png_path):
     ds = ce._build_context_encoder_dataset([test_png_path],
                                                 input_shape=(64,64,3),
-                                                shuffle_queue=1, 
+                                                shuffle=True, 
                                                 num_parallel_calls=1,
                                                 batch_size=1, prefetch=False)
     for record in ds:

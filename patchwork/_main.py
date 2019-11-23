@@ -8,7 +8,7 @@ from patchwork._labeler import Labeler
 from patchwork._modelpicker import ModelPicker
 from patchwork._trainmanager import TrainManager
 from patchwork._sample import stratified_sample, find_unlabeled
-from patchwork._loaders import dataset
+from patchwork.loaders import dataset
 from patchwork._losses import entropy_loss, masked_binary_crossentropy
 from patchwork._util import _load_img
 
