@@ -2,35 +2,44 @@
 import numpy as np
 import tensorflow as tf
 
-from patchwork._augment import _random_rotate, _random_crop, _random_distort, _augment
+#from patchwork._augment import _random_rotate, _random_crop, _random_distort, _augment
+from patchwork._augment import augment_function
+
 
 test_shape = (64,64,3)
 test_img = np.zeros(test_shape, dtype=np.float32)
 test_img_tensor = tf.constant(test_img, dtype=tf.float32)
 
 
-def test_random_rotate():
-    rotated = _random_rotate(test_img_tensor)
+#def test_random_rotate():
+#    rotated = _random_rotate(test_img_tensor)
         
-    assert isinstance(rotated, tf.Tensor)
-    assert rotated.numpy().shape == test_shape
+#    assert isinstance(rotated, tf.Tensor)
+#    assert rotated.numpy().shape == test_shape
     
     
-def test_random_crop():
-    cropped = _random_crop(test_img_tensor)
+#def test_random_crop():
+#    cropped = _random_crop(test_img_tensor)
         
-    assert isinstance(cropped, tf.Tensor)
-    assert cropped.numpy().shape == test_shape
+#    assert isinstance(cropped, tf.Tensor)
+#    assert cropped.numpy().shape == test_shape
     
     
-def test_random_distort():
-    distorted = _random_distort(test_img_tensor)
+#def test_random_distort():
+#    distorted = _random_distort(test_img_tensor)
         
-    assert isinstance(distorted, tf.Tensor)
-    assert distorted.numpy().shape == test_shape
+#    assert isinstance(distorted, tf.Tensor)
+#    assert distorted.numpy().shape == test_shape
     
-def test_random_augment():
-    augmented = _augment(test_img_tensor)
+#def test_random_augment():
+#    augmented = _augment(test_img_tensor)
         
+#    assert isinstance(augmented, tf.Tensor)
+#    assert augmented.numpy().shape == test_shape
+
+def test_default_augment():
+    augfunc = augment_function()
+    augmented = augfunc(test_img_tensor)
+    
     assert isinstance(augmented, tf.Tensor)
-    assert augmented.numpy().shape == test_shape
+    assert augmented.get_shape() == test_img_tensor.get_shape()
