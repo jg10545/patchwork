@@ -31,7 +31,8 @@ def BNAlexNetFCN(num_channels=3):
             net = tf.keras.layers.MaxPool2D(3,2)(net)
         else:
             k, w, s = l
-            net = tf.keras.layers.Conv2D(k, w, strides=s, padding="same",
+            # changed same to valid
+            net = tf.keras.layers.Conv2D(k, w, strides=s, padding="valid",
                                      activation="relu")(net)
             net = tf.keras.layers.BatchNormalization()(net)
     return tf.keras.Model(inpt, net)

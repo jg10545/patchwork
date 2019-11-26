@@ -55,7 +55,7 @@ def _image_file_dataset(fps, imshape=(256,256),
     ds = ds.map(_resize, num_parallel_calls)
     
     tensorshape = [imshape[0], imshape[1], num_channels]
-    ds = ds.map(lambda x: tf.reshape(x, tensorshape))
+    ds = ds.map(lambda x: tf.reshape(x, tensorshape), num_parallel_calls=num_parallel_calls)
     return ds
 
 
@@ -88,13 +88,13 @@ def dataset(fps, ys = None, imshape=(256,256), num_channels=3,
                       shuffle=shuffle)
     if augment:
         _aug = augment_function(augment)
-        ds = ds.map(_aug, num_parallel_calls)
+        ds = ds.map(_aug, num_parallel_calls=num_parallel_calls)
         
     if unlab_fps is not None:
         u_ds = _image_file_dataset(unlab_fps, imshape=imshape, num_channels=num_channels, 
                       num_parallel_calls=num_parallel_calls, norm=norm)
         if augment:
-            u_ds = u_ds.map(_augment, num_parallel_calls)
+            u_ds = u_ds.map(_augment, num_parallel_calls=num_parallel_calls)
         ds = tf.data.Dataset.zip((ds, u_ds))
         
     if ys is not None:

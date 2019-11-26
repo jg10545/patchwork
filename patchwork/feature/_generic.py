@@ -20,9 +20,14 @@ INPUT_PARAMS = ["imshape", "num_channels", "norm", "batch_size",
 
 class GenericExtractor(object):
     """
-    Place to store common code for different feature extractor methods.
+    Place to store common code for different feature extractor methods. Don't 
+    actually use this to do anything.
     
-    Don't actually use this to do anything.
+    To subclass this, replace:
+        __init__
+        _build_default_model
+        _run_training_epoch
+        evaluate
     """
     
     
@@ -30,7 +35,20 @@ class GenericExtractor(object):
                  extractor_param=None, imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, shuffle=True, num_parallel_calls=None):
         """
-        
+        :logdir: (string) path to log directory
+        :trainingdata: (list or tf Dataset) list of paths to training images, or
+            dataset to use for training loop
+        :fcn: (keras Model) fully-convolutional network to train as feature extractor
+        :augment: (dict) dictionary of augmentation parameters, True for defaults or
+            False to disable augmentation
+        :extractor_param: kwarg for extractor
+        :imshape: (tuple) image dimensions in H,W
+        :num_channels: (int) number of image channels
+        :norm: (int or float) normalization constant for images (for rescaling to
+               unit interval)
+        :batch_size: (int) batch size for training
+        :shuffle: (bool) whether to shuffle training set
+        :num_parallel_calls: (int) number of threads for loader mapping
         """
         self.logdir = logdir
         
@@ -42,6 +60,11 @@ class GenericExtractor(object):
         self._file_writer = tf.summary.create_file_writer(logdir, flush_millis=10000)
         self._file_writer.set_as_default()
         self.step = 0
+        
+        self._parse_configs(augment=augment, extractor_param=extractor_param,
+                            imshape=imshape, num_channels=num_channels,
+                            norm=norm, batch_size=batch_size, shuffle=shuffle,
+                            num_parallel_calls=num_parallel_calls)
         
         
         
@@ -64,7 +87,7 @@ class GenericExtractor(object):
                 
         config_path = os.path.join(self.logdir, "config.yml")
         config_dict = {"model":self.config, "input":self.input_config, 
-                       "augment":self.augment}
+                       "augment":self.augment_config}
         yaml.dump(config_dict, open(config_path, "w"), default_flow_style=False)
         
         
@@ -91,15 +114,19 @@ class GenericExtractor(object):
                 self.save()
             if evaluate:
                 self.evaluate()
-            self.step += 1
     
     def save(self):
         """
         Write model(s) to disk
+        
+        Note: tried to use SavedModel format for this and got a memory leak;
+        think it's related to https://github.com/tensorflow/tensorflow/issues/32234
+        
+        For now sticking with HDF5
         """
         for m in self._models:
-            path = os.path.join(self.logdir, m)
-            self._models[m].save(path, overwrite=True)
+            path = os.path.join(self.logdir, m+".h5")
+            self._models[m].save(path, overwrite=True, save_format="h5")
             
     def evaluate(self):
         # REPLACE THIS WHEN SUBCLASSING

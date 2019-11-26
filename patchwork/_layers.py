@@ -1,5 +1,5 @@
 import tensorflow as tf
-
+import tensorflow.keras.backend as K
 
 
 class CosineDense(tf.keras.layers.Layer):
@@ -25,8 +25,8 @@ class CosineDense(tf.keras.layers.Layer):
         super(CosineDense, self).build(input_shape)
 
     def call(self, inputs):
-        inputs_norm = tf.keras.backend.l2_normalize(inputs, -1)
-        kernel_norm = tf.keras.backend.l2_normalize(self.kernel, 0)
+        inputs_norm = K.l2_normalize(inputs, -1)
+        kernel_norm = K.l2_normalize(self.kernel, 0)
         return self._activation(tf.matmul(inputs_norm, kernel_norm))
 
     def compute_output_shape(self, input_shape):
