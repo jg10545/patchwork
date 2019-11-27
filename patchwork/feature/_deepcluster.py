@@ -20,7 +20,8 @@ def cluster(vecs, pca_dim=256, k=100, init='k-means++'):
     :init: how to initialize k-means (check sklearn.cluster.KMeans for details)
     """
     vecs = sklearn.preprocessing.StandardScaler().fit_transform(vecs)
-    vecs = sklearn.decomposition.PCA(pca_dim).fit_transform(vecs)
+    vecs = sklearn.decomposition.PCA(n_components=pca_dim,
+                                     whiten=True).fit_transform(vecs)
     vecs = sklearn.preprocessing.normalize(vecs, norm="l2")
     
     kmeans = sklearn.cluster.KMeans(n_clusters=k, init=init, n_init=1)

@@ -32,7 +32,7 @@ def BNAlexNetFCN(num_channels=3):
         else:
             k, w, s = l
             # changed same to valid
-            net = tf.keras.layers.Conv2D(k, w, strides=s, padding="valid",
+            net = tf.keras.layers.Conv2D(k, w, strides=s, padding="same",
                                      activation="relu")(net)
             net = tf.keras.layers.BatchNormalization()(net)
     return tf.keras.Model(inpt, net)

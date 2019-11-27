@@ -7,14 +7,12 @@ import numpy as np
 import tensorflow as tf
 #import tensorflow.contrib
 import tensorflow.keras.backend as K
-import os
 
 from patchwork._augment import augment_function
 from patchwork.loaders import _image_file_dataset
 from patchwork._util import _load_img
 from patchwork._layers import ChannelWiseDense
 from patchwork.feature._models import build_encoder, build_decoder, build_discriminator
-
 from patchwork.feature._generic import GenericExtractor
 
 
@@ -67,7 +65,6 @@ def _build_context_encoder_dataset(filepaths, input_shape=(256,256,3), norm=255,
     def _gen():
         return mask_generator(*input_shape)
     mask_ds = tf.data.Dataset.from_generator(_gen,
-                                        #output_types=(tf.bool),
                                         output_types=(tf.float32),
                                         output_shapes=input_shape)
     # now a Dataset to load images
@@ -100,7 +97,8 @@ def _build_test_dataset(filepaths, input_shape=(256,256,3), norm=255):
     Returns
     img_arr, mask
     """
-    img_arr = np.stack([_load_img(f, norm=norm, num_channels=input_shape[2]) 
+    img_arr = np.stack([_load_img(f, norm=norm, num_channels=input_shape[2],
+                                  resize=input_shape[:2]) 
                         for f in filepaths])
     mask = _make_test_mask(*input_shape)
     mask = np.stack([mask for _ in range(img_arr.shape[0])])
@@ -178,6 +176,7 @@ def inpainter_training_step(opt, inpainter, discriminator, img, mask, recon_weig
     :disc_loss: crossentropy loss from discriminator
     :total_loss: weighted sum of previous two
     """
+    print("tracing inpainter training step")
     # inpainter update
     masked_img = (1-mask)*img
     with tf.GradientTape() as tape:
@@ -215,6 +214,7 @@ def discriminator_training_step(opt, inpainter, discriminator, img, mask):
     
     Returns discriminator loss
     """
+    print("tracing discriminator training step")
     # inpainter update
     masked_img = (1-mask)*img
     with tf.GradientTape() as tape:
@@ -232,112 +232,6 @@ def discriminator_training_step(opt, inpainter, discriminator, img, mask):
     opt.apply_gradients(zip(gradients, variables))
     
     return disc_loss
-
-
-
-
-
-def train_context_encoder(trainfiles, testfiles=None, inpainter=None, 
-                          discriminator=None, num_epochs=1000, 
-                          num_test_images=10, logdir=None, 
-                          input_shape=(256,256,3), norm=255,
-                          num_parallel_calls=4, batch_size=32,
-                         recon_weight=1, adv_weight=1e-3, clip_norm=0, lr=1e-4,
-                         shuffle_queue=1000):
-    """
-    Train your very own context encoder
-    
-    :trainfiles: list of paths to training files
-    :testfiles: list of paths to test files
-    :inpainter, discriminator: if not specified, will be auto-generated
-    :num_epochs: how many training epochs to run for
-    """
-    inpaint_opt = tf.keras.optimizers.Adam(lr)
-    disc_opt = tf.keras.optimizers.Adam(0.1*lr)
-    
-    if inpainter is None or discriminator is None:
-        inpainter, enc, discriminator = build_inpainting_network(
-                input_shape=input_shape, disc_loss=0.001)
-        
-    assert tf.executing_eagerly(), "eager execution needs to be enabled"
-    # build training generator
-    train_ds = _build_context_encoder_dataset(trainfiles, input_shape=input_shape, 
-                                norm=norm, shuffle_queue=shuffle_queue, 
-                                num_parallel_calls=num_parallel_calls,
-                                batch_size=batch_size, prefetch=True)
-    
-    if testfiles is not None:
-        assert logdir is not None, "need a place to store test results"
-        test = True
-        test_ims, test_mask = _build_test_dataset(testfiles,
-                                            input_shape=input_shape, norm=norm)
-        test_masked_ims = (1-test_mask)*test_ims
-        summary_writer = tf.contrib.summary.create_file_writer(logdir, 
-                                                       flush_millis=10000)
-        summary_writer.set_as_default()
-        global_step = tf.compat.v1.train.get_or_create_global_step()
-
-    else:
-        test = False
-
-    # combined training loop
-    inpaint_step = True
-    for e in range(num_epochs):
-        # for each step in the epoch:
-        for img, mask in train_ds:
-            # alternatve between inpainter and discriminator training
-            if inpaint_step:
-                inpaint_losses = inpainter_training_step(inpaint_opt, inpainter, 
-                                    discriminator, 
-                                    img, mask, 
-                                    recon_weight, adv_weight, input_shape)
-                inpaint_step = False
-            else:
-                disc_loss = discriminator_training_step(disc_opt, inpainter, discriminator, 
-                                                img, mask, clip_norm)
-                inpaint_step = True
-    
-        # at the end of the epoch, evaluate on test data.
-        if test:
-            
-            test_ims, test_mask
-            
-            preds = inpainter(test_masked_ims)
-            preds = preds[:,:input_shape[0], :input_shape[1],:]
-            # see how the discriminator does on them
-            disc_outputs_on_raw = discriminator(test_ims)
-            disc_outputs_on_inpaint = discriminator(preds)
-            # for the visualization in tensorboard: replace the unmasked areas
-            # with the input image as a guide to the eye
-            preds = preds.numpy()[:num_test_images]*test_mask[:num_test_images] + \
-                        test_ims[:num_test_images]*(1-test_mask[:num_test_images])
-            predviz = np.concatenate([test_masked_ims[:num_test_images], preds], 
-                             2).astype(np.float32)
-            
-            with tf.contrib.summary.always_record_summaries():
-                tf.contrib.summary.scalar("total_loss", inpaint_losses[2], step=global_step)
-                tf.contrib.summary.scalar("reconstruction_l1_loss", 
-                                          inpaint_losses[0], step=global_step)
-                tf.contrib.summary.scalar("discriminator_loss", 
-                                          inpaint_losses[1], step=global_step)
-                tf.contrib.summary.scalar("discriminator_training_loss", 
-                                          disc_loss, step=global_step)
-                tf.contrib.summary.histogram("discriminator_output_on_raw_images", 
-                                         disc_outputs_on_raw, step=global_step)
-                tf.contrib.summary.histogram("discriminator_output_on_inpainted", 
-                                         disc_outputs_on_inpaint, step=global_step)
-                for j in range(num_test_images):
-                    tf.contrib.summary.image("img_%i"%j, 
-                                     np.expand_dims(predviz[j,:,:,:],0), step=global_step)
-            enc.save(os.path.join(logdir, "encoder.h5"))
-            inpainter.save(os.path.join(logdir, "inpainter.h5"))
-            discriminator.save(os.path.join(logdir, "discriminator.h5"))
-        global_step.assign_add(1)
-    return enc, inpainter, discriminator
-
-
-
-
     
 
 
@@ -346,8 +240,8 @@ class ContextEncoderTrainer(GenericExtractor):
     Class for training a context encoder.
     """
 
-    def __init__(self, logdir, trainingdata, fcn=None, inpainter=None,
-                 discriminator=None, augment=False, 
+    def __init__(self, logdir, trainingdata, testdata=None, fcn=None, inpainter=None,
+                 discriminator=None, augment=True, 
                  recon_weight=1, adv_weight=1e-3, lr=1e-4,
                   imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, shuffle=True, num_parallel_calls=None):
@@ -355,6 +249,7 @@ class ContextEncoderTrainer(GenericExtractor):
         :logdir: (string) path to log directory
         :trainingdata: (list or tf Dataset) list of paths to training images, or
             dataset to use for training loop
+        :testdata: (list) filepaths of a batch of images to use for eval
         :fcn: (keras Model) fully-convolutional network to train as feature extractor
         :inpainter: (keras Model) full autoencoder for training
         :discriminator: (keras Model) discriminator for training
@@ -374,10 +269,13 @@ class ContextEncoderTrainer(GenericExtractor):
         self.logdir = logdir
         input_shape = (imshape[0], imshape[1], num_channels)
         
+        self._file_writer = tf.summary.create_file_writer(logdir, flush_millis=10000)
+        self._file_writer.set_as_default()
+        
         if (fcn is None) or (inpainter is None) or (discriminator is None):
             inpainter, fcn, discriminator = build_inpainting_network(
                     input_shape=input_shape,
-                    encoder=fcn, inpainter=inpainter)
+                    encoder=fcn)
         self.fcn = fcn
         self._models = {"fcn":fcn, "inpainter":inpainter, 
                         "discriminator":discriminator}
@@ -394,16 +292,15 @@ class ContextEncoderTrainer(GenericExtractor):
                                         input_shape=input_shape, 
                                 norm=norm, shuffle=shuffle, 
                                 num_parallel_calls=num_parallel_calls,
-                                batch_size=batch_size, prefetch=True)
+                                batch_size=batch_size, prefetch=True,
+                                augment=augment)
         else:
             assert isinstance(trainingdata, tf.data.Dataset), "i don't know what to do with this"
             self._train_ds = trainingdata
         
         # build evaluation dataset
-        if isinstance(trainingdata, list):
-            delta = max(int(np.floor(len(trainingdata)/batch_size)),1)
-            testfiles = trainingdata[::delta][:batch_size]
-            self._test_ims, self._test_mask = _build_test_dataset(testfiles,
+        if testdata is not None:
+            self._test_ims, self._test_mask = _build_test_dataset(testdata,
                                             input_shape=input_shape,
                                             norm=norm)
             self._test_masked_ims = (1-self._test_mask)*self._test_ims
@@ -446,12 +343,17 @@ class ContextEncoderTrainer(GenericExtractor):
                                 self._models["discriminator"],
                                 img, mask)
                 self._record_scalars(disc_loss=disc_loss)
-                
-                
+            self.step += 1
+
+           
     def evaluate(self):
         num_test_images=10
         if self._test:
             preds = self._models["inpainter"](self._test_masked_ims).numpy()
+            
+            reconstruction_residual = self._test_mask*(preds - self._test_ims)
+            reconstructed_loss = np.mean(np.abs(reconstruction_residual))
+            
             preds = preds[:,:self.input_config["imshape"][0], :self.input_config["imshape"][1],:]
             # see how the discriminator does on them
             disc_outputs_on_raw = self._models["discriminator"](self._test_ims)
@@ -459,16 +361,17 @@ class ContextEncoderTrainer(GenericExtractor):
             # for the visualization in tensorboard: replace the unmasked areas
             # with the input image as a guide to the eye
             preds = preds*self._test_mask + self._test_ims*(1-self._test_mask)
-            predviz = np.concatenate([self._test_masked_ims[:num_test_images], preds], 
+            predviz = np.concatenate([self._test_masked_ims[:num_test_images], 
+                                      preds[:num_test_images]], 
                              2).astype(np.float32)
-        
-        
+
             # record all the summaries
             tf.summary.image("inpaints", predviz, step=self.step, max_outputs=10)
             tf.summary.histogram("disc_outputs_on_raw", disc_outputs_on_raw,
                                  step=self.step)
             tf.summary.histogram("disc_outputs_on_inpaint", disc_outputs_on_inpaint,
                                  step=self.step)
+            self._record_scalars(test_recon_loss=reconstructed_loss)
         
         
         

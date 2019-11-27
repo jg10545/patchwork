@@ -167,7 +167,9 @@ def stratified_training_dataset(fps, y, imshape=(256,256), num_channels=3,
                       num_parallel_calls=num_parallel_calls, norm=norm)
 
     if augment:
-        im_ds = im_ds.map(_augment, num_parallel_calls)
+        #im_ds = im_ds.map(_augment, num_parallel_calls)
+        _aug = augment_function(augment)
+        im_ds = im_ds.map(_aug, num_parallel_calls=num_parallel_calls)
     lab_ds = tf.data.Dataset.from_tensor_slices(sampled_labels)
     ds = tf.data.Dataset.zip((im_ds, lab_ds))
     ds = ds.batch(batch_size)
