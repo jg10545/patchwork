@@ -19,6 +19,7 @@ def cluster(vecs, pca_dim=256, k=100, init='k-means++'):
     :k: number of clusters for k-means
     :init: how to initialize k-means (check sklearn.cluster.KMeans for details)
     """
+    assert pca_dim < vecs.shape[1], "hey bro PCA should make the number of dimensions go DOWN"
     vecs = sklearn.preprocessing.StandardScaler().fit_transform(vecs)
     vecs = sklearn.decomposition.PCA(n_components=pca_dim,
                                      whiten=True).fit_transform(vecs)
@@ -148,7 +149,7 @@ class DeepClusterTrainer(GenericExtractor):
                                             staircase=False)
         else:
             learnrate = lr
-        self._optimizer = tf.keras.optimizers.Adam(learnrate)
+        self._optimizer = tf.keras.optimizers.SGD(learnrate, momentum=0.9)
         
         # build evaluation dataset
         if testdata is not None:

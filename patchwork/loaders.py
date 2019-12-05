@@ -86,15 +86,17 @@ def dataset(fps, ys = None, imshape=(256,256), num_channels=3,
     ds = _image_file_dataset(fps, imshape=imshape, num_channels=num_channels, 
                       num_parallel_calls=num_parallel_calls, norm=norm,
                       shuffle=shuffle)
+    
     if augment:
-        _aug = augment_function(augment)
+        _aug = augment_function(imshape, augment)
         ds = ds.map(_aug, num_parallel_calls=num_parallel_calls)
         
     if unlab_fps is not None:
         u_ds = _image_file_dataset(unlab_fps, imshape=imshape, num_channels=num_channels, 
                       num_parallel_calls=num_parallel_calls, norm=norm)
         if augment:
-            u_ds = u_ds.map(_augment, num_parallel_calls=num_parallel_calls)
+            _aug = augment_function(imshape, augment)
+            ds = ds.map(_aug, num_parallel_calls=num_parallel_calls)
         ds = tf.data.Dataset.zip((ds, u_ds))
         
     if ys is not None:
@@ -105,6 +107,7 @@ def dataset(fps, ys = None, imshape=(256,256), num_channels=3,
         
     ds = ds.batch(batch_size)
     ds = ds.prefetch(1)
+    #ds = ds.prefetch(tf.data.experimental.AUTOTUNE)
     
     num_steps = int(np.ceil(len(fps)/batch_size))
     return ds, num_steps
@@ -164,11 +167,12 @@ def stratified_training_dataset(fps, y, imshape=(256,256), num_channels=3,
     
     # NOW CREATE THE DATASET
     im_ds = _image_file_dataset(fps, imshape=imshape, num_channels=num_channels, 
-                      num_parallel_calls=num_parallel_calls, norm=norm)
+                      num_parallel_calls=num_parallel_calls, norm=norm, 
+                      shuffle=False)
 
     if augment:
         #im_ds = im_ds.map(_augment, num_parallel_calls)
-        _aug = augment_function(augment)
+        _aug = augment_function(imshape, augment)
         im_ds = im_ds.map(_aug, num_parallel_calls=num_parallel_calls)
     lab_ds = tf.data.Dataset.from_tensor_slices(sampled_labels)
     ds = tf.data.Dataset.zip((im_ds, lab_ds))

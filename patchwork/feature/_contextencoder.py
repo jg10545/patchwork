@@ -74,7 +74,8 @@ def _build_context_encoder_dataset(filepaths, input_shape=(256,256,3), norm=255,
                                  shuffle=True)
     #img_ds = img_ds.shuffle(shuffle_queue)
     if augment:
-        _aug = augment_function(augment)
+        _aug = augment_function(input_shape[:2], augment)
+        #_aug = augment_function(augment)
         img_ds = img_ds.map(_aug, num_parallel_calls=num_parallel_calls)
     # combine the image and mask datasets
     zipped_ds = tf.data.Dataset.zip((img_ds, mask_ds))
