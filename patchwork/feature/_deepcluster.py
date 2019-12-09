@@ -9,7 +9,7 @@ from patchwork.feature._generic import GenericExtractor
 
 
 
-def cluster(vecs, pca_dim=256, k=100, init='k-means++'):
+def cluster(vecs, pca_dim=256, k=100, init='k-means++', testvecs=None):
     """
     Macro to run the entire clustering pipeline
     
@@ -18,17 +18,31 @@ def cluster(vecs, pca_dim=256, k=100, init='k-means++'):
                 before clustering
     :k: number of clusters for k-means
     :init: how to initialize k-means (check sklearn.cluster.KMeans for details)
+    :testvecs: array containing a batch of test outputs
     """
     assert pca_dim < vecs.shape[1], "hey bro PCA should make the number of dimensions go DOWN"
-    vecs = sklearn.preprocessing.StandardScaler().fit_transform(vecs)
-    vecs = sklearn.decomposition.PCA(n_components=pca_dim,
-                                     whiten=True).fit_transform(vecs)
-    vecs = sklearn.preprocessing.normalize(vecs, norm="l2")
     
+    # create model objects
+    scaler = sklearn.preprocessing.StandardScaler()
+    pca = sklearn.decomposition.PCA(n_components=pca_dim,
+                                     whiten=True)
     kmeans = sklearn.cluster.KMeans(n_clusters=k, init=init, n_init=1)
+    # fit on the training data
+    vecs = scaler.fit_transform(vecs)
+    vecs = pca.fit_transform(vecs)
+    vecs = sklearn.preprocessing.normalize(vecs, norm="l2")
+    #kmeans = sklearn.cluster.KMeans(n_clusters=k, init=init, n_init=1)
     kmeans.fit(vecs)
     
-    return kmeans.predict(vecs), kmeans.cluster_centers_
+    # if test data was passed- make predictions on that as well
+    if testvecs is not None:
+        testvecs = scaler.transform(testvecs)
+        testvecs = pca.transform(testvecs)
+        testvecs = sklearn.preprocessing.normalize(testvecs, norm="l2")
+        test_labels = kmeans.predict(testvecs)
+    else:
+        test_labels = None
+    return kmeans.predict(vecs), kmeans.cluster_centers_, test_labels
 
 
 
@@ -102,8 +116,6 @@ class DeepClusterTrainer(GenericExtractor):
         :trainingdata: (list) list of paths to training images
         :testdata: (list) filepaths of a batch of images to use for eval
         :fcn: (keras Model) fully-convolutional network to train as feature extractor
-        :inpainter: (keras Model) full autoencoder for training
-        :discriminator: (keras Model) discriminator for training
         :augment: (dict) dictionary of augmentation parameters, True for defaults or
                 False to disable augmentation
         :pca_dim: (int) dimension to reduce FCN outputs to using principal component analysis
@@ -153,14 +165,15 @@ class DeepClusterTrainer(GenericExtractor):
         
         # build evaluation dataset
         if testdata is not None:
-            assert False, "gotta fix this"
-            #self._test_ims, self._test_mask = _build_test_dataset(testdata,
-            #                                input_shape=input_shape,
-            #                                norm=norm)
-            #self._test_masked_ims = (1-self._test_mask)*self._test_ims
-            #self._test = True
+            self._test_ds, self._test_steps = dataset(testdata,
+                                     imshape=imshape,
+                                     norm=norm)
+            #self._test_steps = int(np.ceil(len(testdata)/batch_size))
+            self._test = True
         else:
             self._test = False
+        self._test_labels = None
+        self._old_test_labels = None
         
         # build prediction dataset for clustering
         ds, num_steps = dataset(trainingdata, imshape=imshape, num_channels=num_channels, 
@@ -191,11 +204,21 @@ class DeepClusterTrainer(GenericExtractor):
         # predict clusters for each data point
         predictions = self._pred_model.predict(self._pred_ds, steps=self._pred_steps)
         
-        # run k-means
-        y_e, clusters = cluster(predictions, 
-                                self.config["pca_dim"], 
-                                self.config["k"], init='k-means++')
+        # if test data was included- also predict outputs for those
+        if self._test:
+            test_preds = self._pred_model.predict(self._test_ds, steps=self._test_steps)
+        else:
+            test_preds = None
         
+        # run k-means
+        y_e, clusters, test_labels = cluster(predictions, 
+                                self.config["pca_dim"], 
+                                self.config["k"], init='k-means++',
+                                testvecs=test_preds)
+        self._old_test_labels = self._test_labels
+        self._test_labels = test_labels
+        
+        # record the normalized mutual information between these labels and previous
         if self._old_cluster_assignments is not None:
             nmi = normalized_mutual_info_score(y_e, self._old_cluster_assignments,
                                                average_method="arithmetic")
@@ -224,6 +247,17 @@ class DeepClusterTrainer(GenericExtractor):
             self.step += 1
  
     def evaluate(self):
-        pass
+        if self._test:
+            if self._test_labels is not None:
+                predictions = self._pred_model.predict(self._test_ds,
+                                                   steps=self._test_steps)
+                test_accuracy = np.mean(predictions == self._test_labels)
+                self._record_scalars(epoch_end_test_accuracy=test_accuracy)
+                
+                if self._old_test_labels is not None:
+                    nmi = normalized_mutual_info_score(self._test_labels, self._old_test_labels,
+                                                       average_method="arithmetic")
+                    self._record_scalars(test_nmi=nmi)
+            
         
             
