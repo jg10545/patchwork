@@ -9,7 +9,7 @@ import tensorflow as tf
 from PIL import Image
 from patchwork._util import tiff_to_array
 
-from patchwork._augment import _augment, augment_function
+from patchwork._augment import augment_function
 
 
 def _image_file_dataset(fps, imshape=(256,256), 
@@ -33,26 +33,24 @@ def _image_file_dataset(fps, imshape=(256,256),
     # taking up much memory
     if shuffle:
         ds = ds.shuffle(len(fps))
-        
+    
+    def _resize(img):
+        return tf.image.resize(img, imshape)
+    
     def _load_img(f):
         f = f.numpy().decode("utf-8") 
         if ".tif" in f:
-            return tiff_to_array(f, swapaxes=True, 
+            img = tiff_to_array(f, swapaxes=True, 
                                  norm=norm, num_channels=num_channels)
         else:
-            img = Image.open(f)#.resize(imshape)
-            return np.array(img).astype(np.float32)/norm
-        
-    def _resize(img):
-        img = tf.expand_dims(img, 0)
-        img = tf.compat.v1.image.resize_bicubic(img, imshape)
-        img = tf.squeeze(img, 0)
-        return img
+            img = Image.open(f)
+            img = np.array(img).astype(np.float32)/norm
+        return _resize(img)
+
     
     tf_img_load = lambda x: tf.py_function(_load_img, [x], tf.float32)
-    #tf_img_resize = lambda x: tf.image.resize(x, imshape, method="bicubic")
     ds = ds.map(tf_img_load, num_parallel_calls)
-    ds = ds.map(_resize, num_parallel_calls)
+    #ds = ds.map(_resize, num_parallel_calls)
     
     tensorshape = [imshape[0], imshape[1], num_channels]
     ds = ds.map(lambda x: tf.reshape(x, tensorshape), num_parallel_calls=num_parallel_calls)
