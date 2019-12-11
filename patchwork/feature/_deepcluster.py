@@ -31,7 +31,6 @@ def cluster(vecs, pca_dim=256, k=100, init='k-means++', testvecs=None):
     vecs = scaler.fit_transform(vecs)
     vecs = pca.fit_transform(vecs)
     vecs = sklearn.preprocessing.normalize(vecs, norm="l2")
-    #kmeans = sklearn.cluster.KMeans(n_clusters=k, init=init, n_init=1)
     kmeans.fit(vecs)
     
     # if test data was passed- make predictions on that as well

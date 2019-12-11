@@ -42,7 +42,7 @@ def test_dataset_with_augmentation(test_png_path):
     
     ds, ns = dataset(imfiles, ys=None, imshape=(11,17),
                      num_channels=3, norm=255,
-                     batch_size=5, augment=True)
+                     batch_size=5, augment={"rot90":False})
     
     for x in ds:
         x = x.numpy()
@@ -76,7 +76,7 @@ def test_dataset_with_unlabeled_images(test_png_path, test_tif_path):
     ds, ns = dataset(imfiles, unlab_fps=unlab_files, 
                      imshape=(11,17),
                      num_channels=3, norm=255,
-                     batch_size=5, augment=False)
+                     batch_size=5, augment={"rot90":False})
     
     for x,y in ds:
         x = x.numpy()
@@ -86,6 +86,29 @@ def test_dataset_with_unlabeled_images(test_png_path, test_tif_path):
     assert x.shape == (5,11,17,3)
     assert y.shape == (5,11,17,3)
     
+    
+def test_dataset_with_both(test_png_path, test_tif_path):
+    imfiles = [test_png_path]*10
+    labels = np.arange(10)
+    unlab_files = [test_tif_path]*15
+    
+    ds, ns = dataset(imfiles, ys=labels,
+                     unlab_fps=unlab_files, 
+                     imshape=(11,17),
+                     num_channels=3, norm=255,
+                     batch_size=5, augment={"rot90":False})
+    
+    for (w,x),(y,z) in ds:
+        w = w.numpy()
+        x = x.numpy()
+        y = y.numpy()
+        z = z.numpy()
+        break
+    
+    assert w.shape == (5,11,17,3)
+    assert x.shape == (5,11,17,3)
+    assert y.shape == (5,)
+    assert z.shape == (5,)
     
     
 def test_stratified_training_dataset(test_png_path):
@@ -97,7 +120,7 @@ def test_stratified_training_dataset(test_png_path):
                                          num_channels=3,
                                          batch_size=10,
                                          mult=1,
-                                         augment=False)
+                                         augment={"rot90":False})
     
     for x,y in ds:
         x = x.numpy()
