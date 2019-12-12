@@ -12,6 +12,28 @@ from patchwork._util import tiff_to_array
 from patchwork._augment import augment_function
 
 
+
+def _generate_imtypes(fps):
+    """
+    Input a list of filepaths and return an array mapping
+    filetypes to an integer index:
+        
+        png 0
+        jpg 1
+        gif 2
+        tif 3
+    """
+    imtypes = np.zeros(len(fps), dtype=np.int64)
+    for i in range(len(fps)):
+        t = fps[i].lower()
+        if ".jpg" in t:
+            imtypes[i] = 1
+        elif ".gif" in t:
+            imtypes[i] = 2
+        elif ".tif" in t:
+            imtypes[i] = 3
+    return imtypes
+
 def _image_file_dataset(fps, imshape=(256,256), 
                  num_parallel_calls=None, norm=255,
                  num_channels=3, shuffle=False):
@@ -28,32 +50,48 @@ def _image_file_dataset(fps, imshape=(256,256),
     
     Returns images as a 3D float32 tensor
     """
-    ds = tf.data.Dataset.from_tensor_slices(fps)
+    # get an integer index for each filepath
+    imtypes = _generate_imtypes(fps)
+    ds = tf.data.Dataset.from_tensor_slices((fps, imtypes))
     # do the shuffling before loading so we can have a big queue without
     # taking up much memory
     if shuffle:
         ds = ds.shuffle(len(fps))
     
+    # helper function for resizing images
     def _resize(img):
         return tf.image.resize(img, imshape)
+    # helper function for loading tiffs
+    def _load_tif(f):
+        return _resize(tiff_to_array(f.numpy().decode("utf-8") , swapaxes=True, 
+                                 norm=norm, num_channels=num_channels))
+    load_tif = lambda x: tf.py_function(_load_tif, [x], tf.float32)
     
-    def _load_img(f):
-        f = f.numpy().decode("utf-8") 
-        if ".tif" in f:
-            img = tiff_to_array(f, swapaxes=True, 
-                                 norm=norm, num_channels=num_channels)
+    # main loading map function
+    @tf.function
+    def _load_img(x, t):
+        #print("tracing")
+        loaded = tf.io.read_file(x)
+        # jpg
+        if t == 1:
+            decoded = tf.io.decode_jpeg(loaded)
+            resized = _resize(decoded)
+        # gif
+        elif t == 2:
+            decoded = tf.io.decode_gif(loaded)
+            resized = _resize(decoded)
+        # tif
+        elif t == 3:
+            resized = load_tif(x)
+        # png
         else:
-            img = Image.open(f)
-            img = np.array(img).astype(np.float32)/norm
-        return _resize(img)
+            decoded = tf.io.decode_png(loaded)
+            resized = _resize(decoded)
+        return tf.cast(resized, tf.float32)/255
 
-    
-    tf_img_load = lambda x: tf.py_function(_load_img, [x], tf.float32)
-    ds = ds.map(tf_img_load, num_parallel_calls)
-    #ds = ds.map(_resize, num_parallel_calls)
-    
-    tensorshape = [imshape[0], imshape[1], num_channels]
-    ds = ds.map(lambda x: tf.reshape(x, tensorshape), num_parallel_calls=num_parallel_calls)
+    ds = ds.map(lambda x,y: _load_img(x,y), num_parallel_calls=num_parallel_calls)
+    #tensorshape = [imshape[0], imshape[1], num_channels]
+    #ds = ds.map(lambda x: tf.reshape(x, tensorshape), num_parallel_calls=num_parallel_calls)
     return ds
 
 
@@ -81,31 +119,29 @@ def dataset(fps, ys = None, imshape=(256,256), num_channels=3,
         will be ((x, x_unlab), (y,y))
     :num_steps: number of steps (for passing to tf.keras.Model.fit())
     """
+    if augment:
+        _aug = augment_function(imshape, augment)
     ds = _image_file_dataset(fps, imshape=imshape, num_channels=num_channels, 
                       num_parallel_calls=num_parallel_calls, norm=norm,
                       shuffle=shuffle)
     
-    if augment:
-        _aug = augment_function(imshape, augment)
-        ds = ds.map(_aug, num_parallel_calls=num_parallel_calls)
+    if augment: ds = ds.map(_aug, num_parallel_calls=num_parallel_calls)
         
     if unlab_fps is not None:
         u_ds = _image_file_dataset(unlab_fps, imshape=imshape, num_channels=num_channels, 
                       num_parallel_calls=num_parallel_calls, norm=norm)
-        if augment:
-            _aug = augment_function(imshape, augment)
-            ds = ds.map(_aug, num_parallel_calls=num_parallel_calls)
+        if augment: u_ds = u_ds.map(_aug, num_parallel_calls=num_parallel_calls)
         ds = tf.data.Dataset.zip((ds, u_ds))
         
     if ys is not None:
         ys = tf.data.Dataset.from_tensor_slices(ys)
         if unlab_fps is not None:
             ys = ds.zip((ys,ys))
+            #ys = ds.zip((u_ds,ys))
         ds = ds.zip((ds, ys))
         
     ds = ds.batch(batch_size)
     ds = ds.prefetch(1)
-    #ds = ds.prefetch(tf.data.experimental.AUTOTUNE)
     
     num_steps = int(np.ceil(len(fps)/batch_size))
     return ds, num_steps
