@@ -14,7 +14,7 @@ from tqdm import tqdm
 
 
 INPUT_PARAMS = ["imshape", "num_channels", "norm", "batch_size",
-                "shuffle", "num_parallel_calls"]
+                "shuffle", "num_parallel_calls", "sobel"]
 
 
 
@@ -33,7 +33,8 @@ class GenericExtractor(object):
     
     def __init__(self, logdir, trainingdata, fcn=None, augment=False, 
                  extractor_param=None, imshape=(256,256), num_channels=3,
-                 norm=255, batch_size=64, shuffle=True, num_parallel_calls=None):
+                 norm=255, batch_size=64, shuffle=True, num_parallel_calls=None,
+                 sobel=False):
         """
         :logdir: (string) path to log directory
         :trainingdata: (list or tf Dataset) list of paths to training images, or
@@ -49,6 +50,7 @@ class GenericExtractor(object):
         :batch_size: (int) batch size for training
         :shuffle: (bool) whether to shuffle training set
         :num_parallel_calls: (int) number of threads for loader mapping
+        :sobel: whether to replace the input image with its sobel edges
         """
         self.logdir = logdir
         
@@ -64,7 +66,7 @@ class GenericExtractor(object):
         self._parse_configs(augment=augment, extractor_param=extractor_param,
                             imshape=imshape, num_channels=num_channels,
                             norm=norm, batch_size=batch_size, shuffle=shuffle,
-                            num_parallel_calls=num_parallel_calls)
+                            num_parallel_calls=num_parallel_calls, sobel=sobel)
         
         
         

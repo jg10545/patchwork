@@ -2,6 +2,7 @@
 import numpy as np
 import tensorflow as tf
 from patchwork.loaders import _image_file_dataset, dataset, stratified_training_dataset
+from patchwork.loaders import _sobelize
 
 
 
@@ -131,7 +132,12 @@ def test_stratified_training_dataset(test_png_path):
     assert y.mean() == 0.5
     
     
+def test_sobelize():
+    inpt = tf.zeros((5,7,11,3), dtype=tf.float32)
+    outpt = _sobelize(inpt)
     
+    assert outpt.shape == (5,7,11,2)
+    assert outpt.numpy().sum() == 0
     
 
     

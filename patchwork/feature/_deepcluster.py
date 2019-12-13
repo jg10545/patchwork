@@ -109,7 +109,8 @@ class DeepClusterTrainer(GenericExtractor):
     def __init__(self, logdir, trainingdata, testdata=None, fcn=None, augment=True, 
                  pca_dim=256, k=1000, dense=[4096], mult=1, lr=0.05, lr_decay=100000,
                   imshape=(256,256), num_channels=3,
-                 norm=255, batch_size=64, shuffle=True, num_parallel_calls=None):
+                 norm=255, batch_size=64, shuffle=True, num_parallel_calls=None,
+                 sobel=False):
         """
         :logdir: (string) path to log directory
         :trainingdata: (list) list of paths to training images
@@ -132,22 +133,24 @@ class DeepClusterTrainer(GenericExtractor):
         :batch_size: (int) batch size for training
         :shuffle: (bool) whether to shuffle training set
         :num_parallel_calls: (int) number of threads for loader mapping
+        :sobel: whether to replace the input image with its sobel edges
         """
         self.logdir = logdir
         self.trainingdata = trainingdata
+        channels = 2 if sobel else num_channels
         
         self._file_writer = tf.summary.create_file_writer(logdir, flush_millis=10000)
         self._file_writer.set_as_default()
         
         # if no FCN is passed- build one
         if fcn is None:
-            fcn = BNAlexNetFCN(num_channels)
+            fcn = BNAlexNetFCN(channels)
         self.fcn = fcn
         self._models = {"fcn":fcn}    
         
         # build model for training    
         prediction_model, training_model, output_layer = _build_model(fcn, 
-                                imshape=imshape, num_channels=num_channels, 
+                                imshape=imshape, num_channels=channels, 
                                 dense=dense, k=k)
         self._models["full"] = training_model
         self._pred_model = prediction_model
@@ -166,8 +169,8 @@ class DeepClusterTrainer(GenericExtractor):
         if testdata is not None:
             self._test_ds, self._test_steps = dataset(testdata,
                                      imshape=imshape,
-                                     norm=norm)
-            #self._test_steps = int(np.ceil(len(testdata)/batch_size))
+                                     norm=norm,
+                                     sobel=sobel)
             self._test = True
         else:
             self._test = False
@@ -177,7 +180,7 @@ class DeepClusterTrainer(GenericExtractor):
         # build prediction dataset for clustering
         ds, num_steps = dataset(trainingdata, imshape=imshape, num_channels=num_channels, 
                  num_parallel_calls=num_parallel_calls, batch_size=batch_size, 
-                 augment=False)
+                 augment=False, sobel=sobel)
         self._pred_ds = ds
         self._pred_steps = num_steps
         
@@ -193,7 +196,7 @@ class DeepClusterTrainer(GenericExtractor):
                             lr_decay=lr_decay, mult=mult,
                             imshape=imshape, num_channels=num_channels,
                             norm=norm, batch_size=batch_size, shuffle=shuffle,
-                            num_parallel_calls=num_parallel_calls)
+                            num_parallel_calls=num_parallel_calls, sobel=sobel)
         
         
     def _run_training_epoch(self, **kwargs):
@@ -237,7 +240,8 @@ class DeepClusterTrainer(GenericExtractor):
                                     num_parallel_calls=self.input_config["num_parallel_calls"],
                                     batch_size=self.input_config["batch_size"], 
                                     mult=self.config["mult"],
-                                    augment=self.augment_config)
+                                    augment=self.augment_config,
+                                    sobel=self.input_config["sobel"])
         
         for x, y in train_ds:
             loss = deepcluster_training_step(x, y, self._models["full"], 

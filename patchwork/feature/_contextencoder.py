@@ -9,7 +9,7 @@ import tensorflow as tf
 import tensorflow.keras.backend as K
 
 from patchwork._augment import augment_function
-from patchwork.loaders import _image_file_dataset
+from patchwork.loaders import _image_file_dataset, _sobelize
 from patchwork._util import _load_img
 from patchwork._layers import ChannelWiseDense
 from patchwork.feature._models import build_encoder, build_decoder, build_discriminator
@@ -57,7 +57,8 @@ def maskinator(img, mask):
 
 def _build_context_encoder_dataset(filepaths, input_shape=(256,256,3), norm=255,
                                    shuffle=True, num_parallel_calls=4,
-                                   batch_size=32, prefetch=True, augment=False):
+                                   batch_size=32, prefetch=True, augment=False,
+                                   sobel=False):
     """
     Build a tf.data.Dataset object to use for training.
     """
@@ -80,13 +81,17 @@ def _build_context_encoder_dataset(filepaths, input_shape=(256,256,3), norm=255,
     # combine the image and mask datasets
     zipped_ds = tf.data.Dataset.zip((img_ds, mask_ds))
     # precompute masked images for context encoder input
-    masked_batched_ds = zipped_ds.batch(batch_size) #masked_img_ds.batch(batch_size)
+    masked_batched_ds = zipped_ds.batch(batch_size) 
+    if sobel:
+        masked_batched_ds = masked_batched_ds.map(_sobelize, 
+                                        num_parallel_calls=num_parallel_calls)
     if prefetch:
         masked_batched_ds = masked_batched_ds.prefetch(1)
     return masked_batched_ds
     
     
-def _build_test_dataset(filepaths, input_shape=(256,256,3), norm=255):
+def _build_test_dataset(filepaths, input_shape=(256,256,3), norm=255,
+                        sobel=False):
     """
     Load a set of images into memory from file and mask the centers to
     use as a test set.
@@ -101,6 +106,9 @@ def _build_test_dataset(filepaths, input_shape=(256,256,3), norm=255):
     img_arr = np.stack([_load_img(f, norm=norm, num_channels=input_shape[2],
                                   resize=input_shape[:2]) 
                         for f in filepaths])
+    if sobel:
+        img_arr = _sobelize(img_arr).numpy()
+        input_shape = (input_shape[0], input_shape[1], 2)
     mask = _make_test_mask(*input_shape)
     mask = np.stack([mask for _ in range(img_arr.shape[0])])
 
@@ -245,7 +253,8 @@ class ContextEncoderTrainer(GenericExtractor):
                  discriminator=None, augment=True, 
                  recon_weight=1, adv_weight=1e-3, lr=1e-4,
                   imshape=(256,256), num_channels=3,
-                 norm=255, batch_size=64, shuffle=True, num_parallel_calls=None):
+                 norm=255, batch_size=64, shuffle=True, num_parallel_calls=None,
+                 sobel=False):
         """
         :logdir: (string) path to log directory
         :trainingdata: (list or tf Dataset) list of paths to training images, or
@@ -266,13 +275,18 @@ class ContextEncoderTrainer(GenericExtractor):
         :batch_size: (int) batch size for training
         :shuffle: (bool) whether to shuffle training set
         :num_parallel_calls: (int) number of threads for loader mapping
+        :sobel: whether to replace the input image with its sobel edges
         """
         self.logdir = logdir
-        input_shape = (imshape[0], imshape[1], num_channels)
+        if sobel:
+            input_shape = (imshape[0], imshape[1], 2)
+        else:
+            input_shape = (imshape[0], imshape[1], num_channels)
         
         self._file_writer = tf.summary.create_file_writer(logdir, flush_millis=10000)
         self._file_writer.set_as_default()
         
+        print(input_shape)
         if (fcn is None) or (inpainter is None) or (discriminator is None):
             inpainter, fcn, discriminator = build_inpainting_network(
                     input_shape=input_shape,
@@ -294,7 +308,7 @@ class ContextEncoderTrainer(GenericExtractor):
                                 norm=norm, shuffle=shuffle, 
                                 num_parallel_calls=num_parallel_calls,
                                 batch_size=batch_size, prefetch=True,
-                                augment=augment)
+                                augment=augment, sobel=sobel)
         else:
             assert isinstance(trainingdata, tf.data.Dataset), "i don't know what to do with this"
             self._train_ds = trainingdata
@@ -303,7 +317,7 @@ class ContextEncoderTrainer(GenericExtractor):
         if testdata is not None:
             self._test_ims, self._test_mask = _build_test_dataset(testdata,
                                             input_shape=input_shape,
-                                            norm=norm)
+                                            norm=norm, sobel=sobel)
             self._test_masked_ims = (1-self._test_mask)*self._test_ims
             self._test = True
         else:
@@ -316,7 +330,7 @@ class ContextEncoderTrainer(GenericExtractor):
                             adv_weight=adv_weight, lr=lr,
                             imshape=imshape, num_channels=num_channels,
                             norm=norm, batch_size=batch_size, shuffle=shuffle,
-                            num_parallel_calls=num_parallel_calls)
+                            num_parallel_calls=num_parallel_calls, sobel=sobel)
         
         
     def _run_training_epoch(self, **kwargs):
