@@ -9,7 +9,8 @@ from patchwork.feature._generic import GenericExtractor
 
 
 
-def cluster(vecs, pca_dim=256, k=100, init='k-means++', testvecs=None):
+def cluster(vecs, pca_dim=256, k=100, init='k-means++', testvecs=None,
+            kmeans_max_iter=100, kmeans_batch_size=100):
     """
     Macro to run the entire clustering pipeline
     
@@ -26,7 +27,12 @@ def cluster(vecs, pca_dim=256, k=100, init='k-means++', testvecs=None):
     scaler = sklearn.preprocessing.StandardScaler()
     pca = sklearn.decomposition.PCA(n_components=pca_dim,
                                      whiten=True)
-    kmeans = sklearn.cluster.KMeans(n_clusters=k, init=init, n_init=1)
+    #kmeans = sklearn.cluster.KMeans(n_clusters=k, init=init, n_init=1)
+    kmeans = sklearn.cluster.MiniBatchKMeans(n_clusters=k, init=init, n_init=3,
+                                             max_iter=kmeans_max_iter,
+                                             batch_size=kmeans_batch_size,
+                                             max_no_improvement=100,
+                                             compute_labels=False)
     # fit on the training data
     vecs = scaler.fit_transform(vecs)
     vecs = pca.fit_transform(vecs)
@@ -107,7 +113,8 @@ class DeepClusterTrainer(GenericExtractor):
     """
 
     def __init__(self, logdir, trainingdata, testdata=None, fcn=None, augment=True, 
-                 pca_dim=256, k=1000, dense=[4096], mult=1, lr=0.05, lr_decay=100000,
+                 pca_dim=256, k=1000, dense=[4096], mult=1, 
+                 kmeans_max_iter=100, kmeans_batch_size=100, lr=0.05, lr_decay=100000,
                   imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, shuffle=True, num_parallel_calls=None,
                  sobel=False):
@@ -124,6 +131,8 @@ class DeepClusterTrainer(GenericExtractor):
             FCN and the softmax layer. [] = no layers in between.
         :mult: (int) not in paper; multiplication factor to increase
                 number of steps/epoch. set to 1 to get paper algorithm
+        :kmeans_max_iter: max iterations over dataset for minibatch k-means
+        :kmeans_batch_size: batch size for minibatch k-means
         :lr: (float) initial learning rate
         :lr_decay: (int) steps for learning rate to decay by half (0 to disable)
         :imshape: (tuple) image dimensions in H,W
@@ -193,7 +202,9 @@ class DeepClusterTrainer(GenericExtractor):
         
         # parse and write out config YAML
         self._parse_configs(augment=augment, k=k, pca_dim=pca_dim, lr=lr, 
-                            lr_decay=lr_decay, mult=mult,
+                            lr_decay=lr_decay, mult=mult, 
+                            kmeans_max_iter=kmeans_max_iter, 
+                            kmeans_batch_size=kmeans_batch_size,
                             imshape=imshape, num_channels=num_channels,
                             norm=norm, batch_size=batch_size, shuffle=shuffle,
                             num_parallel_calls=num_parallel_calls, sobel=sobel)
@@ -216,6 +227,8 @@ class DeepClusterTrainer(GenericExtractor):
         y_e, clusters, test_labels = cluster(predictions, 
                                 self.config["pca_dim"], 
                                 self.config["k"], init='k-means++',
+                                kmeans_max_iter=self.config["kmeans_max_iter"],
+                                kmeans_batch_size=self.config["kmeans_batch_size"],
                                 testvecs=test_preds)
         self._old_test_labels = self._test_labels
         self._test_labels = test_labels
