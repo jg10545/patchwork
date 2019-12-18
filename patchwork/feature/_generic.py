@@ -137,6 +137,15 @@ class GenericExtractor(object):
     def _record_scalars(self, **scalars):
         for s in scalars:
             tf.summary.scalar(s, scalars[s], step=self.step)
+            
+    def _record_images(self, **images):
+        for i in images:
+            tf.summary.image(i, images[i], step=self.step)
+            
+    def _record_hists(self, **hists):
+        for h in hists:
+            tf.summary.histogram(h, hists[h], step=self.step)
+                   
         
             
     
