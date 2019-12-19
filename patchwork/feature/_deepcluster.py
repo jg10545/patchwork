@@ -117,7 +117,7 @@ class DeepClusterTrainer(GenericExtractor):
                  kmeans_max_iter=100, kmeans_batch_size=100, lr=0.05, lr_decay=100000,
                   imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, shuffle=True, num_parallel_calls=None,
-                 sobel=False):
+                 sobel=False, single_channel=False):
         """
         :logdir: (string) path to log directory
         :trainingdata: (list) list of paths to training images
@@ -143,6 +143,8 @@ class DeepClusterTrainer(GenericExtractor):
         :shuffle: (bool) whether to shuffle training set
         :num_parallel_calls: (int) number of threads for loader mapping
         :sobel: whether to replace the input image with its sobel edges
+        :single_channel: if True, expect a single-channel input image and 
+                stack it num_channels times.
         """
         self.logdir = logdir
         self.trainingdata = trainingdata
@@ -189,7 +191,7 @@ class DeepClusterTrainer(GenericExtractor):
         # build prediction dataset for clustering
         ds, num_steps = dataset(trainingdata, imshape=imshape, num_channels=num_channels, 
                  num_parallel_calls=num_parallel_calls, batch_size=batch_size, 
-                 augment=False, sobel=sobel)
+                 augment=False, sobel=sobel, single_channel=single_channel)
         self._pred_ds = ds
         self._pred_steps = num_steps
         
@@ -207,7 +209,8 @@ class DeepClusterTrainer(GenericExtractor):
                             kmeans_batch_size=kmeans_batch_size,
                             imshape=imshape, num_channels=num_channels,
                             norm=norm, batch_size=batch_size, shuffle=shuffle,
-                            num_parallel_calls=num_parallel_calls, sobel=sobel)
+                            num_parallel_calls=num_parallel_calls, sobel=sobel,
+                            single_channel=single_channel)
         
         
     def _run_training_epoch(self, **kwargs):
@@ -254,7 +257,8 @@ class DeepClusterTrainer(GenericExtractor):
                                     batch_size=self.input_config["batch_size"], 
                                     mult=self.config["mult"],
                                     augment=self.augment_config,
-                                    sobel=self.input_config["sobel"])
+                                    sobel=self.input_config["sobel"],
+                                    single_channel=self.input_config["single_channel"])
         
         for x, y in train_ds:
             loss = deepcluster_training_step(x, y, self._models["full"], 

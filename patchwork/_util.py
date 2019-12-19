@@ -58,8 +58,13 @@ def _load_img(f, norm=255, num_channels=3, resize=None):
         img = Image.open(f)
         img_arr = np.array(img).astype(np.float32)/norm
         
-    if resize is not None and num_channels ==3:
+    if resize is not None:
         img_arr = np.array(Image.fromarray(
                 (255*img_arr).astype(np.uint8)).resize((resize[1], resize[0]))
                     ).astype(np.float32)/norm
+    # single-channel images will be returned by PIL as a rank-2 tensor.
+    # we need a rank-3 tensor for convolutions, and may want to repeat
+    # across 3 channels to work with standard pretrained convnets.
+    if len(img_arr.shape) == 2:
+        img_arr = np.stack(num_channels*[img_arr], -1)
     return img_arr.astype(np.float32)  # if norm is large, python recasts the array as float64

@@ -22,6 +22,7 @@ def _sobelize(x):
     return tf.reduce_mean(sobeled, -2)
 
 
+
 def _generate_imtypes(fps):
     """
     Input a list of filepaths and return an array mapping
@@ -45,7 +46,8 @@ def _generate_imtypes(fps):
 
 def _image_file_dataset(fps, imshape=(256,256), 
                  num_parallel_calls=None, norm=255,
-                 num_channels=3, shuffle=False):
+                 num_channels=3, shuffle=False,
+                 single_channel=False):
     """
     Basic tool to load images into a tf.data.Dataset using
     PIL.Image or gdal instead of the tensorflow decode functions
@@ -56,6 +58,8 @@ def _image_file_dataset(fps, imshape=(256,256),
     :norm: value for normalizing images
     :num_channels: channel depth to truncate images to
     :shuffle: whether to shuffle the dataset
+    :single_channel: if True, expect a single-channel input image and 
+        stack it num_channels times.
     
     Returns images as a 3D float32 tensor
     """
@@ -96,6 +100,9 @@ def _image_file_dataset(fps, imshape=(256,256),
         else:
             decoded = tf.io.decode_png(loaded)
             resized = _resize(decoded)
+            
+        if single_channel:
+            resized = tf.concat(num_channels*[resized], -1)
         return tf.cast(resized, tf.float32)/255
 
     ds = ds.map(lambda x,y: _load_img(x,y), num_parallel_calls=num_parallel_calls)
@@ -107,7 +114,7 @@ def _image_file_dataset(fps, imshape=(256,256),
 def dataset(fps, ys = None, imshape=(256,256), num_channels=3, 
                  num_parallel_calls=None, norm=255, batch_size=256,
                  augment=False, unlab_fps=None, shuffle=False,
-                 sobel=False):
+                 sobel=False, single_channel=False):
     """
     return a tf dataset that iterates over a list of images once
     
@@ -121,6 +128,8 @@ def dataset(fps, ys = None, imshape=(256,256), num_channels=3,
         supervised learning
     :shuffle: whether to shuffle the dataset
     :sobel: whether to replace the input image with its sobel edges
+    :single_channel: if True, expect a single-channel input image and 
+        stack it num_channels times.
     
     Returns
     :ds: tf.data.Dataset object to iterate over data. The dataset returns
@@ -132,13 +141,14 @@ def dataset(fps, ys = None, imshape=(256,256), num_channels=3,
         _aug = augment_function(imshape, augment)
     ds = _image_file_dataset(fps, imshape=imshape, num_channels=num_channels, 
                       num_parallel_calls=num_parallel_calls, norm=norm,
-                      shuffle=shuffle)
+                      shuffle=shuffle, single_channel=single_channel)
     
     if augment: ds = ds.map(_aug, num_parallel_calls=num_parallel_calls)
         
     if unlab_fps is not None:
         u_ds = _image_file_dataset(unlab_fps, imshape=imshape, num_channels=num_channels, 
-                      num_parallel_calls=num_parallel_calls, norm=norm)
+                      num_parallel_calls=num_parallel_calls, norm=norm,
+                      single_channel=single_channel)
         if augment: u_ds = u_ds.map(_aug, num_parallel_calls=num_parallel_calls)
         ds = tf.data.Dataset.zip((ds, u_ds))
         
@@ -164,7 +174,7 @@ def dataset(fps, ys = None, imshape=(256,256), num_channels=3,
 
 def stratified_training_dataset(fps, y, imshape=(256,256), num_channels=3, 
                  num_parallel_calls=None, batch_size=256, mult=10,
-                    augment=True, norm=255, sobel=False):
+                    augment=True, norm=255, sobel=False, single_channel=False):
     """
     Training dataset for DeepCluster.
     Build a dataset that provides stratified samples over labels
@@ -178,6 +188,8 @@ def stratified_training_dataset(fps, y, imshape=(256,256), num_channels=3,
         number of steps/epoch. set to 1 to get paper algorithm
     :augment: augmentation parameters (or True for defaults, or False to disable)
     :sobel: whether to replace the input image with its sobel edges
+    :single_channel: if True, expect a single-channel input image and 
+        stack it num_channels times.
         
     Returns
     :ds: tf.data.Dataset object to iterate over data
@@ -214,7 +226,7 @@ def stratified_training_dataset(fps, y, imshape=(256,256), num_channels=3,
     # NOW CREATE THE DATASET
     im_ds = _image_file_dataset(fps, imshape=imshape, num_channels=num_channels, 
                       num_parallel_calls=num_parallel_calls, norm=norm, 
-                      shuffle=False)
+                      shuffle=False, single_channel=single_channel)
 
     if augment:
         #im_ds = im_ds.map(_augment, num_parallel_calls)

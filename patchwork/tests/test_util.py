@@ -42,6 +42,11 @@ def test_load_img_on_png(test_png_path):
     assert img_arr.shape[2] == 3
 
 
+def test_load_img_on_jpg(test_jpg_path):
+    img_arr = _load_img(test_jpg_path)
+    assert isinstance(img_arr, np.ndarray)
+    assert len(img_arr.shape) == 3
+    assert img_arr.shape[2] == 3
 
 def test_load_img_on_png_with_resize(test_png_path):
     img_arr = _load_img(test_png_path, resize=(71,71))
@@ -55,3 +60,17 @@ def test_load_img_on_geotif(test_geotif_path):
     assert isinstance(img_arr, np.ndarray)
     assert len(img_arr.shape) == 3
     assert img_arr.shape[2] == 4
+
+def test_load_single_channel_img(test_single_channel_png_path):
+    img_arr = _load_img(test_single_channel_png_path, resize=(32,32),
+                        num_channels=1)
+    assert isinstance(img_arr, np.ndarray)
+    assert len(img_arr.shape) == 3
+    assert img_arr.shape[2] == 1
+
+
+def test_load_and_stack_single_channel_img(test_single_channel_png_path):
+    img_arr = _load_img(test_single_channel_png_path, num_channels=3)
+    assert isinstance(img_arr, np.ndarray)
+    assert len(img_arr.shape) == 3
+    assert img_arr.shape[2] == 3

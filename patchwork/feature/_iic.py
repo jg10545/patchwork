@@ -151,7 +151,7 @@ class InvariantInformationClusteringTrainer(GenericExtractor):
                  lr=1e-4, lr_decay=100000,
                  imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, shuffle=True, num_parallel_calls=None,
-                 sobel=False):
+                 sobel=False, single_channel=False):
         """
         :logdir: (string) path to log directory
         :trainingdata: (list) list of paths to training images
@@ -173,6 +173,8 @@ class InvariantInformationClusteringTrainer(GenericExtractor):
         :shuffle: (bool) whether to shuffle training set
         :num_parallel_calls: (int) number of threads for loader mapping
         :sobel:
+        :single_channel: if True, expect a single-channel input image and 
+                stack it num_channels times.
         """
         if sobel: assert False, "NOT YET IMPLEMENTED"
         self.logdir = logdir
@@ -182,13 +184,15 @@ class InvariantInformationClusteringTrainer(GenericExtractor):
                                            batch_size=batch_size, 
                                            num_parallel_calls=num_parallel_calls,
                                            norm=norm, num_channels=num_channels,
-                                           shuffle=shuffle, augment=augment)
+                                           shuffle=shuffle, augment=augment,
+                                           single_channel=single_channel)
         if testdata is not None:
             self._test_ds = build_iic_dataset(testdata, r=r, imshape=imshape,
                                            batch_size=batch_size, 
                                            num_parallel_calls=num_parallel_calls,
                                            norm=norm, num_channels=num_channels,
-                                           shuffle=False, augment=augment)
+                                           shuffle=False, augment=augment,
+                                           single_channel=single_channel)
             self._test = True
         else:
             self._test = False
@@ -235,7 +239,7 @@ class InvariantInformationClusteringTrainer(GenericExtractor):
                             imshape=imshape, num_channels=num_channels,
                             norm=norm, batch_size=batch_size, 
                             shuffle=shuffle, num_parallel_calls=num_parallel_calls,
-                            augment=augment, sobel=sobel)
+                            augment=augment, sobel=sobel, single_channel=single_channel)
         
         
     @tf.function

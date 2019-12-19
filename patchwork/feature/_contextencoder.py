@@ -254,7 +254,7 @@ class ContextEncoderTrainer(GenericExtractor):
                  recon_weight=1, adv_weight=1e-3, lr=1e-4,
                   imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, shuffle=True, num_parallel_calls=None,
-                 sobel=False):
+                 sobel=False, single_channel=False):
         """
         :logdir: (string) path to log directory
         :trainingdata: (list or tf Dataset) list of paths to training images, or
@@ -276,6 +276,8 @@ class ContextEncoderTrainer(GenericExtractor):
         :shuffle: (bool) whether to shuffle training set
         :num_parallel_calls: (int) number of threads for loader mapping
         :sobel: whether to replace the input image with its sobel edges
+        :single_channel: if True, expect a single-channel input image and 
+            stack it num_channels times.
         """
         self.logdir = logdir
         if sobel:
@@ -308,7 +310,8 @@ class ContextEncoderTrainer(GenericExtractor):
                                 norm=norm, shuffle=shuffle, 
                                 num_parallel_calls=num_parallel_calls,
                                 batch_size=batch_size, prefetch=True,
-                                augment=augment, sobel=sobel)
+                                augment=augment, sobel=sobel,
+                                single_channel=single_channel)
         else:
             assert isinstance(trainingdata, tf.data.Dataset), "i don't know what to do with this"
             self._train_ds = trainingdata
@@ -317,7 +320,8 @@ class ContextEncoderTrainer(GenericExtractor):
         if testdata is not None:
             self._test_ims, self._test_mask = _build_test_dataset(testdata,
                                             input_shape=input_shape,
-                                            norm=norm, sobel=sobel)
+                                            norm=norm, sobel=sobel,
+                                            single_channel=single_channel)
             self._test_masked_ims = (1-self._test_mask)*self._test_ims
             self._test = True
         else:
@@ -330,7 +334,8 @@ class ContextEncoderTrainer(GenericExtractor):
                             adv_weight=adv_weight, lr=lr,
                             imshape=imshape, num_channels=num_channels,
                             norm=norm, batch_size=batch_size, shuffle=shuffle,
-                            num_parallel_calls=num_parallel_calls, sobel=sobel)
+                            num_parallel_calls=num_parallel_calls, sobel=sobel,
+                            single_channel=single_channel)
         
         
     def _run_training_epoch(self, **kwargs):
