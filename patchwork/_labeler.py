@@ -9,13 +9,11 @@ GUI code for training a model
 #import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
-#import pandas as pd
 import panel as pn
-from PIL import Image
 
 
 from patchwork._sample import find_subset
-from patchwork._util import shannon_entropy, tiff_to_array
+from patchwork._util import shannon_entropy#, tiff_to_array
 
 
 def _gen_figs(arrays, dim=3, lw=5):
@@ -47,68 +45,6 @@ def _gen_figs(arrays, dim=3, lw=5):
         figs.append(fig)
     return figs
 
-
-
-#def _build_fig(arr, figsize=(5,5), lw=5):
-#    """
-#    Build matplotlib figure for displaying an iage
-#    
-#    :arr: numpy array containing normalized image
-#    """
-#    # imshow() should input either a (H,W) or (H,W,3) array
-#    if arr.shape[-1] < 3:
-#        arr = arr[:,:,0]
-#    else:
-#        arr = arr[:,:,:3]
-#    
-#    fig1, ax1 = plt.subplots(figsize=figsize)
-#    ax1.imshow(arr)
-#    ax1.axis("off")
-#    plt.close(fig1)
-    
-#    fig2, ax2 = plt.subplots(figsize=figsize)
-#    ax2.imshow(arr)
-#    ax2.axis("off")
-#    a = ax2.axis()
-#    rect = Rectangle((lw,lw),a[1]-2*lw,a[2]-2*lw,
-#                     linewidth=lw,edgecolor='r',facecolor='none')
-#    ax2.add_patch(rect)
-#    plt.close(fig2)
-    
-#    return fig1, fig2
-
-
-#class SingleImgDisplayer(object):
-#    """
-#    Widget to handle displaying a single image- precomputes matplotlib
-#    figures for selected and unselected cases
-#    """
-    
-#    def __init__(self):
-#        fig, ax = plt.subplots()
-#        ax.plot([])
-#        ax.axis("off")
-#        self._fig_selected = fig
-#        self._fig_unselected = fig
-#        self.selected = False
-#        self.panel = pn.pane.Matplotlib(self._fig_unselected)#
-        
-#    def load(self, arr):
-#        """
-#        Load a numpy array into matplotlib figures
-#        """
-#        self._fig_unselected, self._fig_selected = _build_fig(arr)
-#        self.panel.object = self._fig_unselected
-        
-#    def select(self):
-#        if not self.selected:
-#            self.panel.object = self._fig_selected
-#            self.selected = True
-
-#    def unselect(self):
-#        if self.selected:
-#            self.panel.object = self._fig_unselected
-#            self.selected = False
 
 
 def _single_class_radiobuttons(width=125, height=25):
