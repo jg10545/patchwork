@@ -18,10 +18,11 @@ def entropy_loss(y_true, y_pred):
 
 # Based on code at https://www.dlology.com/blog/how-to-multi-task-learning-with-missing-labels-in-keras/
 
-def masked_binary_crossentropy(y_true, y_pred):
+def masked_binary_crossentropy(y_true, y_pred, label_smoothing=0):
     """
     Binary crossentropy wrapper that masks out any values
     where y_true = -1    
     """
     mask = K.cast(K.not_equal(y_true, -1), K.floatx())
-    return K.binary_crossentropy(y_true * mask, y_pred * mask)
+    return K.binary_crossentropy(y_true * mask, y_pred * mask,
+                                 label_smoothing=label_smoothing)
