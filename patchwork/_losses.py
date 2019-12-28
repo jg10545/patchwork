@@ -24,5 +24,27 @@ def masked_binary_crossentropy(y_true, y_pred, label_smoothing=0):
     where y_true = -1    
     """
     mask = K.cast(K.not_equal(y_true, -1), K.floatx())
-    return K.binary_crossentropy(y_true * mask, y_pred * mask,
-                                 label_smoothing=label_smoothing)
+    # count number of nonempty masks so that we can
+    # compute the mean
+    norm = K.sum(mask)
+    
+    if label_smoothing > 0:
+        y_true = y_true*(1-label_smoothing) + 0.5*label_smoothing
+    return K.sum(
+            K.binary_crossentropy(y_true * mask, y_pred * mask),
+            axis=-1)/norm
+    
+    
+def masked_mean_average_error(y_true, y_pred):
+    """
+    Mean average error loss function that masks 
+    out any values where y_true = -1    
+    """
+    # mask ==1 wherever the label != -1
+    mask = K.cast(K.not_equal(y_true, -1), K.floatx())
+    # count number of nonempty masks so that we can
+    # compute the mean
+    norm = K.sum(mask)
+    return K.sum(
+            K.abs(y_true*mask - y_pred*mask), axis=-1
+            )/norm
