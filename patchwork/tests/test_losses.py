@@ -7,12 +7,17 @@ from patchwork._losses import entropy_loss, masked_binary_crossentropy
 from patchwork._losses import masked_mean_average_error
 
 def test_entropy_loss():
-    # trivial probability distribution- should be close to zero entropy
-    probs = np.array([[0., 1.]])
-    entropy = entropy_loss(probs, probs)
+    bs = 7
+    nc = 5
+    pred1 = 0.5*np.ones((bs, nc))
+    pred2 = np.zeros((bs,nc))
     
-    assert isinstance(entropy, tf.Tensor)
-    assert np.sum(entropy.numpy()) < 1e-5
+    ent1 = entropy_loss(pred1)
+    ent2 = entropy_loss(pred2)
+    
+    assert isinstance(ent1, tf.Tensor)
+    assert np.round(ent1.numpy().mean(),5) == np.round(np.log(2),5)
+    assert ent2.numpy().sum() == 0
     
     
 def test_masked_binary_crossentropy():

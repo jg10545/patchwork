@@ -3,6 +3,8 @@ import param
 import tensorflow as tf
 
 from patchwork._losses import masked_binary_crossentropy
+from patchwork._losses import masked_mean_average_error
+
 from patchwork._layers import CosineDense
 
 class SigmoidCrossEntropy(param.Parameterized):
@@ -24,7 +26,7 @@ class SigmoidCrossEntropy(param.Parameterized):
             return masked_binary_crossentropy(y_true, y_pred, label_smoothing=self.label_smoothing)
         return tf.keras.Model(inpt, dense), loss
     
-    
+
 class CosineOutput(param.Parameterized):
     """
     Output network that estimates class probabilities using cosine similarity.
@@ -36,9 +38,7 @@ class CosineOutput(param.Parameterized):
     
     def build(self, num_classes, inpt_channels):
         # return output model as well as loss function
-        inpt = tf.keras.layers.Input((None, inpt_channels))
+        inpt = tf.keras.layers.Input((inpt_channels))
         dense = CosineDense(num_classes)(inpt)
-        print("not sure if this is the right loss function or not")
-        def loss(y_true, y_pred):
-            return masked_binary_crossentropy(y_true, y_pred)
-        return tf.keras.Model(inpt, dense), loss
+        
+        return tf.keras.Model(inpt, dense), masked_mean_average_error

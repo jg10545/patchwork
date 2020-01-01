@@ -12,11 +12,13 @@ class GlobalPooling(param.Parameterized):
     A single pooling layer to map outputs of a feature extractor to a dense vector. No trainable parameters.
     """
     
-    def build(self, num_classes, inpt_channels):
-        if self.pooltype == "max pool":
-            return tf.keras.layers.GlobalMaxPool2D()
+    def build(self, inpt_channels):
+        inpt = tf.keras.layers.Input((None, None, inpt_channels))
+        if self.pooling_type == "max pool":
+            pool = tf.keras.layers.GlobalMaxPool2D()
         else:
-            return tf.keras.layers.GlobalAvgPool2D()
+            pool = tf.keras.layers.GlobalAvgPool2D()
+        return tf.keras.Model(inpt, pool(inpt))
         
         
 class ConvNet(param.Parameterized):
@@ -36,7 +38,7 @@ class ConvNet(param.Parameterized):
     Convolutional network with global pooling at the end. Set dropout to 0 to disable.
     """
     
-    def build(self, num_classes, inpt_channels):
+    def build(self, inpt_channels):
         inpt = tf.keras.layers.Input((None, None, inpt_channels))
         net = inpt
         for n in range(self.number_of_layers):
