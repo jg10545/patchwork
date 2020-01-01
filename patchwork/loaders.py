@@ -6,7 +6,7 @@ Code for loading data into tensorflow datasets
 """
 import numpy as np
 import tensorflow as tf
-from PIL import Image
+#from PIL import Image
 from patchwork._util import tiff_to_array
 
 from patchwork._augment import augment_function
@@ -36,7 +36,7 @@ def _generate_imtypes(fps):
     imtypes = np.zeros(len(fps), dtype=np.int64)
     for i in range(len(fps)):
         t = fps[i].lower()
-        if ".jpg" in t:
+        if (".jpg" in t) or ("jpeg" in t):
             imtypes[i] = 1
         elif ".gif" in t:
             imtypes[i] = 2
@@ -103,7 +103,7 @@ def _image_file_dataset(fps, imshape=(256,256),
             
         if single_channel:
             resized = tf.concat(num_channels*[resized], -1)
-        return tf.cast(resized, tf.float32)/255
+        return tf.cast(resized[:,:,:num_channels], tf.float32)/255
 
     ds = ds.map(lambda x,y: _load_img(x,y), num_parallel_calls=num_parallel_calls)
     return ds

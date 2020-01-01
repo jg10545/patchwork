@@ -140,7 +140,20 @@ def test_sobelize():
     assert outpt.numpy().sum() == 0
     
 
+def test_image_file_dataset_stripping_alpha_channel(test_rgba_png_path):
+    imfiles = [test_rgba_png_path]
+    ds = _image_file_dataset(imfiles, imshape=(33,21),
+                             norm=255, num_channels=3,
+                             shuffle=False)
+    for x in ds:
+        x = x.numpy()
     
+    assert isinstance(ds, tf.data.Dataset)
+    assert isinstance(x, np.ndarray)
+    assert x.max() <= 1
+    assert x.min() >= 0
+    assert x.shape == (33, 21, 3)
+
     
     
     
