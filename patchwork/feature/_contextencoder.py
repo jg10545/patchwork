@@ -288,7 +288,6 @@ class ContextEncoderTrainer(GenericExtractor):
         self._file_writer = tf.summary.create_file_writer(logdir, flush_millis=10000)
         self._file_writer.set_as_default()
         
-        print(input_shape)
         if (fcn is None) or (inpainter is None) or (discriminator is None):
             inpainter, fcn, discriminator = build_inpainting_network(
                     input_shape=input_shape,

@@ -28,17 +28,6 @@ def compute_mutual_information(x,y):
     entropy = -1*tf.reduce_sum(P*tf.math.log(Pj))
     mutual_info = entropy - conditional_entropy
     return mutual_info, entropy, conditional_entropy
-    #return tf.reduce_sum(P * (tf.math.log(P) - tf.math.log(Pi) - tf.math.log(Pj)))
-
-"""
-def test_compute_mutual_information():
-    z = tf.ones((1,5), dtype=tf.float32)/5
-    MI = compute_mutual_information(z,z)
-    
-    assert isinstance(MI, tf.Tensor)
-    assert np.abs(MI.numpy()) < 1e-6
-"""
-
 
 def compute_p(f_x, f_y, head):
     """
@@ -97,25 +86,10 @@ def iic_training_step(x1, x2, fcn, heads, opt, variables, entropy_weight=0):
     return loss, entropy, conditional_entropy
 
 
-"""
-def test_iic_training_step():
-    assert False, "not fixed yet"
-    x1 = tf.ones((1,2), dtype=tf.float32)
-    x2 = tf.ones((1,2), dtype=tf.float32)
-    
-    inpt = tf.keras.layers.Input((2))
-    outpt = tf.keras.layers.Dense(2, activation="softmax")(inpt)
-    model = tf.keras.Model(inpt, outpt)
-    opt = tf.keras.optimizers.SGD()
-    
-    loss = iic_training_step(x1, x2, model, opt)
-    
-    assert isinstance(loss, tf.Tensor)
-"""
-
 def build_iic_dataset(imfiles, r=5, imshape=(256,256), batch_size=256, 
                       num_parallel_calls=None, norm=255,
-                      num_channels=3, shuffle=False, augment=True):
+                      num_channels=3, shuffle=False, augment=True,
+                      single_channel=False):
     """
     Build a tf.data.Dataset object for training IIC.
     """
@@ -125,7 +99,7 @@ def build_iic_dataset(imfiles, r=5, imshape=(256,256), batch_size=256,
     ds = _image_file_dataset(imfiles, imshape=imshape, 
                              num_parallel_calls=num_parallel_calls,
                              norm=norm, num_channels=num_channels,
-                             shuffle=shuffle)
+                             shuffle=shuffle, single_channel=single_channel)
     
     if r > 1:
         ds = ds.flat_map(lambda x: tf.data.Dataset.from_tensors(x).repeat(r))
