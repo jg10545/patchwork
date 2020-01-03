@@ -58,7 +58,7 @@ def maskinator(img, mask):
 def _build_context_encoder_dataset(filepaths, input_shape=(256,256,3), norm=255,
                                    shuffle=True, num_parallel_calls=4,
                                    batch_size=32, prefetch=True, augment=False,
-                                   sobel=False):
+                                   sobel=False, single_channel=False):
     """
     Build a tf.data.Dataset object to use for training.
     """
@@ -72,7 +72,7 @@ def _build_context_encoder_dataset(filepaths, input_shape=(256,256,3), norm=255,
     img_ds = _image_file_dataset(filepaths, imshape=input_shape[:2], 
                                  num_channels=input_shape[2], norm=norm,
                                  num_parallel_calls=num_parallel_calls,
-                                 shuffle=True)
+                                 shuffle=True, single_channel=single_channel)
     #img_ds = img_ds.shuffle(shuffle_queue)
     if augment:
         _aug = augment_function(input_shape[:2], augment)
@@ -91,7 +91,7 @@ def _build_context_encoder_dataset(filepaths, input_shape=(256,256,3), norm=255,
     
     
 def _build_test_dataset(filepaths, input_shape=(256,256,3), norm=255,
-                        sobel=False):
+                        sobel=False, single_channel=False):
     """
     Load a set of images into memory from file and mask the centers to
     use as a test set.
@@ -369,15 +369,15 @@ class ContextEncoderTrainer(GenericExtractor):
     def evaluate(self):
         num_test_images=10
         if self._test:
-            preds = self._models["inpainter"](self._test_masked_ims).numpy()
+            preds = self._models["inpainter"].predict(self._test_masked_ims)
             
             reconstruction_residual = self._test_mask*(preds - self._test_ims)
             reconstructed_loss = np.mean(np.abs(reconstruction_residual))
             
             preds = preds[:,:self.input_config["imshape"][0], :self.input_config["imshape"][1],:]
             # see how the discriminator does on them
-            disc_outputs_on_raw = self._models["discriminator"](self._test_ims)
-            disc_outputs_on_inpaint = self._models["discriminator"](preds)
+            disc_outputs_on_raw = self._models["discriminator"].predict(self._test_ims)
+            disc_outputs_on_inpaint = self._models["discriminator"].predict(preds)
             # for the visualization in tensorboard: replace the unmasked areas
             # with the input image as a guide to the eye
             preds = preds*self._test_mask + self._test_ims*(1-self._test_mask)
