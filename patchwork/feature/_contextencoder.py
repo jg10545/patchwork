@@ -7,6 +7,7 @@ import numpy as np
 import tensorflow as tf
 #import tensorflow.contrib
 import tensorflow.keras.backend as K
+import warnings
 
 from patchwork._augment import augment_function
 from patchwork.loaders import _image_file_dataset, _sobelize
@@ -327,6 +328,12 @@ class ContextEncoderTrainer(GenericExtractor):
             self._test = False
             
         self.step = 0
+        
+        # let's do a quick check on the model- it's possible to define an
+        # encoder/decoder pair that won't return the same shape as the input 
+        # shape. not NECESSARILY a problem but the user should know.
+        if self._models["inpainter"].output_shape[1:3] != imshape:
+            warnings.warn("imshape and context encoder output shape are different. ye be warned.")
         
         # parse and write out config YAML
         self._parse_configs(augment=augment, recon_weight=recon_weight,
