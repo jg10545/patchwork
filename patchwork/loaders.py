@@ -16,10 +16,16 @@ from patchwork._augment import augment_function
 def _sobelize(x):
     """
     Input a batch of images [N, H, W, C] and return
-    a batch of sobel-filtered images [N, H, W, 2]
+    a batch of sobel-filtered images [N, H, W, 3].
+    
+    The first two channels are the sobel filter and
+    the third will be zeros (so that it's compatible with
+    standard network structures)
     """
     sobeled = tf.image.sobel_edges(x)
-    return tf.reduce_mean(sobeled, -2)
+    sobel_mean = tf.reduce_mean(sobeled, -2)
+    extra_channel = tf.zeros_like(sobel_mean)[:,:,:,:1]
+    return tf.concat([sobel_mean, extra_channel], -1)
 
 
 

@@ -282,7 +282,7 @@ class ContextEncoderTrainer(GenericExtractor):
         """
         self.logdir = logdir
         if sobel:
-            input_shape = (imshape[0], imshape[1], 2)
+            input_shape = (imshape[0], imshape[1], 3)
         else:
             input_shape = (imshape[0], imshape[1], num_channels)
         
@@ -332,8 +332,9 @@ class ContextEncoderTrainer(GenericExtractor):
         # let's do a quick check on the model- it's possible to define an
         # encoder/decoder pair that won't return the same shape as the input 
         # shape. not NECESSARILY a problem but the user should know.
-        if self._models["inpainter"].output_shape[1:3] != imshape:
-            warnings.warn("imshape and context encoder output shape are different. ye be warned.")
+        output_shape = self._models["inpainter"].output_shape[1:3]
+        if output_shape != imshape:
+            warnings.warn("imshape %s and context encoder output shape %s are different. ye be warned."%(imshape, output_shape))
         
         # parse and write out config YAML
         self._parse_configs(augment=augment, recon_weight=recon_weight,

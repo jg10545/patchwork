@@ -148,7 +148,7 @@ class DeepClusterTrainer(GenericExtractor):
         """
         self.logdir = logdir
         self.trainingdata = trainingdata
-        channels = 2 if sobel else num_channels
+        channels = 3 if sobel else num_channels
         
         self._file_writer = tf.summary.create_file_writer(logdir, flush_millis=10000)
         self._file_writer.set_as_default()
