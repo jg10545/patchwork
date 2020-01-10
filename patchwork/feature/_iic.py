@@ -125,7 +125,7 @@ class InvariantInformationClusteringTrainer(GenericExtractor):
                  lr=1e-4, lr_decay=100000,
                  imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, shuffle=True, num_parallel_calls=None,
-                 sobel=False, single_channel=False):
+                 sobel=False, single_channel=False, notes=""):
         """
         :logdir: (string) path to log directory
         :trainingdata: (list) list of paths to training images
@@ -149,6 +149,8 @@ class InvariantInformationClusteringTrainer(GenericExtractor):
         :sobel:
         :single_channel: if True, expect a single-channel input image and 
                 stack it num_channels times.
+        :notes: (string) any notes on the experiment that you want saved in the
+                config.yml file
         """
         if sobel: assert False, "NOT YET IMPLEMENTED"
         self.logdir = logdir
@@ -176,7 +178,7 @@ class InvariantInformationClusteringTrainer(GenericExtractor):
         
         # if no FCN is passed- build one
         if fcn is None:
-            assert False, "not yet implemented"
+            assert False, "no default FCN implemented for IIC yet- try again, sucker"
         self.fcn = fcn
         self._models = {"fcn":fcn}   
         self._flat_model = tf.keras.Sequential([
@@ -213,7 +215,8 @@ class InvariantInformationClusteringTrainer(GenericExtractor):
                             imshape=imshape, num_channels=num_channels,
                             norm=norm, batch_size=batch_size, 
                             shuffle=shuffle, num_parallel_calls=num_parallel_calls,
-                            augment=augment, sobel=sobel, single_channel=single_channel)
+                            augment=augment, sobel=sobel, single_channel=single_channel,
+                            notes=notes)
         
         
     @tf.function

@@ -255,7 +255,7 @@ class ContextEncoderTrainer(GenericExtractor):
                  recon_weight=1, adv_weight=1e-3, lr=1e-4,
                   imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, shuffle=True, num_parallel_calls=None,
-                 sobel=False, single_channel=False):
+                 sobel=False, single_channel=False, notes=""):
         """
         :logdir: (string) path to log directory
         :trainingdata: (list or tf Dataset) list of paths to training images, or
@@ -279,6 +279,8 @@ class ContextEncoderTrainer(GenericExtractor):
         :sobel: whether to replace the input image with its sobel edges
         :single_channel: if True, expect a single-channel input image and 
             stack it num_channels times.
+        :notes: (string) any notes on the experiment that you want saved in the
+                config.yml file
         """
         self.logdir = logdir
         if sobel:
@@ -342,7 +344,7 @@ class ContextEncoderTrainer(GenericExtractor):
                             imshape=imshape, num_channels=num_channels,
                             norm=norm, batch_size=batch_size, shuffle=shuffle,
                             num_parallel_calls=num_parallel_calls, sobel=sobel,
-                            single_channel=single_channel)
+                            single_channel=single_channel, notes=notes)
         
         
     def _run_training_epoch(self, **kwargs):

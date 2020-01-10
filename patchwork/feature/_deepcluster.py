@@ -116,8 +116,9 @@ class DeepClusterTrainer(GenericExtractor):
                  pca_dim=256, k=1000, dense=[4096], mult=1, 
                  kmeans_max_iter=100, kmeans_batch_size=100, lr=0.05, lr_decay=100000,
                   imshape=(256,256), num_channels=3,
-                 norm=255, batch_size=64, shuffle=True, num_parallel_calls=None,
-                 sobel=False, single_channel=False):
+                 norm=255, batch_size=64, num_parallel_calls=None,
+                 sobel=False, single_channel=False, notes="",
+                 downstream_labels=None):
         """
         :logdir: (string) path to log directory
         :trainingdata: (list) list of paths to training images
@@ -128,7 +129,8 @@ class DeepClusterTrainer(GenericExtractor):
         :pca_dim: (int) dimension to reduce FCN outputs to using principal component analysis
         :k: (int) number of clusters
         :dense: (list of ints) number of hidden units in dense layers between the
-            FCN and the softmax layer. [] = no layers in between.
+            FCN and the softmax layer. THERE NEEDS TO BE AT LEAST ONE DENSE LAYER. The
+            DeepCluster paper used [4096, 4096].
         :mult: (int) not in paper; multiplication factor to increase
                 number of steps/epoch. set to 1 to get paper algorithm
         :kmeans_max_iter: max iterations over dataset for minibatch k-means
@@ -140,14 +142,17 @@ class DeepClusterTrainer(GenericExtractor):
         :norm: (int or float) normalization constant for images (for rescaling to
                unit interval)
         :batch_size: (int) batch size for training
-        :shuffle: (bool) whether to shuffle training set
         :num_parallel_calls: (int) number of threads for loader mapping
         :sobel: whether to replace the input image with its sobel edges
         :single_channel: if True, expect a single-channel input image and 
                 stack it num_channels times.
+        :notes: (string) any notes on the experiment that you want saved in the
+                config.yml file
+        :downstream_labels: dictionary mapping image file paths to labels
         """
         self.logdir = logdir
         self.trainingdata = trainingdata
+        self._downstream_labels = downstream_labels
         channels = 3 if sobel else num_channels
         
         self._file_writer = tf.summary.create_file_writer(logdir, flush_millis=10000)
@@ -204,13 +209,13 @@ class DeepClusterTrainer(GenericExtractor):
         
         # parse and write out config YAML
         self._parse_configs(augment=augment, k=k, pca_dim=pca_dim, lr=lr, 
-                            lr_decay=lr_decay, mult=mult, 
+                            lr_decay=lr_decay, mult=mult, dense=dense,
                             kmeans_max_iter=kmeans_max_iter, 
                             kmeans_batch_size=kmeans_batch_size,
                             imshape=imshape, num_channels=num_channels,
-                            norm=norm, batch_size=batch_size, shuffle=shuffle,
+                            norm=norm, batch_size=batch_size,
                             num_parallel_calls=num_parallel_calls, sobel=sobel,
-                            single_channel=single_channel)
+                            single_channel=single_channel, notes=notes)
         
         
     def _run_training_epoch(self, **kwargs):
@@ -278,6 +283,9 @@ class DeepClusterTrainer(GenericExtractor):
                     nmi = normalized_mutual_info_score(self._test_labels, self._old_test_labels,
                                                        average_method="arithmetic")
                     self._record_scalars(test_nmi=nmi)
+                    
+        if self._downstream_labels:
+            self._linear_classification_test()
             
         
             

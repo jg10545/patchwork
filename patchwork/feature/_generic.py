@@ -8,13 +8,57 @@ class holding all the stuff we want to reuse between feature extractors.
 """
 import os
 import yaml
+import numpy as np
 
 import tensorflow as tf
 from tqdm import tqdm
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score, confusion_matrix
+
+from patchwork.loaders import dataset
 
 
 INPUT_PARAMS = ["imshape", "num_channels", "norm", "batch_size",
                 "shuffle", "num_parallel_calls", "sobel", "single_channel"]
+
+
+
+def linear_classification_test(fcn, downstream_labels, **input_config):
+    """
+    Train a linear classifier on a fully-convolutional network
+    and return out-of-sample results.
+    
+    :fcn: Keras fully-convolutional network
+    :downstream_labels: dictionary mapping image file paths to labels
+    :input_config: kwargs for patchwork.loaders.dataset()
+    
+    Returns
+    :acc: float; test accuracy
+    :cm: 2D numpy array; confusion matrix
+    """
+    # do a 2:1 train:test split
+    split = np.array([(i%3 == 0) for i in range(len(downstream_labels))])
+    X = np.array(list(downstream_labels.keys()))
+    Y = np.array(list(downstream_labels.values()))
+    # get average-pooled training features
+    ds, num_steps = dataset(X[~split], shuffle=False,
+                                            **input_config)
+    trainvecs = fcn.predict(ds, steps=num_steps).mean(axis=1).mean(axis=1)
+    # get test features
+    ds, num_steps = dataset(X[split], shuffle=False,
+                                            **input_config)
+    testvecs = fcn.predict(ds, steps=num_steps).mean(axis=1).mean(axis=1)
+    # train a multinomial classifier
+    logreg = LogisticRegression(C=1e5, solver="lbfgs", multi_class="multinomial", max_iter=10000)
+    logreg.fit(trainvecs, Y[~split])
+    # make predictions on test set
+    preds = logreg.predict(testvecs)
+    # compute metrics and return
+    acc = accuracy_score(Y[split], preds)
+    cm = confusion_matrix(Y[split], preds)
+    return acc, cm
+
+
 
 
 
@@ -148,7 +192,15 @@ class GenericExtractor(object):
     def _record_hists(self, **hists):
         for h in hists:
             tf.summary.histogram(h, hists[h], step=self.step)
-                   
+            
+    def _linear_classification_test(self):
+         acc, conf_mat = linear_classification_test(self.fcn, 
+                                    self._downstream_labels, 
+                                    **self.input_config)
+         
+         conf_mat = np.expand_dims(np.expand_dims(conf_mat, 0), -1)/conf_mat.max()
+         self._record_scalars(linear_classification_accuracy=acc)
+         self._record_images(linear_classification_confusion_matrix=conf_mat)
         
             
     
