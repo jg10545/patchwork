@@ -179,9 +179,9 @@ class DeepClusterTrainer(GenericExtractor):
         # build evaluation dataset
         if testdata is not None:
             self._test_ds, self._test_steps = dataset(testdata,
-                                     imshape=imshape,
-                                     norm=norm,
-                                     sobel=sobel)
+                                     imshape=imshape,norm=norm,
+                                     sobel=sobel, num_channels=num_channels,
+                                     single_channel=single_channel)
             self._test = True
         else:
             self._test = False

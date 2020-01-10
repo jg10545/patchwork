@@ -377,11 +377,11 @@ class ContextEncoderTrainer(GenericExtractor):
         num_test_images=10
         if self._test:
             preds = self._models["inpainter"].predict(self._test_masked_ims)
+            preds = preds[:,:self.input_config["imshape"][0], :self.input_config["imshape"][1],:]
             
             reconstruction_residual = self._test_mask*(preds - self._test_ims)
             reconstructed_loss = np.mean(np.abs(reconstruction_residual))
             
-            preds = preds[:,:self.input_config["imshape"][0], :self.input_config["imshape"][1],:]
             # see how the discriminator does on them
             disc_outputs_on_raw = self._models["discriminator"].predict(self._test_ims)
             disc_outputs_on_inpaint = self._models["discriminator"].predict(preds)
