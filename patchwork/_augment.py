@@ -61,10 +61,10 @@ def _random_zoom(im, imshape, scale=0.1):
 def _choose(prob):
     return tf.random.uniform(()) <= prob
 
-def _augment(im, imshape=None, max_brightness_delta=False, contrast_min=0.4, contrast_max=False,
+def _augment(im, imshape=None, max_brightness_delta=False, contrast_min=False, contrast_max=False,
              max_hue_delta=False,  max_saturation_delta=False,
              left_right_flip=False, up_down_flip=False, rot90=False, zoom_scale=False,
-             select_prob=0.5):
+             select_prob=1.):
     """
     Macro to do random image augmentation
     """

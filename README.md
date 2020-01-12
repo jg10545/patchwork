@@ -26,7 +26,7 @@ Right now,
 
 ## Installation
 
-## Usage
+## Active Learning GUI
 
 To start with you'll need:
 
@@ -44,6 +44,46 @@ Labels are stored in a `pandas.DataFrame` containing:
 * one column for each category with values `None`, `0`, or `1` (default `None`) indicating whether that image has that label (and if so, whether the class is present)
 
 ## Building Feature Extractors
+
+The `patchwork.feature` module has several models implemented for unsupervised or self-supervised representation learning:
+
+* Context Encoders
+* DeepCluster
+* Invariant Information Clustering
+
+The module has a class to manage the training of each model. You can initialize the trainer with a fully-convolutional `keras` model for it to train (otherwise it will use a default model).
+
+In addition to each model's training hyperparameters, the different feature extractor trainers share input pipeline and augmentation parameters.
+
+### Configuring feature extractor trainers
+
+#### Input parameters
+
+* `imshape` (H,W) tuple defining an image shape. All images will be resampled to this shape.
+* `num_channels` integer; the number of channels per image. If an image has more channels than this (for example, and RGBA image when `num_channels=3`) it will be truncated.
+* `norm` value to divide image data by to scale it to the unit interval. This will usually be 255 but may be different for GeoTIFFs, for example.
+* `batch_size` integer; batch size for training
+* `num_parallel_calls` integer; number of parallel threads to use for loading and augmenting (generally set to number of CPUs)
+* `sobel` Boolean; if `True` then each image is averaged across its channels and then Sobel filtered. The 2-channel output of the Sobel filter is padded with a third channel of zeros so that you can use this with standard 3-channel-input convnets.
+* `single_channel` Boolean; let `patchwork` know that you expect single-channel input images. If `num_channels > 1` the image will be repeated across channels (again, for example, for using single-channel images with 3-channel-input convnets)
+
+#### Augmentation parameters
+
+You can pass `False` to the `augment` parameter to disable augmentation, `True` to use defaults, or a dictionary containing any of the following (with the rest disabled):
+
+
+* `max_brightness_delta` (default 0.2)
+* `contrast_min` (default 0.4) 
+* `contrast_max` (default 1.4)
+* `max_hue_delta` (default 0.1)
+* `max_saturation_delta` (default 0.5)
+* `left_right_flip` (default True)
+* `up_down_flip` (default True)
+* `rot90` (default True)
+* `zoom_scale` (default 0.3)
+* `select_prob` (default 0.5) flip a weighted coin with this probability for each of the augmentation steps to decide whether to apply it
+
+
 
 ### Context Encoder
 
