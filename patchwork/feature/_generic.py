@@ -14,6 +14,7 @@ import tensorflow as tf
 from tqdm import tqdm
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, confusion_matrix
+from tensorboard.plugins.hparams import api as hp
 
 from patchwork.loaders import dataset
 
@@ -193,7 +194,7 @@ class GenericExtractor(object):
         for h in hists:
             tf.summary.histogram(h, hists[h], step=self.step)
             
-    def _linear_classification_test(self):
+    def _linear_classification_test(self, params=None):
          acc, conf_mat = linear_classification_test(self.fcn, 
                                     self._downstream_labels, 
                                     **self.input_config)
@@ -201,6 +202,17 @@ class GenericExtractor(object):
          conf_mat = np.expand_dims(np.expand_dims(conf_mat, 0), -1)/conf_mat.max()
          self._record_scalars(linear_classification_accuracy=acc)
          self._record_images(linear_classification_confusion_matrix=conf_mat)
+         # if the model passed hyperparameters to record for the
+         # tensorboard hparams interface:
+         if params is not None:
+             # first time- set up hparam config
+             if not hasattr(self, "_hparams_config"):
+                self._hparams_config = hp.hparams_config(
+                        hparams=list(params.keys()), 
+                        metrics=[hp.Metric("linear_classification_accuracy")])
+                
+                # record hyperparamters
+                hp.hparams(params)
         
             
     

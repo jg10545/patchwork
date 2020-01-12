@@ -2,10 +2,12 @@ import numpy as np
 import tensorflow as tf
 import sklearn.preprocessing, sklearn.cluster, sklearn.decomposition
 from sklearn.metrics.cluster import normalized_mutual_info_score
+import warnings
 
 from patchwork.feature._models import BNAlexNetFCN
 from patchwork.loaders import stratified_training_dataset, dataset
 from patchwork.feature._generic import GenericExtractor
+
 
 
 
@@ -21,7 +23,8 @@ def cluster(vecs, pca_dim=256, k=100, init='k-means++', testvecs=None,
     :init: how to initialize k-means (check sklearn.cluster.KMeans for details)
     :testvecs: array containing a batch of test outputs
     """
-    assert pca_dim < vecs.shape[1], "hey bro PCA should make the number of dimensions go DOWN"
+    if pca_dim >= vecs.shape[1]: 
+        warnings.warn("hey bro PCA should make the number of dimensions go DOWN. vectors shape %s, pca_dim %s"%(vecs.shape[1], pca_dim))
     
     # create model objects
     scaler = sklearn.preprocessing.StandardScaler()
@@ -85,25 +88,26 @@ def _build_model(feature_extractor, imshape=(256,256), num_channels=3,
 
 
 
-
-@tf.function
-def deepcluster_training_step(x, y, model, opt):
-    """
-    Basic training function for DeepCluster model.
-    """
-    print("tracing deepcluster_training_step")
-    with tf.GradientTape() as tape:
-        y_pred = model(x)
-        loss = tf.reduce_mean(
-                tf.keras.losses.sparse_categorical_crossentropy(y, y_pred,
-                                                                from_logits=True)
+def build_deepcluster_training_step():
+    @tf.function
+    def deepcluster_training_step(x, y, model, opt):
+        """
+        Basic training function for DeepCluster model.
+        """
+        print("tracing deepcluster_training_step")
+        with tf.GradientTape() as tape:
+            y_pred = model(x)
+            loss = tf.reduce_mean(
+                    tf.keras.losses.sparse_categorical_crossentropy(y, y_pred,
+                                                                    from_logits=True)
                 )
         
-    variables = model.trainable_variables
-    gradients = tape.gradient(loss, variables)
-    opt.apply_gradients(zip(gradients, variables))
+        variables = model.trainable_variables
+        gradients = tape.gradient(loss, variables)
+        opt.apply_gradients(zip(gradients, variables))
     
-    return loss
+        return loss
+    return deepcluster_training_step
 
 
 
@@ -204,7 +208,13 @@ class DeepClusterTrainer(GenericExtractor):
         # layer of the network
         self._initializer = tf.initializers.glorot_uniform()
         self._old_cluster_assignments = None
-
+        
+        
+        # build training step function- this step makes sure that this object
+        # has its own @tf.function-decorated training function so if we have
+        # multiple deepcluster objects (for example, for hyperparameter tuning)
+        # they won't interfere with each other.
+        self._training_step = build_deepcluster_training_step()
         self.step = 0
         
         # parse and write out config YAML
@@ -266,7 +276,9 @@ class DeepClusterTrainer(GenericExtractor):
                                     single_channel=self.input_config["single_channel"])
         
         for x, y in train_ds:
-            loss = deepcluster_training_step(x, y, self._models["full"], 
+            #loss = deepcluster_training_step(x, y, self._models["full"], 
+            #                          self._optimizer)
+            loss = self._training_step(x, y, self._models["full"], 
                                       self._optimizer)
             self._record_scalars(training_crossentropy=loss)
             self.step += 1
@@ -284,8 +296,25 @@ class DeepClusterTrainer(GenericExtractor):
                                                        average_method="arithmetic")
                     self._record_scalars(test_nmi=nmi)
                     
-        if self._downstream_labels:
-            self._linear_classification_test()
+        if self._downstream_labels is not None:
+            # choose the hyperparameters to record
+            if not hasattr(self, "_hparams_config"):
+                from tensorboard.plugins.hparams import api as hp
+                hparams = {
+                    hp.HParam("pca_dim"):self.config["pca_dim"],
+                    hp.HParam("k"):self.config["k"],
+                    hp.HParam("mult"):self.config["mult"],
+                    #hp.HParam("kmeans_max_iter"):self.config["kmeans_max_iter"],
+                    #hp.HParam("kmeans_batch_size"):self.config["kmeans_batch_size"],
+                    hp.HParam("sobel"):self.input_config["sobel"]
+                    }
+                for e, d in enumerate(self.config["dense"]):
+                    hparams[hp.HParam("dense_%s"%e)] = d
+            else:
+                hparams=None
+            self._linear_classification_test(hparams)
+            
+            
             
         
             
