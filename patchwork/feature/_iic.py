@@ -88,7 +88,7 @@ def iic_training_step(x1, x2, fcn, heads, opt, variables, entropy_weight=0):
 
 def build_iic_dataset(imfiles, r=5, imshape=(256,256), batch_size=256, 
                       num_parallel_calls=None, norm=255,
-                      num_channels=3, shuffle=False, augment=True,
+                      num_channels=3, augment=True,
                       single_channel=False):
     """
     Build a tf.data.Dataset object for training IIC.
@@ -99,7 +99,7 @@ def build_iic_dataset(imfiles, r=5, imshape=(256,256), batch_size=256,
     ds = _image_file_dataset(imfiles, imshape=imshape, 
                              num_parallel_calls=num_parallel_calls,
                              norm=norm, num_channels=num_channels,
-                             shuffle=shuffle, single_channel=single_channel)
+                             shuffle=True, single_channel=single_channel)
     
     if r > 1:
         ds = ds.flat_map(lambda x: tf.data.Dataset.from_tensors(x).repeat(r))
@@ -124,8 +124,9 @@ class InvariantInformationClusteringTrainer(GenericExtractor):
                  k=[10,10], k_oc=[25], r=5, entropy_weight=0, 
                  lr=1e-4, lr_decay=100000,
                  imshape=(256,256), num_channels=3,
-                 norm=255, batch_size=64, shuffle=True, num_parallel_calls=None,
-                 sobel=False, single_channel=False, notes=""):
+                 norm=255, batch_size=64, num_parallel_calls=None,
+                 sobel=False, single_channel=False, notes="",
+                 downstream_labels=None):
         """
         :logdir: (string) path to log directory
         :trainingdata: (list) list of paths to training images
@@ -144,30 +145,31 @@ class InvariantInformationClusteringTrainer(GenericExtractor):
         :norm: (int or float) normalization constant for images (for rescaling to
                unit interval)
         :batch_size: (int) batch size for training
-        :shuffle: (bool) whether to shuffle training set
         :num_parallel_calls: (int) number of threads for loader mapping
         :sobel:
         :single_channel: if True, expect a single-channel input image and 
                 stack it num_channels times.
         :notes: (string) any notes on the experiment that you want saved in the
                 config.yml file
+        :downstream_labels: dictionary mapping image file paths to labels
         """
         if sobel: assert False, "NOT YET IMPLEMENTED"
         self.logdir = logdir
         self.trainingdata = trainingdata
+        self._downstream_labels = downstream_labels
         
         self._train_ds = build_iic_dataset(trainingdata, r=r, imshape=imshape,
                                            batch_size=batch_size, 
                                            num_parallel_calls=num_parallel_calls,
                                            norm=norm, num_channels=num_channels,
-                                           shuffle=shuffle, augment=augment,
+                                           augment=augment,
                                            single_channel=single_channel)
         if testdata is not None:
             self._test_ds = build_iic_dataset(testdata, r=r, imshape=imshape,
                                            batch_size=batch_size, 
                                            num_parallel_calls=num_parallel_calls,
                                            norm=norm, num_channels=num_channels,
-                                           shuffle=False, augment=augment,
+                                           augment=augment,
                                            single_channel=single_channel)
             self._test = True
         else:
@@ -214,7 +216,7 @@ class InvariantInformationClusteringTrainer(GenericExtractor):
                             r=r, entropy_weight=entropy_weight,
                             imshape=imshape, num_channels=num_channels,
                             norm=norm, batch_size=batch_size, 
-                            shuffle=shuffle, num_parallel_calls=num_parallel_calls,
+                            num_parallel_calls=num_parallel_calls,
                             augment=augment, sobel=sobel, single_channel=single_channel,
                             notes=notes)
         
@@ -270,5 +272,8 @@ class InvariantInformationClusteringTrainer(GenericExtractor):
             for e, h in enumerate(self.heads_oc):
                 P = compute_p(f_x, f_y, h)
                 self._record_images(**{"P_oc_head_%s"%e:P})
+                
+        if self._downstream_labels is not None:
+            self._linear_classification_test()
                 
             

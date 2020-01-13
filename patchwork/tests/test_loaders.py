@@ -136,7 +136,8 @@ def test_sobelize():
     inpt = tf.zeros((5,7,11,3), dtype=tf.float32)
     outpt = _sobelize(inpt)
     
-    assert outpt.shape == (5,7,11,2)
+    assert outpt.shape == (5,7,11,3)
+    assert outpt.numpy()[:,:,:,2].max() == 0
     assert outpt.numpy().sum() == 0
     
 

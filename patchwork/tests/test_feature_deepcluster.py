@@ -2,7 +2,7 @@
 import numpy as np
 import tensorflow as tf
 
-from patchwork.feature._deepcluster import cluster, _build_model, deepcluster_training_step
+from patchwork.feature._deepcluster import cluster, _build_model
 
 inpt = tf.keras.layers.Input((None, None, 3))
 conv = tf.keras.layers.Conv2D(2, 1)(inpt)
@@ -49,10 +49,10 @@ def test_build_model():
     
     
     
-def test_deepcluster_training_step():
-    opt = tf.keras.optimizers.SGD(1e-3)
-    x = np.zeros((5,7,11,3))
-    y = np.arange(5)
+#def test_deepcluster_training_step():
+#    opt = tf.keras.optimizers.SGD(1e-3)
+#    x = np.zeros((5,7,11,3))
+#    y = np.arange(5)
     
-    loss = deepcluster_training_step(x, y, model, opt).numpy()
-    assert loss.dtype == np.float32
+#    loss = deepcluster_training_step(x, y, model, opt).numpy()
+#    assert loss.dtype == np.float32

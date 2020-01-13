@@ -72,16 +72,15 @@ In addition to each model's training hyperparameters, the different feature extr
 You can pass `False` to the `augment` parameter to disable augmentation, `True` to use defaults, or a dictionary containing any of the following (with the rest disabled):
 
 
-* `max_brightness_delta` (default 0.2)
-* `contrast_min` (default 0.4) 
-* `contrast_max` (default 1.4)
-* `max_hue_delta` (default 0.1)
-* `max_saturation_delta` (default 0.5)
-* `left_right_flip` (default True)
-* `up_down_flip` (default True)
-* `rot90` (default True)
-* `zoom_scale` (default 0.3)
-* `select_prob` (default 0.5) flip a weighted coin with this probability for each of the augmentation steps to decide whether to apply it
+* `max_brightness_delta` (default 0.2): randomly adjust brightness within this range
+* `contrast_min` (default 0.4) and `contrast_max` (default 1.4): randomly adjust contrast within this range
+* `max_hue_delta` (default 0.1): randomly adjust hue within this range
+* `max_saturation_delta` (default 0.5): randomly adjust saturation within this range
+* `left_right_flip` (default True): if True, flip images left-to-right 50% of the time
+* `up_down_flip` (default True): if True, flip images top-to-bottom 50% of the time
+* `rot90` (default True): if True, rotate images 0, 90, 180, or 270 degrees with equal probability
+* `zoom_scale` (default 0.3): add a random pad to each side of the image, then randomly crop from each side- this parameter sets the scale for both.
+* `select_prob` (default 0.5) flip a weighted coin with this probability for each of the augmentation steps to decide whether to apply it.
 
 
 
@@ -108,7 +107,7 @@ encoder, inpainter, discriminator = patchwork.feature.train_context_encoder(trai
                                         num_parallel_jobs=6)
 ```
 
-If you provide a `logdir` argument, tensorboard logs will be stored for the loss function on `testfiles` as well as visualization on inpainting:
+Tensorboard logs will be stored for the loss function on `testfiles` as well as visualization on inpainting:
 
 ![alt text](docs/inpainting.png)
 
@@ -137,7 +136,9 @@ fcn = patchwork.feature.train_deepcluster(trainfiles, fcn,
 ```
 
 ### Visualizing learned features
-                                            
+         
+
+**The tensorboard projector doesn't appear to be functioning in TF2.0.**
 (not yet fully tested) a quick macro for throwing a couple hundred image embeddings into the tensorboard projector:
 
 ```{python}

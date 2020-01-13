@@ -276,8 +276,6 @@ class DeepClusterTrainer(GenericExtractor):
                                     single_channel=self.input_config["single_channel"])
         
         for x, y in train_ds:
-            #loss = deepcluster_training_step(x, y, self._models["full"], 
-            #                          self._optimizer)
             loss = self._training_step(x, y, self._models["full"], 
                                       self._optimizer)
             self._record_scalars(training_crossentropy=loss)
@@ -301,15 +299,13 @@ class DeepClusterTrainer(GenericExtractor):
             if not hasattr(self, "_hparams_config"):
                 from tensorboard.plugins.hparams import api as hp
                 hparams = {
-                    hp.HParam("pca_dim"):self.config["pca_dim"],
-                    hp.HParam("k"):self.config["k"],
-                    hp.HParam("mult"):self.config["mult"],
-                    #hp.HParam("kmeans_max_iter"):self.config["kmeans_max_iter"],
-                    #hp.HParam("kmeans_batch_size"):self.config["kmeans_batch_size"],
-                    hp.HParam("sobel"):self.input_config["sobel"]
+                    hp.HParam("pca_dim", hp.IntInterval(0, 1000000)):self.config["pca_dim"],
+                    hp.HParam("k", hp.IntInterval(1, 1000000)):self.config["k"],
+                    hp.HParam("mult", hp.IntInterval(1, 1000000)):self.config["mult"],
+                    hp.HParam("sobel", hp.Discrete([True, False])):self.input_config["sobel"]
                     }
                 for e, d in enumerate(self.config["dense"]):
-                    hparams[hp.HParam("dense_%s"%e)] = d
+                    hparams[hp.HParam("dense_%s"%e, hp.IntInterval(1, 1000000))] = d
             else:
                 hparams=None
             self._linear_classification_test(hparams)

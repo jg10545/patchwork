@@ -84,7 +84,7 @@ def _build_context_encoder_dataset(filepaths, input_shape=(256,256,3), norm=255,
     # precompute masked images for context encoder input
     masked_batched_ds = zipped_ds.batch(batch_size) 
     if sobel:
-        masked_batched_ds = masked_batched_ds.map(_sobelize, 
+        masked_batched_ds = masked_batched_ds.map(lambda x,y: (_sobelize(x), y), 
                                         num_parallel_calls=num_parallel_calls)
     if prefetch:
         masked_batched_ds = masked_batched_ds.prefetch(1)
@@ -255,7 +255,8 @@ class ContextEncoderTrainer(GenericExtractor):
                  recon_weight=1, adv_weight=1e-3, lr=1e-4,
                   imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, shuffle=True, num_parallel_calls=None,
-                 sobel=False, single_channel=False, notes=""):
+                 sobel=False, single_channel=False, notes="",
+                 downstream_labels=None):
         """
         :logdir: (string) path to log directory
         :trainingdata: (list or tf Dataset) list of paths to training images, or
@@ -274,15 +275,16 @@ class ContextEncoderTrainer(GenericExtractor):
         :norm: (int or float) normalization constant for images (for rescaling to
                unit interval)
         :batch_size: (int) batch size for training
-        :shuffle: (bool) whether to shuffle training set
         :num_parallel_calls: (int) number of threads for loader mapping
         :sobel: whether to replace the input image with its sobel edges
         :single_channel: if True, expect a single-channel input image and 
             stack it num_channels times.
         :notes: (string) any notes on the experiment that you want saved in the
                 config.yml file
+        :downstream_labels: dictionary mapping image file paths to labels                
         """
         self.logdir = logdir
+        self._downstream_labels = downstream_labels
         if sobel:
             input_shape = (imshape[0], imshape[1], 3)
         else:
@@ -309,7 +311,7 @@ class ContextEncoderTrainer(GenericExtractor):
         if isinstance(trainingdata, list):
             self._train_ds = _build_context_encoder_dataset(trainingdata, 
                                         input_shape=input_shape, 
-                                norm=norm, shuffle=shuffle, 
+                                norm=norm, shuffle=True, 
                                 num_parallel_calls=num_parallel_calls,
                                 batch_size=batch_size, prefetch=True,
                                 augment=augment, sobel=sobel,
@@ -342,7 +344,7 @@ class ContextEncoderTrainer(GenericExtractor):
         self._parse_configs(augment=augment, recon_weight=recon_weight,
                             adv_weight=adv_weight, lr=lr,
                             imshape=imshape, num_channels=num_channels,
-                            norm=norm, batch_size=batch_size, shuffle=shuffle,
+                            norm=norm, batch_size=batch_size, 
                             num_parallel_calls=num_parallel_calls, sobel=sobel,
                             single_channel=single_channel, notes=notes)
         
@@ -401,6 +403,18 @@ class ContextEncoderTrainer(GenericExtractor):
             tf.summary.histogram("disc_outputs_on_inpaint", disc_outputs_on_inpaint,
                                  step=self.step)
             self._record_scalars(test_recon_loss=reconstructed_loss)
+            
+        if self._downstream_labels is not None:
+            # choose the hyperparameters to record
+            if not hasattr(self, "_hparams_config"):
+                from tensorboard.plugins.hparams import api as hp
+                hparams = {
+                    hp.HParam("adv_weight", hp.RealInterval(0., 10000.)):self.config["adv_weight"],
+                    hp.HParam("sobel", hp.Discrete([True, False])):self.input_config["sobel"]
+                    }
+            else:
+                hparams=None
+            self._linear_classification_test(hparams)
         
         
         
