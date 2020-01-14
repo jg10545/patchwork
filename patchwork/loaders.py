@@ -15,17 +15,18 @@ from patchwork._augment import augment_function
 @tf.function
 def _sobelize(x):
     """
-    Input a batch of images [N, H, W, C] and return
-    a batch of sobel-filtered images [N, H, W, 3].
+    Input an image [H, W, C] and return
+    a sobel-filtered images [H, W, 3].
     
     The first two channels are the sobel filter and
     the third will be zeros (so that it's compatible with
     standard network structures)
     """
-    sobeled = tf.image.sobel_edges(x)
+    expanded = tf.expand_dims(x, 0)
+    sobeled = tf.image.sobel_edges(expanded)
     sobel_mean = tf.reduce_mean(sobeled, -2)
     extra_channel = tf.zeros_like(sobel_mean)[:,:,:,:1]
-    return tf.concat([sobel_mean, extra_channel], -1)
+    return tf.squeeze(tf.concat([sobel_mean, extra_channel], -1), [0])
 
 
 
@@ -150,12 +151,14 @@ def dataset(fps, ys = None, imshape=(256,256), num_channels=3,
                       shuffle=shuffle, single_channel=single_channel)
     
     if augment: ds = ds.map(_aug, num_parallel_calls=num_parallel_calls)
+    if sobel: ds = ds.map(_sobelize, num_parallel_calls=num_parallel_calls)
         
     if unlab_fps is not None:
         u_ds = _image_file_dataset(unlab_fps, imshape=imshape, num_channels=num_channels, 
                       num_parallel_calls=num_parallel_calls, norm=norm,
                       single_channel=single_channel)
         if augment: u_ds = u_ds.map(_aug, num_parallel_calls=num_parallel_calls)
+        if sobel: u_ds = u_ds.map(_sobelize, num_parallel_calls=num_parallel_calls)
         ds = tf.data.Dataset.zip((ds, u_ds))
         
     if ys is not None:
@@ -166,8 +169,8 @@ def dataset(fps, ys = None, imshape=(256,256), num_channels=3,
         ds = ds.zip((ds, ys))
         
     ds = ds.batch(batch_size)
-    if sobel:
-        ds = ds.map(_sobelize, num_parallel_calls=num_parallel_calls)
+    #if sobel:
+    #    ds = ds.map(_sobelize, num_parallel_calls=num_parallel_calls)
     ds = ds.prefetch(1)
     
     num_steps = int(np.ceil(len(fps)/batch_size))
@@ -240,9 +243,10 @@ def stratified_training_dataset(fps, y, imshape=(256,256), num_channels=3,
         im_ds = im_ds.map(_aug, num_parallel_calls=num_parallel_calls)
     lab_ds = tf.data.Dataset.from_tensor_slices(sampled_labels)
     ds = tf.data.Dataset.zip((im_ds, lab_ds))
-    ds = ds.batch(batch_size)
+    #ds = ds.batch(batch_size)
     if sobel:
         ds = ds.map(lambda x,y: (_sobelize(x),y), num_parallel_calls=num_parallel_calls)
+    ds = ds.batch(batch_size)
     ds = ds.prefetch(1)
     
     num_steps = int(np.ceil(len(sampled_indices)/batch_size))

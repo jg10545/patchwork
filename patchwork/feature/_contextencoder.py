@@ -74,18 +74,18 @@ def _build_context_encoder_dataset(filepaths, input_shape=(256,256,3), norm=255,
                                  num_channels=input_shape[2], norm=norm,
                                  num_parallel_calls=num_parallel_calls,
                                  shuffle=True, single_channel=single_channel)
-    #img_ds = img_ds.shuffle(shuffle_queue)
+
     if augment:
         _aug = augment_function(input_shape[:2], augment)
         #_aug = augment_function(augment)
         img_ds = img_ds.map(_aug, num_parallel_calls=num_parallel_calls)
+    if sobel:
+        img_ds = img_ds.map(_sobelize, num_parallel_calls=num_parallel_calls)
     # combine the image and mask datasets
     zipped_ds = tf.data.Dataset.zip((img_ds, mask_ds))
     # precompute masked images for context encoder input
     masked_batched_ds = zipped_ds.batch(batch_size) 
-    if sobel:
-        masked_batched_ds = masked_batched_ds.map(lambda x,y: (_sobelize(x), y), 
-                                        num_parallel_calls=num_parallel_calls)
+
     if prefetch:
         masked_batched_ds = masked_batched_ds.prefetch(1)
     return masked_batched_ds
@@ -104,12 +104,16 @@ def _build_test_dataset(filepaths, input_shape=(256,256,3), norm=255,
     Returns
     img_arr, mask
     """
-    img_arr = np.stack([_load_img(f, norm=norm, num_channels=input_shape[2],
+    if sobel:
+        img_arr = np.stack([_sobelize(_load_img(f, norm=norm, num_channels=input_shape[2],
+                                  resize=input_shape[:2])) 
+                                    for f in filepaths])
+        input_shape = (input_shape[0], input_shape[1], 3)
+    else:
+        img_arr = np.stack([_load_img(f, norm=norm, num_channels=input_shape[2],
                                   resize=input_shape[:2]) 
                         for f in filepaths])
-    if sobel:
-        img_arr = _sobelize(img_arr).numpy()
-        input_shape = (input_shape[0], input_shape[1], 2)
+
     mask = _make_test_mask(*input_shape)
     mask = np.stack([mask for _ in range(img_arr.shape[0])])
 
@@ -166,82 +170,86 @@ def _stabilize(x):
     x = K.maximum(x, K.epsilon())
     return x
 
-
-@tf.function
-def inpainter_training_step(opt, inpainter, discriminator, img, mask, recon_weight=1, adv_weight=1e-3, imshape=(256,256)):
-    """
-    Tensorflow function for updating inpainter weights
-    
-    :opt: keras optimizer
-    :inpainter: keras end-to-end context encoder model
-    :discriminator: keras convolutional classifier to use as discriminator
-    :img: batch of raw images
-    :mask: batch of masks (1 in places to be removed, 0 elsewhere)
-    :recon_weight: squared-error reconstruction loss weight
-    :adv_weight: discriminator weight
-    :imshape:
-    
-    Returns
-    :reconstructed_loss: L2 norm loss for reconstruction
-    :disc_loss: crossentropy loss from discriminator
-    :total_loss: weighted sum of previous two
-    """
-    print("tracing inpainter training step")
-    # inpainter update
-    masked_img = (1-mask)*img
-    with tf.GradientTape() as tape:
-        # inpaint image
-        inpainted_img = inpainter(masked_img)[:,:imshape[0],:imshape[1],:]
-        # compute difference between inpainted image and original
-        reconstruction_residual = mask*(img - inpainted_img)
-        reconstructed_loss = K.mean(K.abs(reconstruction_residual))
-        # compute adversarial loss
-        disc_output_on_inpainted = discriminator(inpainted_img)
-
-        # is the above line correct?
-        disc_loss_on_inpainted = -1*K.mean(K.log(_stabilize(disc_output_on_inpainted)))
-        # total loss
-        total_loss = recon_weight*reconstructed_loss + adv_weight*disc_loss_on_inpainted
-    
-    variables = inpainter.trainable_variables
-    gradients = tape.gradient(total_loss, variables)
-    
-    opt.apply_gradients(zip(gradients, variables))
-    
-    return reconstructed_loss, disc_loss_on_inpainted, total_loss
-
-
-@tf.function
-def discriminator_training_step(opt, inpainter, discriminator, img, mask):
-    """
-    Tensorflow function for updating discriminator weights
-    
-    :opt: keras optimizer
-    :inpainter: keras end-to-end context encoder model
-    :discriminator: keras convolutional classifier to use as discriminator
-    :img: batch of raw images
-    :mask: batch of masks (1 in places to be removed, 0 elsewhere)
-    
-    Returns discriminator loss
-    """
-    print("tracing discriminator training step")
-    # inpainter update
-    masked_img = (1-mask)*img
-    with tf.GradientTape() as tape:
-        # inpaint image
-        inpainted_img = inpainter(masked_img)
-        # compute adversarial loss
-        disc_output_on_raw = discriminator(img) # try to get this close to zero
-        disc_output_on_inpainted = discriminator(inpainted_img) # try to get this close to one
+def build_inpainter_training_step():
+    @tf.function
+    def inpainter_training_step(opt, inpainter, discriminator, img, mask, 
+                                recon_weight=1, adv_weight=1e-3, imshape=(256,256)):
         
-        disc_loss = -1*K.sum(K.log(_stabilize(disc_output_on_raw))) - \
-                        K.sum(K.log(_stabilize(1-disc_output_on_inpainted)))
+        """
+        Tensorflow function for updating inpainter weights
     
-    variables = discriminator.trainable_variables
-    gradients = tape.gradient(disc_loss, variables)
-    opt.apply_gradients(zip(gradients, variables))
+        :opt: keras optimizer
+        :inpainter: keras end-to-end context encoder model
+        :discriminator: keras convolutional classifier to use as discriminator
+        :img: batch of raw images
+        :mask: batch of masks (1 in places to be removed, 0 elsewhere)
+        :recon_weight: squared-error reconstruction loss weight
+        :adv_weight: discriminator weight
+        :imshape:
     
-    return disc_loss
+        Returns
+        :reconstructed_loss: L2 norm loss for reconstruction
+        :disc_loss: crossentropy loss from discriminator
+        :total_loss: weighted sum of previous two
+        """
+        print("tracing inpainter training step")
+        # inpainter update
+        masked_img = (1-mask)*img
+        with tf.GradientTape() as tape:
+            # inpaint image
+            inpainted_img = inpainter(masked_img)[:,:imshape[0],:imshape[1],:]
+            # compute difference between inpainted image and original
+            reconstruction_residual = mask*(img - inpainted_img)
+            reconstructed_loss = K.mean(K.abs(reconstruction_residual))
+            # compute adversarial loss
+            disc_output_on_inpainted = discriminator(inpainted_img)
+
+            # is the above line correct?
+            disc_loss_on_inpainted = -1*K.mean(K.log(_stabilize(disc_output_on_inpainted)))
+            # total loss
+            total_loss = recon_weight*reconstructed_loss + adv_weight*disc_loss_on_inpainted
+    
+        variables = inpainter.trainable_variables
+        gradients = tape.gradient(total_loss, variables)
+    
+        opt.apply_gradients(zip(gradients, variables))
+    
+        return reconstructed_loss, disc_loss_on_inpainted, total_loss
+    return inpainter_training_step
+
+def build_discriminator_training_step():
+    @tf.function
+    def discriminator_training_step(opt, inpainter, discriminator, img, mask):
+        """
+        Tensorflow function for updating discriminator weights
+        
+        :opt: keras optimizer
+        :inpainter: keras end-to-end context encoder model
+        :discriminator: keras convolutional classifier to use as discriminator
+        :img: batch of raw images
+        :mask: batch of masks (1 in places to be removed, 0 elsewhere)
+    
+        Returns discriminator loss
+        """
+        print("tracing discriminator training step")
+        # inpainter update
+        masked_img = (1-mask)*img
+        with tf.GradientTape() as tape:
+            # inpaint image
+            inpainted_img = inpainter(masked_img)
+            # compute adversarial loss
+            disc_output_on_raw = discriminator(img) # try to get this close to zero
+            disc_output_on_inpainted = discriminator(inpainted_img) # try to get this close to one
+        
+            disc_loss = -1*K.sum(K.log(_stabilize(disc_output_on_raw))) - \
+                            K.sum(K.log(_stabilize(1-disc_output_on_inpainted)))
+    
+        variables = discriminator.trainable_variables
+        gradients = tape.gradient(disc_loss, variables)
+        opt.apply_gradients(zip(gradients, variables))
+    
+        return disc_loss
+    return discriminator_training_step
     
 
 
@@ -307,6 +315,9 @@ class ContextEncoderTrainer(GenericExtractor):
                 "disc":tf.keras.optimizers.Adam(0.1*lr)
                 }
         
+        self._inpainter_training_step = build_inpainter_training_step()
+        self._discriminator_training_step = build_discriminator_training_step()
+        
         # build training dataset
         if isinstance(trainingdata, list):
             self._train_ds = _build_context_encoder_dataset(trainingdata, 
@@ -356,7 +367,7 @@ class ContextEncoderTrainer(GenericExtractor):
         for img, mask in self._train_ds:
             # alternatve between inpainter and discriminator training
             if self.step % 2 == 0:
-                losses = inpainter_training_step(
+                losses = self._inpainter_training_step(
                         self._optimizer["inpaint"], 
                         self._models["inpainter"],
                         self._models["discriminator"],
@@ -368,7 +379,7 @@ class ContextEncoderTrainer(GenericExtractor):
                                    "inpainter_total_loss"], losses))
                 self._record_scalars(**lossdict)
             else:
-                disc_loss = discriminator_training_step(
+                disc_loss = self._discriminator_training_step(
                                 self._optimizer["disc"], 
                                 self._models["inpainter"], 
                                 self._models["discriminator"],

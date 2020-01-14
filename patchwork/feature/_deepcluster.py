@@ -30,7 +30,6 @@ def cluster(vecs, pca_dim=256, k=100, init='k-means++', testvecs=None,
     scaler = sklearn.preprocessing.StandardScaler()
     pca = sklearn.decomposition.PCA(n_components=pca_dim,
                                      whiten=True)
-    #kmeans = sklearn.cluster.KMeans(n_clusters=k, init=init, n_init=1)
     kmeans = sklearn.cluster.MiniBatchKMeans(n_clusters=k, init=init, n_init=3,
                                              max_iter=kmeans_max_iter,
                                              batch_size=kmeans_batch_size,

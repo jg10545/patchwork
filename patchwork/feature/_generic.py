@@ -12,7 +12,8 @@ import numpy as np
 
 import tensorflow as tf
 from tqdm import tqdm
-from sklearn.linear_model import LogisticRegression
+from sklearn.linear_model import LogisticRegression, SGDClassifier
+from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import accuracy_score, confusion_matrix
 from tensorboard.plugins.hparams import api as hp
 
@@ -49,8 +50,13 @@ def linear_classification_test(fcn, downstream_labels, **input_config):
     ds, num_steps = dataset(X[split], shuffle=False,
                                             **input_config)
     testvecs = fcn.predict(ds, steps=num_steps).mean(axis=1).mean(axis=1)
+    # rescale train and test
+    scaler = StandardScaler().fit(trainvecs)
+    trainvecs = scaler.transform(trainvecs)
+    testvecs = scaler.transform(testvecs)
     # train a multinomial classifier
-    logreg = LogisticRegression(C=1e5, solver="lbfgs", multi_class="multinomial", max_iter=10000)
+    logreg = SGDClassifier(loss="log", max_iter=1000, n_jobs=-1, learning_rate="adaptive",
+                           eta0=1e-2)
     logreg.fit(trainvecs, Y[~split])
     # make predictions on test set
     preds = logreg.predict(testvecs)
