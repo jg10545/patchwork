@@ -12,7 +12,7 @@ import numpy as np
 
 import tensorflow as tf
 from tqdm import tqdm
-from sklearn.linear_model import LogisticRegression, SGDClassifier
+from sklearn.linear_model import SGDClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import accuracy_score, confusion_matrix
 from tensorboard.plugins.hparams import api as hp
