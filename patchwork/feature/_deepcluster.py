@@ -95,7 +95,7 @@ def build_deepcluster_training_step():
         """
         print("tracing deepcluster_training_step")
         with tf.GradientTape() as tape:
-            y_pred = model(x)
+            y_pred = model(x, training=True)
             loss = tf.reduce_mean(
                     tf.keras.losses.sparse_categorical_crossentropy(y, y_pred,
                                                                     from_logits=True)
