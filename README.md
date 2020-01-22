@@ -65,7 +65,7 @@ For each of the above methods, `patchwork` has a training class that:
   * fits a linear softmax model to predict categories and evaluates accuracy on the test set
   * records test accuracy, confusion matrix, and hyperparameters in TensorBoard.
 
-![alt text](docs/inpainting.png)
+![alt text](docs/hparams.png)
 
 The parameters for the input pipeline and data augmentation (details below) are shared across the different methods.
 
