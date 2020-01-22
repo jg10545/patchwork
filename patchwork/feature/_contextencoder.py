@@ -197,7 +197,7 @@ def build_inpainter_training_step():
         masked_img = (1-mask)*img
         with tf.GradientTape() as tape:
             # inpaint image
-            inpainted_img = inpainter(masked_img)[:,:imshape[0],:imshape[1],:]
+            inpainted_img = inpainter(masked_img, training=True)[:,:imshape[0],:imshape[1],:]
             # compute difference between inpainted image and original
             reconstruction_residual = mask*(img - inpainted_img)
             reconstructed_loss = K.mean(K.abs(reconstruction_residual))
@@ -238,8 +238,8 @@ def build_discriminator_training_step():
             # inpaint image
             inpainted_img = inpainter(masked_img)
             # compute adversarial loss
-            disc_output_on_raw = discriminator(img) # try to get this close to zero
-            disc_output_on_inpainted = discriminator(inpainted_img) # try to get this close to one
+            disc_output_on_raw = discriminator(img, training=True) # try to get this close to zero
+            disc_output_on_inpainted = discriminator(inpainted_img, training=True) # try to get this close to one
         
             disc_loss = -1*K.sum(K.log(_stabilize(disc_output_on_raw))) - \
                             K.sum(K.log(_stabilize(1-disc_output_on_inpainted)))
