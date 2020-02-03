@@ -57,7 +57,7 @@ In addition to each model's training hyperparameters, the different feature extr
 
 For each of the above methods, `patchwork` has a training class that:
 
-* inputs a list of paths to training files, and a `keras` fully-convolutional model to train
+* inputs a list of paths to training files and a `keras` fully-convolutional model to train
 * can input a list of paths to test files to compute out-of-sample metrics and visualizations for TensorBoard
 * can input a dictionary mapping image file paths to labels- you can use this to monitor the feature extractor's performance on a downstream task. At the end of every epoch, the trainer:
   * deterministically splits the labeled data into training and test sets (2:1)

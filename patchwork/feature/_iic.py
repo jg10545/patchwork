@@ -120,9 +120,9 @@ class InvariantInformationClusteringTrainer(GenericExtractor):
     Class for training an IIC model
     """
 
-    def __init__(self, logdir, trainingdata, testdata=None, fcn=None, augment=True, 
-                 k=[10,10], k_oc=[25], r=5, entropy_weight=0, 
-                 lr=1e-4, lr_decay=100000,
+    def __init__(self, logdir, trainingdata, testdata=None, fcn=None, 
+                 augment=True, k=10, h=5, k_oc=25, r=5,
+                 entropy_weight=0, lr=1e-4, lr_decay=100000,
                  imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, num_parallel_calls=None,
                  sobel=False, single_channel=False, notes="",
@@ -134,10 +134,12 @@ class InvariantInformationClusteringTrainer(GenericExtractor):
         :fcn: (keras Model) fully-convolutional network to train as feature extractor
         :augment: (dict) dictionary of augmentation parameters, True for defaults or
                 False to disable augmentation
-        :k:
-        :k_oc:
+        :k: output dimension for clustering head
+        :h: number of clustering sub-heads
+        :k_oc: output dimension for overclustering head
+        :entropy_weight: additional weight factor for entropy in loss function (see
+                section 5 of supplementary material)
         :r: number of times to repeat each image sequentially in the data pipeline
-        :entropy_weight:
         :lr: (float) initial learning rate
         :lr_decay: (int) steps for learning rate to decay by half (0 to disable)
         :imshape: (tuple) image dimensions in H,W
@@ -188,18 +190,17 @@ class InvariantInformationClusteringTrainer(GenericExtractor):
             tf.keras.layers.GlobalAveragePooling2D()
         ])
         # initialize the clustering heads
-        self.heads = [tf.keras.layers.Dense(x, activation="softmax")
-                      for x in k]
-        self.heads_oc = [tf.keras.layers.Dense(x, activation="softmax")
-                       for x in k_oc]
+        self.heads = [tf.keras.layers.Dense(k, activation="softmax")
+                      for _ in range(h)]
+        self.heads_oc = [tf.keras.layers.Dense(k_oc, activation="softmax")]
         self.flatten = tf.keras.layers.GlobalAveragePooling2D()
         # record trainable variables
         self._variables = self.fcn.trainable_variables
-        for h in self.heads:
-            self._variables += h.trainable_variables
+        for head in self.heads:
+            self._variables += head.trainable_variables
         self._variables_oc = self.fcn.trainable_variables
-        for h in self.heads_oc:
-            self._variables_oc += h.trainable_variables
+        for head in self.heads_oc:
+            self._variables_oc += head.trainable_variables
         
         # create optimizers
         if lr_decay > 0:
@@ -212,7 +213,7 @@ class InvariantInformationClusteringTrainer(GenericExtractor):
         self._optimizer_oc = tf.keras.optimizers.Adam(learnrate)
         
         self.step = 0
-        self._parse_configs(k=k, k_oc=k_oc, lr=lr, lr_decay=lr_decay,
+        self._parse_configs(k=k, k_oc=k_oc, h=h, lr=lr, lr_decay=lr_decay,
                             r=r, entropy_weight=entropy_weight,
                             imshape=imshape, num_channels=num_channels,
                             norm=norm, batch_size=batch_size, 
@@ -274,6 +275,25 @@ class InvariantInformationClusteringTrainer(GenericExtractor):
                 self._record_images(**{"P_oc_head_%s"%e:P})
                 
         if self._downstream_labels is not None:
-            self._linear_classification_test()
+            # choose the hyperparameters to record
+            if not hasattr(self, "_hparams_config"):
+                from tensorboard.plugins.hparams import api as hp
+                hparams = {
+                    hp.HParam("k", hp.IntInterval(0, 1000000), 
+                              description="output dimension for clustering head"):self.config["k"],
+                    hp.HParam("h", hp.IntInterval(0, 1000000), 
+                              description="number of clustering sub-heads"):self.config["h"],
+                    hp.HParam("k_oc", hp.IntInterval(0, 1000000), 
+                              description="output dimension for overclustering head"):self.config["k_oc"],
+                    hp.HParam("entropy_weight", hp.RealInterval(0., 1000000.), 
+                              description="additional weight factor for entropy in loss function"):self.config["entropy_weight"],
+                    hp.HParam("r", hp.IntInterval(0, 1000000), 
+                              description="number of times to repeat each image sequentially in the data pipeline"):self.config["r"],
+                    hp.HParam("sobel", hp.Discrete([True, False]),
+                              description="whether Sobel filtering was applied to inputs"):self.input_config["sobel"]
+                    }
+            else:
+                hparams=None
+            self._linear_classification_test(hparams)
                 
             
