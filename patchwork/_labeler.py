@@ -10,6 +10,7 @@ GUI code for training a model
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 import panel as pn
+import os
 
 
 from patchwork._sample import find_subset
@@ -126,6 +127,7 @@ class ButtonPanel(object):
         # highlight first image
         self._figpanel.object = self._figs[0]
         self._selected_image = 0
+        self._update_buttons()
         
         
     def _update_buttons(self):
@@ -226,20 +228,20 @@ class Labeler():
     """
     
     def __init__(self, classes, df, pred_df, load_func, dim=3, 
-                 outfile=None):
+                 logdir=None):
         """
         :classes: list of strings; class labels
         :df: DataFrame containing filepaths and class labels
         :pred_df: dataframe of current model predictions
         :load_func:
         :dim: dimension of the image grid to display
-        :outfile: path to save labels to
+        :logdir: path to save labels to
         """
         self._classes = classes
         self._dim = dim
         self._df = df
         self._pred_df = pred_df
-        self._outfile = outfile
+        self._logdir = logdir
         self._buttonpanel = ButtonPanel(classes, df, load_func, dim)
         self._load_func = load_func
              
@@ -300,7 +302,7 @@ class Labeler():
                                sort_by, subset_by)
         self._buttonpanel.load(indices)
         self._buttonpanel.label_counts.object = _generate_label_summary(self._df, self._classes)
-        if self._outfile is not None:
-            self._df.to_csv(self._outfile, index=False)
+        if self._logdir is not None:
+            self._df.to_csv(os.path.join(self._logdir, "labels.csv"), index=False)
         
  

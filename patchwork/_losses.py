@@ -39,9 +39,11 @@ def masked_mean_average_error(y_true, y_pred):
     """
     Mean average error loss function that masks 
     out any values where y_true = -1    
-    """
+    """ 
     # mask ==1 wherever the label != -1
     mask = K.cast(K.not_equal(y_true, -1), K.floatx())
+    y_true = K.cast(y_true, K.floatx())
+    y_pred = K.cast(y_pred, K.floatx())
     # count number of nonempty masks so that we can
     # compute the mean
     norm = K.sum(mask)

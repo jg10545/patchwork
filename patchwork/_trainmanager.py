@@ -10,7 +10,6 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import panel as pn
-import tensorflow as tf
 
 
 
@@ -114,8 +113,11 @@ class TrainManager():
         #self.loss = []
         for e in range(epochs):
             self._footer.object = "### TRAININ (%s / %s)"%(e+1, epochs)
-            history = self.pw.fit(self._batch_size.value, self._samples_per_epoch.value)
-            self.loss.append(history.history["loss"][-1])
+            #history = self.pw.fit(self._batch_size.value, self._samples_per_epoch.value)
+            self.pw._run_one_training_epoch(self._batch_size.value,
+                                            self._samples_per_epoch.value)
+            #self.loss.append(history.history["loss"][-1])
+            self.loss = self.pw.training_loss
             
         if self._eval_after_training.value:
             self._footer.object = "### EVALUATING"

@@ -125,7 +125,7 @@ def dataset(fps, ys = None, imshape=(256,256), num_channels=3,
     Returns
     :ds: tf.data.Dataset object to iterate over data. The dataset returns
         (x,y) tuples unless unlab_fps is included, in which case the structure
-        will be ((x, x_unlab), (y,y))
+        will be ((x, x_unlab), y)
     :num_steps: number of steps (for passing to tf.keras.Model.fit())
     """
     if augment:
@@ -144,9 +144,9 @@ def dataset(fps, ys = None, imshape=(256,256), num_channels=3,
         
     if ys is not None:
         ys = tf.data.Dataset.from_tensor_slices(ys)
-        if unlab_fps is not None:
-            ys = ds.zip((ys,ys))
-            #ys = ds.zip((u_ds,ys))
+        #if unlab_fps is not None:
+        #    ys = ds.zip((ys,ys))
+        #    #ys = ds.zip((u_ds,ys))
         ds = ds.zip((ds, ys))
         
     ds = ds.batch(batch_size)
