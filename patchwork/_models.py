@@ -54,7 +54,6 @@ class MLP(param.Parameterized):
     hidden = param.Integer(default=128, bounds=(10,1024), 
                            label="Number of hidden nodes")
     dropout = param.Boolean(default=False, label="Use dropout (0.5)")
-    #log_dir = param.Foldername(default="")
     description = """
     Apply a 2D global max pool to the input tensor, then a hidden layer
     (with ReLU activation) before the output layer.

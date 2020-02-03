@@ -1,40 +1,17 @@
 import numpy as np
 import pandas as pd
-import warnings
 import panel as pn
 import tensorflow as tf
 
 from patchwork._labeler import Labeler
 from patchwork._modelpicker import ModelPicker
 from patchwork._trainmanager import TrainManager
-from patchwork._sample import stratified_sample, find_unlabeled
+from patchwork._sample import stratified_sample, find_unlabeled, _build_in_memory_dataset
 from patchwork.loaders import dataset
 from patchwork._losses import entropy_loss, masked_binary_crossentropy
 from patchwork._util import _load_img
 
-prompt_txt = "Enter comma-delimited list of class-1 patches:"
 EPSILON = 1e-5
-
-def sample_batch_indices_and_labels(df, classes, batch_size):
-    """
-    Stratified sampler for batch generation
-    
-    :df:
-    :classes:
-    :batch_size:
-    """
-    num_classes = len(classes)
-    # find the labeled indices for each category
-    labeled_indices = [df[df["label"] == c].index.to_numpy() for c in classes]
-    # select the number of examples from each category
-    choices_per_class = np.random.multinomial(batch_size, np.ones(num_classes)/num_classes)
-    # randomly select (with replacement) that many examples from each category
-    batch_indices = np.concatenate([np.random.choice(l, c, replace=True)
-                              for (l,c) in zip(labeled_indices, choices_per_class)])
-    # assemble the corresponding labels
-    batch_labels = np.concatenate([i*np.ones(choices_per_class[i]) for i in range(num_classes)])
-    
-    return batch_indices, batch_labels
 
 
 
@@ -42,7 +19,7 @@ class PatchWork(object):
     
     def __init__(self, df, feature_vecs=None, feature_extractor=None, classes=[],
                  dim=3, imshape=(256,256), num_channels=3, norm=255,
-                 num_parallel_calls=2, outfile=None):
+                 num_parallel_calls=2, logdir=None):
         """
         Initialize either with a set of feature vectors or a feature extractor
         
@@ -64,14 +41,15 @@ class PatchWork(object):
         self.df = df.replace({pd.np.nan: None})
         self.feature_vecs = feature_vecs
         self.feature_extractor = feature_extractor
-        if feature_extractor is not None:
-            if feature_extractor.trainable == True:
-                warnings.warn("Feature extractor wasn't frozen- was this on purpose?")
+
+
         self._imshape = imshape
         self._norm = norm
         self._num_channels = num_channels
         self._num_parallel_calls = num_parallel_calls
         self._semi_supervised = False
+        self._logdir = logdir
+        self.models = {"feature_extractor":feature_extractor}
         
         if "exclude" not in df.columns:
             df["exclude"] = False
@@ -89,7 +67,7 @@ class PatchWork(object):
         # BUILD THE GUI
         # initialize Labeler object
         self.labeler = Labeler(self.classes, self.df, self.pred_df, self._load_img,
-                               dim=dim, outfile=outfile)
+                               dim=dim, logdir=logdir)
         # initialize model picker
         if self.feature_vecs is not None:
             inpt_channels = self.feature_vecs.shape[-1]
@@ -108,20 +86,7 @@ class PatchWork(object):
         update our array keeping track of unlabeled images
         """
         self.unlabeled_indices = np.arange(self.N)[np.isnan(self.labels)]
-        
-
-       
-    def _training_generator(self, bs):
-        """
-        Generator for labeled data. Takes care of stratified sampling
-        across classes.
-        """
-        assert False, "DEPRECATEEEED"
-        while True:
-            indices, labels = sample_batch_indices_and_labels(self.df, 
-                                                    self.classes, bs)
-            yield self.feature_vecs[indices,:], labels
-
+      
         
     def panel(self):
         """
@@ -144,6 +109,7 @@ class PatchWork(object):
             unlab_fps = None
             if self._semi_supervised:
                 unlabeled_filepaths = self.df.filepath.values[find_unlabeled(self.df)]
+                
                 unlab_fps = np.random.choice(unlabeled_filepaths,
                                              replace=True, size=num_samples)
             return dataset(files, ys, imshape=self._imshape, 
@@ -156,21 +122,30 @@ class PatchWork(object):
             inds, ys = stratified_sample(self.df, num_samples, return_indices=True)
             if self._semi_supervised:
                 unlabeled_indices = np.arange(len(self.df))[find_unlabeled(self.df)]
-                unlabeled_sample = np.random.choice(unlabeled_indices,
-                                                    replace=True,
-                                                    size=num_samples)
-                x = [self.feature_vecs[inds], self.feature_vecs[unlabeled_sample]]
-                return x, [ys, ys]
             else:
-                return self.feature_vecs[inds], ys
+                unlabeled_indices = None
+                
+            return _build_in_memory_dataset(self.feature_vecs, 
+                                          inds, ys, batch_size=batch_size,
+                                          unlabeled_indices=unlabeled_indices)
 
-    
     def _pred_dataset(self, batch_size=32):
-        return dataset(self.df["filepath"].values, imshape=self._imshape, 
+        """
+        Build a dataset for predictions
+        """
+        num_steps = int(np.ceil(len(self.df)/batch_size))
+        if self.feature_vecs is None:
+            files = self.df["filepath"].values
+            return dataset(files, imshape=self._imshape, 
                        num_channels=self._num_channels,
                        num_parallel_calls=self._num_parallel_calls, 
-                       batch_size=batch_size,
-                       augment=False)
+                       batch_size=batch_size, shuffle=False,
+                       augment=False), num_steps
+        # PRE-EXTRACTED FEATURE CASE
+        else:
+            return tf.data.Dataset.from_tensor_slices(self.feature_vecs
+                                                      ).batch(batch_size), num_steps
+    
     
     def build_model(self, entropy_reg=0):
         """
@@ -217,7 +192,24 @@ class PatchWork(object):
 
             
             
-            
+
+    def _run_one_training_epoch(self, batch_size=32, num_samples=None):
+        """
+        Run one training epoch
+        """
+        ds = self._training_dataset(batch_size, num_samples)
+        
+        if self._semi_supervised:
+            for (x, x_unlab), y in ds:
+                loss, ss_loss = self._training_function(x, y, self._opt, x_unlab)
+                self.training_loss.append(loss)
+                self.semisup_loss.append(ss_loss)
+        else:
+            for x, y in ds:
+                loss, ss_loss = self._training_function(x, y, self._opt)
+                self.training_loss.append(loss)
+                self.semisup_loss.append(ss_loss)
+                
     
     def fit(self, batch_size=32, num_samples=None):
         """
@@ -234,13 +226,14 @@ class PatchWork(object):
         """
         Run inference on all the data; save to self.pred_df
         """
-        if self.feature_vecs is not None:
-            predictions = self.model.predict(self.feature_vecs, 
-                                             batch_size=batch_size)
-        else:
-            dataset, num_steps = self._pred_dataset(batch_size)
-            predictions = self.model.predict(dataset, steps=num_steps)
-            
+        ds, num_steps = self._pred_dataset(batch_size)
+        predictions = self.models["full"].predict(ds, steps=num_steps)
+        #if self.feature_vecs is not None:
+        #    predictions = self.model.predict(self.feature_vecs, 
+        #                                     batch_size=batch_size)
+        #else:
+        #    dataset, num_steps = self._pred_dataset(batch_size)
+        #    predictions = self.model.predict(dataset, steps=num_steps)
         self.pred_df.loc[:, self.classes] = predictions
     
     def _stratified_sample(self, N=None):

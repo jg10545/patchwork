@@ -9,102 +9,43 @@ GUI code for training a model
 #import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
-#import pandas as pd
 import panel as pn
-from PIL import Image
+import os
 
 
 from patchwork._sample import find_subset
-from patchwork._util import shannon_entropy, tiff_to_array
+from patchwork._util import shannon_entropy#, tiff_to_array
 
 
-def _load_to_fig(f, figsize=(5,5), lw=5, norm=255):
+def _gen_figs(arrays, dim=3, lw=5):
     """
-    :f: string; path to file
+    Generate a list of matplotlib figures for each case of
+    highlighted image
+    
+    :arrays: list of numpy arrays of images
+    :dim: grid dimension
+    :lw: width of highlight rectangles
     """
-    print("DEPRECATED")
-    if ".tif" in f:
-        im = tiff_to_array(f, num_channels=3, norm=norm)
-    else:
-        im = Image.open(f)
+    figs = []
+    assert len(figs) <= dim*dim, "too many arrays"
     
-    fig1, ax1 = plt.subplots(figsize=figsize)
-    ax1.imshow(im)
-    ax1.axis("off")
-    plt.close(fig1)
-    
-    fig2, ax2 = plt.subplots(figsize=figsize)
-    ax2.imshow(im)
-    ax2.axis("off")
-    a = ax2.axis()
-    rect = Rectangle((lw,lw),a[1]-2*lw,a[2]-2*lw,
-                     linewidth=lw,edgecolor='r',facecolor='none')
-    ax2.add_patch(rect)
-    plt.close(fig2)
-    
-    return fig1, fig2
-
-
-def _build_fig(arr, figsize=(5,5), lw=5):
-    """
-    Build matplotlib figure for displaying an iage
-    
-    :arr: numpy array containing normalized image
-    """
-    # imshow() should input either a (H,W) or (H,W,3) array
-    if arr.shape[-1] < 3:
-        arr = arr[:,:,0]
-    else:
-        arr = arr[:,:,:3]
-    
-    fig1, ax1 = plt.subplots(figsize=figsize)
-    ax1.imshow(arr)
-    ax1.axis("off")
-    plt.close(fig1)
-    
-    fig2, ax2 = plt.subplots(figsize=figsize)
-    ax2.imshow(arr)
-    ax2.axis("off")
-    a = ax2.axis()
-    rect = Rectangle((lw,lw),a[1]-2*lw,a[2]-2*lw,
-                     linewidth=lw,edgecolor='r',facecolor='none')
-    ax2.add_patch(rect)
-    plt.close(fig2)
-    
-    return fig1, fig2
-
-
-class SingleImgDisplayer(object):
-    """
-    Widget to handle displaying a single image- precomputes matplotlib
-    figures for selected and unselected cases
-    """
-    
-    def __init__(self):
-        fig, ax = plt.subplots()
-        ax.plot([])
-        ax.axis("off")
-        self._fig_selected = fig
-        self._fig_unselected = fig
-        self.selected = False
-        self.panel = pn.pane.Matplotlib(self._fig_unselected)#
+    for i in range(len(arrays)):
+        fig, ax = plt.subplots(dim, dim)
+        ax = ax.ravel()
         
-    def load(self, arr):
-        """
-        Load a numpy array into matplotlib figures
-        """
-        self._fig_unselected, self._fig_selected = _build_fig(arr)
-        self.panel.object = self._fig_unselected
-        
-    def select(self):
-        if not self.selected:
-            self.panel.object = self._fig_selected
-            self.selected = True
+        for j, a in enumerate(arrays):
+            ax[j].imshow(a)
+            ax[j].axis(False)
+            if i == j:
+                a = ax[j].axis()
+                rect = Rectangle((lw,lw),a[1]-2*lw,a[2]-2*lw,
+                     linewidth=lw,edgecolor='r',facecolor='none')
+                ax[j].add_patch(rect)
+        plt.tight_layout()
+        plt.close(fig)
+        figs.append(fig)
+    return figs
 
-    def unselect(self):
-        if self.selected:
-            self.panel.object = self._fig_unselected
-            self.selected = False
 
 
 def _single_class_radiobuttons(width=125, height=25):
@@ -114,26 +55,30 @@ def _single_class_radiobuttons(width=125, height=25):
     return pn.widgets.RadioButtonGroup(options=["None", "0", "1"], width=width, align="center", 
                                        height=height, value="None")
 
+
+
 class ButtonPanel(object):
     """
     panel widget that has all the pieces for displaying and labeling patches
     """
-    def __init__(self, classes, df, dim=3):
+    def __init__(self, classes, df, load_func, dim=3, size=800):
+        """
+        :classes: list of strings- name of each class
+        :df: pandas DataFrame
+        :load_func: function to load a file from a path to an array
+        :dim: dimensions of display grid
+        """
         self._index = None
         self._classes = classes
         self._df = df
+        self._load_func = load_func
         
         self.dim = dim
         self._num_images = dim**2
-        self._single_img_patches = [SingleImgDisplayer() for _ in range(dim**2)]
-        self._figpanel = pn.GridSpec()
-        
-        k = 0
-        for j in range(dim):
-            for i in range(dim):
-                self._figpanel[j,i] = self._single_img_patches[k].panel
-                k += 1
-        
+
+        self._figpanel = pn.pane.Matplotlib(height_policy="fit",
+                                            width_policy="fit",
+                                            width=size, height=size)
         
         self._value_map = {"None":None, "0":0, "1":1}
         self._selections = {c:_single_class_radiobuttons() for c in classes}
@@ -162,24 +107,27 @@ class ButtonPanel(object):
         self.panel = pn.Row(self._figpanel, pn.Spacer(width=50), self._button_panel)
         self._indices = None
         
-    def load(self, indices, load_func, select_first=True):
+    def load(self, indices):
         """
         Input an array of indices and load them
         
         :indices: array of indices to load from dataframe
-        :load_func: function to load a file from a path to an array
         """
+        # pull out the filepaths associated with indices
         assert len(indices) <= self._num_images, "Too many indices"
         if self._indices is not None:
             self.record_values()
         self._indices = indices
-        filepaths = self._df["filepath"].values[indices]
-        for e, f in enumerate(filepaths):
-            self._single_img_patches[e].load(load_func(f))
-            
-        if select_first:
-            self.select(0)
-            self._selected_image = 0
+        filepaths = self._df["filepath"].iloc[indices]
+        # load to numpy arrays
+        self._image_arrays = [self._load_func(f) for f in filepaths]
+        # make a list of matplotlib figures, one for each image that
+        # could be highlighted
+        self._figs = _gen_figs(self._image_arrays, dim=self.dim, lw=5)
+        # highlight first image
+        self._figpanel.object = self._figs[0]
+        self._selected_image = 0
+        self._update_buttons()
         
         
     def _update_buttons(self):
@@ -195,11 +143,11 @@ class ButtonPanel(object):
         """
         Select the ith displayed image
         """
-        for e, s in enumerate(self._single_img_patches):
-            if e == i:
-                s.select()
-            else:
-                s.unselect()
+        assert i >= 0
+        assert i < self.dim**2
+        
+        self._figpanel.object = self._figs[i]
+        self._selected_image = i
         self._update_buttons()
     
     def record_values(self):
@@ -222,7 +170,6 @@ class ButtonPanel(object):
         if self._selected_image > 0:
             self._selected_image -= 1
             self.select(self._selected_image)
-
 
 
 def _generate_label_summary(df, classes):
@@ -280,21 +227,22 @@ class Labeler():
     Class to manage displaying images and gathering user feedback
     """
     
-    def __init__(self, classes, df, pred_df, load_func, dim=3, outfile=None):
+    def __init__(self, classes, df, pred_df, load_func, dim=3, 
+                 logdir=None):
         """
         :classes: list of strings; class labels
         :df: DataFrame containing filepaths and class labels
         :pred_df: dataframe of current model predictions
         :load_func:
         :dim: dimension of the image grid to display
-        :outfile: path to save labels to
+        :logdir: path to save labels to
         """
         self._classes = classes
         self._dim = dim
         self._df = df
         self._pred_df = pred_df
-        self._outfile = outfile
-        self._buttonpanel = ButtonPanel(classes, df, dim)
+        self._logdir = logdir
+        self._buttonpanel = ButtonPanel(classes, df, load_func, dim)
         self._load_func = load_func
              
         self._build_select_controls()
@@ -352,9 +300,9 @@ class Labeler():
         subset_by = self._subset_by.value
         indices = pick_indices(self._df, self._pred_df, self._dim**2, 
                                sort_by, subset_by)
-        self._buttonpanel.load(indices, self._load_func)
+        self._buttonpanel.load(indices)
         self._buttonpanel.label_counts.object = _generate_label_summary(self._df, self._classes)
-        if self._outfile is not None:
-            self._df.to_csv(self._outfile, index=False)
+        if self._logdir is not None:
+            self._df.to_csv(os.path.join(self._logdir, "labels.csv"), index=False)
         
  
