@@ -34,12 +34,25 @@ def cluster(vecs, pca_dim=256, k=100, init='k-means++', testvecs=None,
                                              max_iter=kmeans_max_iter,
                                              batch_size=kmeans_batch_size,
                                              max_no_improvement=100,
-                                             compute_labels=False)
+                                             compute_labels=True)
+                                             #compute_labels=False)
     # fit on the training data
     vecs = scaler.fit_transform(vecs)
     vecs = pca.fit_transform(vecs)
     vecs = sklearn.preprocessing.normalize(vecs, norm="l2")
     kmeans.fit(vecs)
+    
+    # if there are any empty clusters- randomly reassign the centroid
+    # to a jittered randomly-chosen non-empty cluster
+    for i in range(k):
+        # empty if no labels assigned
+        if i not in kmeans.labels_:
+            # choose an occupied cluster
+            j = np.random.choice(kmeans.labels_)
+            new_centroid = kmeans.cluster_centers_[j,:] + np.random.normal(0, 0.1,
+                                                  kmeans.cluster_centers_.shape[1])
+            kmeans.cluster_centers_[i,:] = new_centroid
+        
     
     # if test data was passed- make predictions on that as well
     if testvecs is not None:
