@@ -96,6 +96,16 @@ You can pass `False` to the `augment` parameter to disable augmentation, `True` 
 * `zoom_scale` (default 0.3): add a random pad to each side of the image, then randomly crop from each side- this parameter sets the scale for both.
 * `select_prob` (default 0.5) flip a weighted coin with this probability for each of the augmentation steps to decide whether to apply it.
 
+Use `patchwork.viz.augplot()` to experiment with augmentation:
+
+```{python}
+aug = {"max_brightness_delta":0.3, "contrast_min":0.4, "contrast_max":1.4,
+        "max_hue_delta":0.2, "max_saturation_delta":0.5,"left_right_flip":True, 
+        "up_down_flip":True, "rot90":True, "zoom_scale":0.2, "select_prob":0.5}
+# imfiles is a list of paths to image files
+pw.viz.augplot(imfiles, aug)
+```
+![](docs/augment.png)
 
 
 ### Context Encoder
