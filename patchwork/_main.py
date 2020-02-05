@@ -18,8 +18,8 @@ EPSILON = 1e-5
 class PatchWork(object):
     
     def __init__(self, df, feature_vecs=None, feature_extractor=None, classes=[],
-                 dim=3, imshape=(256,256), num_channels=3, norm=255,
-                 num_parallel_calls=2, logdir=None):
+                 imshape=(256,256), num_channels=3, norm=255,
+                 num_parallel_calls=2, logdir=None, aug=True, dim=3):
         """
         Initialize either with a set of feature vectors or a feature extractor
         
@@ -28,12 +28,14 @@ class PatchWork(object):
         :feature_vecs: numpy array of feature data for each unlabeled training point
         :feature_extractor: keras Model object- should be frozen
         :classes: list of strings containing class names
-        :dim: grid dimension for labeler- show a (dim x dim) square of images
         :imshape: pixel size to reshape image to
         :num_channels: number of channels per image
-        :norm:
+        :norm: value to divide image data by to scale it to the unit interval. This will usually be 255.
         :num_parallel_calls: parallel processes for image loading
         :outfile: file path to save labels to during annotation
+        :aug: Boolean or dict of augmentation parameters. Only matters if you're
+            using a feature extractor instead of static features.
+        :dim: grid dimension for labeler- show a (dim x dim) square of images
         """
         self.fine_tuning_model = None
         # by default, pandas maps empty values to np.nan. in case the user
@@ -41,6 +43,7 @@ class PatchWork(object):
         self.df = df.replace({pd.np.nan: None})
         self.feature_vecs = feature_vecs
         self.feature_extractor = feature_extractor
+        self._aug = aug
 
 
         self._imshape = imshape
@@ -73,9 +76,9 @@ class PatchWork(object):
             inpt_channels = self.feature_vecs.shape[-1]
         else:
             inpt_channels = self.feature_extractor.output.get_shape().as_list()[-1]
-        #self.modelpicker = ModelPicker(num_classes=len(self.classes),
-        #                               inpt_channels=inpt_channels)
-        self.modelpicker = ModelPicker(len(self.classes), inpt_channels, self)
+
+        self.modelpicker = ModelPicker(len(self.classes), inpt_channels, self,
+                                       feature_extractor=feature_extractor)
         # make a train manager- pass this object to it
         self.trainmanager = TrainManager(self)
         
@@ -116,7 +119,7 @@ class PatchWork(object):
                        num_channels=self._num_channels,
                        num_parallel_calls=self._num_parallel_calls, 
                        batch_size=batch_size,
-                       augment=True, unlab_fps=unlab_fps)
+                       augment=self._aug, unlab_fps=unlab_fps)[0]
         # PRE-EXTRACTED FEATURE CASE
         else:
             inds, ys = stratified_sample(self.df, num_samples, return_indices=True)
@@ -140,7 +143,7 @@ class PatchWork(object):
                        num_channels=self._num_channels,
                        num_parallel_calls=self._num_parallel_calls, 
                        batch_size=batch_size, shuffle=False,
-                       augment=False), num_steps
+                       augment=False)#, num_steps
         # PRE-EXTRACTED FEATURE CASE
         else:
             return tf.data.Dataset.from_tensor_slices(self.feature_vecs

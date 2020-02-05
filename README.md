@@ -186,7 +186,7 @@ dctrainer.fit(10)
          
 
 **The tensorboard projector doesn't appear to be functioning in TF2.0.**
-(not yet fully tested) a quick macro for throwing a couple hundred image embeddings into the tensorboard projector:
+ a quick macro for throwing a couple hundred image embeddings into the tensorboard projector:
 
 ```{python}
 import tensorflow as tf
