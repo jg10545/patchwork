@@ -99,17 +99,15 @@ def test_dataset_with_both(test_png_path, test_tif_path):
                      num_channels=3, norm=255,
                      batch_size=5, augment={"rot90":False})
     
-    for (w,x),(y,z) in ds:
+    for (w,x),y in ds:
         w = w.numpy()
         x = x.numpy()
         y = y.numpy()
-        z = z.numpy()
         break
     
     assert w.shape == (5,11,17,3)
     assert x.shape == (5,11,17,3)
     assert y.shape == (5,)
-    assert z.shape == (5,)
     
     
 def test_stratified_training_dataset(test_png_path):
