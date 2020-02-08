@@ -80,7 +80,9 @@ class ButtonPanel(object):
                                             width_policy="fit",
                                             width=size, height=size)
         
-        self._value_map = {"None":None, "0":0, "1":1}
+        self._value_map = {'None': None, '0': 0, '1': 1, None:None}
+        self._button_val_map = {None:"None", 0:"0", "0":"0",
+                                1:"1", "1":"1"}
         self._selections = {c:_single_class_radiobuttons() for c in classes}
         self._exclude = pn.widgets.Checkbox(name="exclude", align="center")
       
@@ -137,7 +139,7 @@ class ButtonPanel(object):
         record = self._df.iloc[self._indices[self._selected_image]]
         self._exclude.value = bool(record["exclude"])
         for c in self._classes:
-            self._selections[c].value = str(record[c])
+            self._selections[c].value = self._button_val_map[record[c]]
         
     def select(self, i):
         """
@@ -198,7 +200,7 @@ def pick_indices(df, pred_df, M, sort_by, subset_by):
     df = df[subset]
     pred_df = pred_df[subset]
 
-    M = min(len(subset), M)
+    M = min(len(df), M)
     # RANDOM SAMPLING
     if sort_by == "random":
         sample = df.sample(M)
