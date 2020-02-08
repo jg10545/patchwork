@@ -33,14 +33,17 @@ def _gen_figs(arrays, dim=3, lw=5):
         fig, ax = plt.subplots(dim, dim)
         ax = ax.ravel()
         
-        for j, a in enumerate(arrays):
-            ax[j].imshow(a)
+        #for j, a in enumerate(arrays):
+        for j in range(dim**2):
+            if j < len(arrays):
+                ax[j].imshow(arrays[j])
+            #ax[j].axis(False)
+                if i == j:
+                    a = ax[j].axis()
+                    rect = Rectangle((lw,lw),a[1]-2*lw,a[2]-2*lw,
+                                     linewidth=lw,edgecolor='r',facecolor='none')
+                    ax[j].add_patch(rect)
             ax[j].axis(False)
-            if i == j:
-                a = ax[j].axis()
-                rect = Rectangle((lw,lw),a[1]-2*lw,a[2]-2*lw,
-                     linewidth=lw,edgecolor='r',facecolor='none')
-                ax[j].add_patch(rect)
         plt.tight_layout()
         plt.close(fig)
         figs.append(fig)
