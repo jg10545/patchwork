@@ -48,5 +48,4 @@ def masked_mean_average_error(y_true, y_pred):
     # compute the mean
     norm = K.sum(mask)
     return K.sum(
-            K.abs(y_true*mask - y_pred*mask), axis=-1
-            )/norm
+            K.abs(y_true*mask - y_pred*mask))/norm

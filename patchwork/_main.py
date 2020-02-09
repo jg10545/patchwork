@@ -205,13 +205,13 @@ class PatchWork(object):
         if self._semi_supervised:
             for (x, x_unlab), y in ds:
                 loss, ss_loss = self._training_function(x, y, self._opt, x_unlab)
-                self.training_loss.append(loss)
-                self.semisup_loss.append(ss_loss)
+                self.training_loss.append(loss.numpy())
+                self.semisup_loss.append(ss_loss.numpy())
         else:
             for x, y in ds:
                 loss, ss_loss = self._training_function(x, y, self._opt)
-                self.training_loss.append(loss)
-                self.semisup_loss.append(ss_loss)
+                self.training_loss.append(loss.numpy())
+                self.semisup_loss.append(ss_loss.numpy())
                 
     
     def fit(self, batch_size=32, num_samples=None):

@@ -37,5 +37,7 @@ def test_masked_mean_average_error():
     mae = masked_mean_average_error(y_true, y_pred).numpy()
     mae2 = masked_mean_average_error(y_true, y_true).numpy()
     
-    assert (mae == np.array([0, 0.5])).all()
-    assert (mae2 == np.array([0, 0])).all()
+    #assert (mae == np.array([0, 0.5])).all()
+    #assert (mae2 == np.array([0, 0])).all()
+    assert mae == 0.5
+    assert mae2 == 0.
