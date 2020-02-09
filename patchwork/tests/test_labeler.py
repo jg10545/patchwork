@@ -56,7 +56,7 @@ def test_pick_indices():
     df = prep_label_dataframe(filepaths, classes)
     df["foo"].iloc[:int(N/2)] = 1
     
-    pred_df = df.copy().drop(["exclude", "filepath"], 1)
+    pred_df = df.copy().drop(["exclude", "filepath", "validation"], 1)
     pred_df["foo"] = np.linspace(0,1,N)
     pred_df["bar"] = np.ones(N)
     

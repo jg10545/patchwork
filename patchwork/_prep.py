@@ -17,6 +17,7 @@ def prep_label_dataframe(filepaths, classes):
     """
     df = pd.DataFrame({"filepath":filepaths})
     df["exclude"] = False
+    df["validation"] = False
     for c in classes:
         df[c] = None
     return df

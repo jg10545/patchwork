@@ -60,7 +60,7 @@ class PatchWork(object):
         for c in classes:
             if c not in df.columns:
                 df[c] = None
-        self.classes = [x for x in df.columns if x not in ["filepath", "exclude", "viewpath"]]
+        self.classes = [x for x in df.columns if x not in ["filepath", "exclude", "viewpath", "validation"]]
         # initialize dataframe of predictions
         self.pred_df = pd.DataFrame(
                 {c:np.random.uniform(0,1,len(df)) for c in self.classes},

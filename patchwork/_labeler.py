@@ -12,6 +12,8 @@ from matplotlib.patches import Rectangle
 import panel as pn
 import os
 
+import warnings
+
 
 from patchwork._sample import find_subset
 from patchwork._util import shannon_entropy#, tiff_to_array
@@ -88,6 +90,7 @@ class ButtonPanel(object):
                                 1:"1", "1":"1"}
         self._selections = {c:_single_class_radiobuttons() for c in classes}
         self._exclude = pn.widgets.Checkbox(name="exclude", align="center")
+        self._validation = pn.widgets.Checkbox(name="validation", align="center")
       
         self._back_button = pn.widgets.Button(name='\u25c0', width=50)
         self._back_button.on_click(self._back_button_callback)
@@ -98,6 +101,7 @@ class ButtonPanel(object):
         self._button_panel = pn.Column(pn.Spacer(height=50),
                                        pn.pane.Markdown("## Image labels"),
                                         self._exclude, 
+                                        self._validation,
                                       *[pn.Row(self._selections[c], 
                                             pn.pane.Markdown(c, align="center"), 
                                             height=30)
@@ -141,6 +145,8 @@ class ButtonPanel(object):
         """
         record = self._df.iloc[self._indices[self._selected_image]]
         self._exclude.value = bool(record["exclude"])
+        self._validation.value = bool(record["validation"])
+        
         for c in self._classes:
             self._selections[c].value = self._button_val_map[record[c]]
         
@@ -161,6 +167,7 @@ class ButtonPanel(object):
         """
         i = self._indices[self._selected_image]
         self._df.loc[i, "exclude"] = self._exclude.value
+        self._df.loc[i, "validation"] = self._validation.value
         for c in self._classes:
             self._df.loc[i,c] = self._value_map[self._selections[c].value]
     
@@ -178,11 +185,20 @@ class ButtonPanel(object):
 
 
 def _generate_label_summary(df, classes):
-    text = "\n### Label Counts\n *numbers show negative/positive* \n\n"
+    text = "\n### Label Counts\n"
+    
+    #text += "#### training\n"
+    text +=  "\n| training | neg | pos | \n| -----|  ----- | ----- | \n"
     for c in classes:
-        text += "**%s:**\t%s/%s\n\n"%(c, (df[c]==0).sum(), (df[c]==1).sum())        
+        text += "| %s | %s | %s | \n"%(c, (df[~df["validation"]][c]==0).sum(),
+                                      (df[~df["validation"]][c]==1).sum()) 
+    #text += "\n \n#### validation\n "
+    text +=  "\n| validation | neg | pos | \n| -----|  ----- | ----- |\n"
+    for c in classes:
+        text += "| %s | %s | %s | \n"%(c, (df[df["validation"]][c]==0).sum(),
+                                      (df[df["validation"]][c]==1).sum())
+        
     return text
-
 
 
 
@@ -200,6 +216,8 @@ def pick_indices(df, pred_df, M, sort_by, subset_by):
     """
     # take a subset of the data to sort through
     subset = find_subset(df, subset_by)
+    if subset.sum() == 0:
+        warnings.warn("empty subset")
     df = df[subset]
     pred_df = pred_df[subset]
 
@@ -272,7 +290,7 @@ class Labeler():
             
         # generate all subsetting options
         subset_opts = ["unlabeled", "fully labeled", "partially labeled", 
-                       "excluded", "not excluded"]
+                       "excluded", "not excluded", "validation"]
         for e in ["unlabeled: ", "contains: ", "doesn't contain: "]:
             for c in self._classes:
                 subset_opts.append(e+c)
@@ -305,9 +323,12 @@ class Labeler():
         subset_by = self._subset_by.value
         indices = pick_indices(self._df, self._pred_df, self._dim**2, 
                                sort_by, subset_by)
-        self._buttonpanel.load(indices)
-        self._buttonpanel.label_counts.object = _generate_label_summary(self._df, self._classes)
-        if self._logdir is not None:
-            self._df.to_csv(os.path.join(self._logdir, "labels.csv"), index=False)
+        if len(indices) > 0:
+            self._buttonpanel.load(indices)
+            self._buttonpanel.label_counts.object = _generate_label_summary(self._df, self._classes)
+            if self._logdir is not None:
+                self._df.to_csv(os.path.join(self._logdir, "labels.csv"), index=False)
+        else:
+            warnings.warn("no matching images to load")
         
  

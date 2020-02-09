@@ -3,12 +3,15 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 
+PROTECTED_COLUMN_NAMES = ["filepath", "exclude", "viewpath", "validation"]
+
+
 def find_unlabeled(df):
     """
     Return boolean series of totally unlabeled data points
     """
     label_types = [x for x in df.columns if 
-                   x not in ["filepath", "exclude", "viewpath"]]
+                   x not in PROTECTED_COLUMN_NAMES]
     return pd.isnull(df[label_types]).values.prod(axis=1).astype(bool)
 
 def find_fully_labeled(df):
@@ -16,7 +19,7 @@ def find_fully_labeled(df):
     Return boolean series of totally labeled data points
     """
     label_types = [x for x in df.columns if 
-                   x not in ["filepath", "exclude"]]
+                   x not in PROTECTED_COLUMN_NAMES]
     return pd.notnull(df[label_types]).values.prod(axis=1).astype(bool)
 
 def find_partially_labeled(df):
@@ -48,9 +51,9 @@ def find_subset(df, s):
     elif s == "partially labeled":
         return find_partially_labeled(df)
     elif s == "excluded":
-        return df["excluded"] == 1
+        return df["exclude"] == True
     elif s == "not excluded":
-        return df["excluded"] == 0
+        return df["exclude"] == False
     elif "unlabeled:" in s:
         s = s.replace("unlabeled:", "").strip()
         return pd.isnull(df[s])
@@ -60,6 +63,8 @@ def find_subset(df, s):
     elif "doesn't contain" in s:
         s = s.replace("doesn't contain:", "").strip()
         return df[s] == 0
+    elif s == "validation":
+        return df["validation"] == True
     else:
         assert False, "sorry can't help you"
 
