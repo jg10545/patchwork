@@ -10,6 +10,7 @@ from patchwork._sample import stratified_sample, unlabeled_sample
 testdf = pd.DataFrame({
         "filepath":["a.jpg", "b.jpg", "c.jpg", "d.jpg", "e.jpg"],
         "exclude":[True,  False, False, False, False],
+        "validation":[False,  False, False, False, False],
         "class1":[None, 1, 0, 1, 1],
         "class2":[None, 0, 1, None, None]
         })

@@ -37,16 +37,16 @@ def test_buttonpanel():
     bp.record_values()
     
     
-def test_generate_label_summary():
-    classes = ["foo", "bar"]
-    filepaths = ["foo.jpg", "bar.jpg"]
-    df = prep_label_dataframe(filepaths, classes)
-    df["foo"] = 1
+#def test_generate_label_summary():
+#    classes = ["foo", "bar"]
+#    filepaths = ["foo.jpg", "bar.jpg"]
+#    df = prep_label_dataframe(filepaths, classes)
+#    df["foo"] = 1
     
-    summary = _generate_label_summary(df, classes)
-    assert isinstance(summary, str)
-    assert "0/0" in summary
-    assert "0/2" in summary
+#    summary = _generate_label_summary(df, classes)
+#    assert isinstance(summary, str)
+#    assert "0/0" in summary
+#    assert "0/2" in summary
     
     
 def test_pick_indices():

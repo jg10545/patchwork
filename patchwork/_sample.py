@@ -84,9 +84,9 @@ def stratified_sample(df, N=1000, return_indices=False):
     (filepaths or indices), label vectors
     """
     index = df.index.values
-    not_excluded = df["exclude"] == False
+    not_excluded = (df["exclude"] == False)&(df["validation"] == False)
     filepaths = df["filepath"].values
-    label_types = [x for x in df.columns if x not in ["filepath", "exclude"]]
+    label_types = [x for x in df.columns if x not in PROTECTED_COLUMN_NAMES]
     
     # build a hierarchical set of lists for sampling:
     # outer list has two elements: negative and positive labels
