@@ -136,7 +136,6 @@ def test_sobelize():
     
     assert outpt.shape == (7,11,3)
     assert outpt.numpy()[:,:,2].max() == 0
-    assert outpt.numpy().sum() == 0
     
 
 def test_image_file_dataset_stripping_alpha_channel(test_rgba_png_path, test_png_path):

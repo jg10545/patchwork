@@ -24,7 +24,7 @@ def _sobelize(x):
     """
     expanded = tf.expand_dims(x, 0)
     sobeled = tf.image.sobel_edges(expanded)
-    sobel_mean = tf.reduce_mean(sobeled, -2)
+    sobel_mean = 0.5*tf.reduce_mean(sobeled, -2) + 0.5
     extra_channel = tf.zeros_like(sobel_mean)[:,:,:,:1]
     return tf.squeeze(tf.concat([sobel_mean, extra_channel], -1), [0])
 

@@ -15,7 +15,7 @@ EPSILON = 1e-5
 
 
 
-class PatchWork(object):
+class GUI(object):
     
     def __init__(self, df, feature_vecs=None, feature_extractor=None, classes=[],
                  imshape=(256,256), num_channels=3, norm=255,
@@ -60,7 +60,7 @@ class PatchWork(object):
         for c in classes:
             if c not in df.columns:
                 df[c] = None
-        self.classes = [x for x in df.columns if x not in ["filepath", "exclude", "viewpath"]]
+        self.classes = [x for x in df.columns if x not in ["filepath", "exclude", "viewpath", "validation"]]
         # initialize dataframe of predictions
         self.pred_df = pd.DataFrame(
                 {c:np.random.uniform(0,1,len(df)) for c in self.classes},
@@ -95,9 +95,10 @@ class PatchWork(object):
         """
         
         """
-        return pn.Tabs(("Model", self.modelpicker.panel()), 
-                       ("Train", self.trainmanager.panel()), 
-                       ("Annotate", self.labeler.panel()))
+        return pn.Tabs(("Annotate", self.labeler.panel()),
+                       ("Model", self.modelpicker.panel()), 
+                       ("Train", self.trainmanager.panel())
+                       )
         
     
     def _training_dataset(self, batch_size=32, num_samples=None):
