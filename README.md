@@ -10,6 +10,7 @@ This project is an experiment on how to leverage machine learning when the probl
 * a relatively small number of labels (current approach: frozen feature extractor trained with self-supervised learning, active learning for motivating new images to label, few-shot models, semi-supervised loss function)
 * partially-missing labels (current approach: masked multi-hot loss funtions)
 * images that may have irreducible error with respect to the task at hand (current approach: an option to exclude images during labeling)
+* uses standard data structures and modeling tools that can be scavenged and integrated into other tools and workflows.
 
 If you're going to try this code out- I apologize in advance for the state of the GUI; I'm not really an interface guy. This library is a car with no seatbelts.
 
@@ -39,6 +40,8 @@ use pip
 ## Credits
 
 This package was created with Cookiecutter_ and the `audreyr/cookiecutter-pypackage`_ project template.
+
+Images seen in my documentation are from the amazing [UC Merced Land Use dataset](http://weegee.vision.ucmerced.edu/datasets/landuse.html) which is wonderful for prototyping.
 
 .. _Cookiecutter: https://github.com/audreyr/cookiecutter
 .. _`audreyr/cookiecutter-pypackage`: https://github.com/audreyr/cookiecutter-pypackage
