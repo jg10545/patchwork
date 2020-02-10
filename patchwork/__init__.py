@@ -7,7 +7,7 @@ __email__ = 'joegezo@gmail.com'
 __version__ = '0.1.0'
 
 
-from patchwork._main import PatchWork
+from patchwork._main import GUI
 from patchwork._prep import prep_label_dataframe
 import patchwork.feature
 import patchwork.viz

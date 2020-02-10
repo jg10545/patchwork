@@ -15,7 +15,7 @@ EPSILON = 1e-5
 
 
 
-class PatchWork(object):
+class GUI(object):
     
     def __init__(self, df, feature_vecs=None, feature_extractor=None, classes=[],
                  imshape=(256,256), num_channels=3, norm=255,
@@ -95,9 +95,10 @@ class PatchWork(object):
         """
         
         """
-        return pn.Tabs(("Model", self.modelpicker.panel()), 
-                       ("Train", self.trainmanager.panel()), 
-                       ("Annotate", self.labeler.panel()))
+        return pn.Tabs(("Annotate", self.labeler.panel()),
+                       ("Model", self.modelpicker.panel()), 
+                       ("Train", self.trainmanager.panel())
+                       )
         
     
     def _training_dataset(self, batch_size=32, num_samples=None):
