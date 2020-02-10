@@ -46,11 +46,11 @@ gui.panel()
 
 You don't have to run inside Jupyter- check the [panel docs](https://panel.holoviz.org/user_guide/Deploy_and_Export.html) for instructions on how to deploy or embed the app elsewhere.
 
-### Label tab
+## Label tab
 
 The Label tab is there you can annotate images. It has two main parts- a sampling tool and a labeling tool.
 
-#### Sampling tool
+### Sampling tool
 
 Choose how to sample the next set of images- choose which subset of images to sample from (unlabeled, partially labeled, images containing a particular label, etc) and how to prioritize them. You'll probably sample differently as you build your dataset:
 
@@ -61,7 +61,7 @@ Choose how to sample the next set of images- choose which subset of images to sa
 
 ![](gui_label_sample.png)
 
-#### Labeling tool
+### Labeling tool
 
 Use the arrows to adjust which of the sampled images is selected. For each, you can choose:
 
@@ -73,7 +73,7 @@ Every time you hit the arrow buttons or the `sample` button the annotations are 
 
 ![](gui_label_classes.png)
 
-### Model tab
+## Model tab
 
 Once you've got some images labeled, design a model.
 
@@ -84,6 +84,14 @@ Once you've got some images labeled, design a model.
 
 ![](gui_model.png)
 
-### Train tab
+## Train tab
+
+Once you have labeled images and a model built, use this tab for training. During training, `patchwork` will stratify by class as well as by class value to try to handle varying class imbalance as well as label missingness imbalance. The loss functions are all masked so that partially-missing labels will only pass gradients through the filled-in parts.
+
+* Batch size, samples per epoch, and epochs are all exactly what they sound like
+* If `Update predictions after training?` is checked, then the model will update a dataframe of predictions on all (labeled and unlabeled) images. This is what is used for uncertainty sampling, for example.
+* The histogram plot shows the distribution of model outputs for positive and negative labeled cases (broken out by train and validation) as well as unlabeled.
+  * If the model isn't adequately separating training cases, add more capacity to the model
+  * If the model isn't adequately separating validation cases, you may need more regularization
 
 ![](gui_train.png)
