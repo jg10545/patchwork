@@ -1,20 +1,21 @@
 # Active Learning GUI
 
-To start with you'll need:
+Here's the intended workflow:
 
-* A list of paths to all your image files
-* The number of channels for each image
-* A size to rescale all images to
-* An initial (or revised) set of classes
-
-## Label DataFrame
-
-Labels are stored in a `pandas.DataFrame` containing:
-
-* a `filepath` column containing the path to each image
-* an `exclude` column (default `False`) indicating images to be excluded from the training set
-* one column for each category with values `None`, `0`, or `1` (default `None`) indicating whether that image has that label (and if so, whether the class is present)
-
+* Start with a list of paths to all your image files
+* Train a feature extractor for the images (as a `keras` model), or generate pre-extracted features (as a `numpy` array) for each image.
+  * In the pre-extracted feature case, the rest of the workflow is lightweight enough that I can run it on an old laptop with no GPU
+* Use `patchwork.prep_label_dataframe()` to initialize a `pandas` dataframe to store your labels (or start with an existing one). Since your time is precious, a careful representation of the time you spend annotating is the most important resource we'll build. The dataframe will have a few columns:
+  * path to the file
+  * a Boolean `validation` column (default `False`) that indicates the image should be used for testing any models we build and held out of training
+  * a Boolean `exclude` column (default `False`) that records problematic images- record that you've seen it so you can find it again, but remove it from the training set.
+  * one column per class that can take values `None` (unlabeled), `0` (doesn't contain class) or `1` (contains class). `patchwork` can handle partially-missing labels.
+* Using your features and label dataframe, start a `patchwork.GUI` object.
+  * Sample images to label
+  * Select a fine-tuning model (maps generic feature tensors to task-specific feature vector) and output model (maps feature vector to probabilities over classes)
+  * Train model and evaluate results
+  * Lather, rinse, and repeat: use active learning to prioritize which images to label, and add capacity to your fine-tuning model as needed.
+* When you've built a useful prototype, access the labels in `GUI.df` or the models in `GUI.models` to connect to the next step in whatever problem you're solving!
 
                                         
 ## Interactive Labeling and Fine-Tuning
