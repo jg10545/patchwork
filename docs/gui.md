@@ -51,8 +51,6 @@ You don't have to run inside Jupyter- check the [panel docs](https://panel.holov
 The Label tab is there you can annotate images. It has two main parts- a sampling tool and a labeling tool.
 
 #### Sampling tool
-                        
-![](gui_label_sample.png)
 
 Choose how to sample the next set of images- choose which subset of images to sample from (unlabeled, partially labeled, images containing a particular label, etc) and how to prioritize them. You'll probably sample differently as you build your dataset:
 
@@ -60,6 +58,18 @@ Choose how to sample the next set of images- choose which subset of images to sa
 * For active learning by uncertainty sampling- sort by `max entropy`
 * For uncertainty sampling with respect to a particular class- sort by `maxent <class name>`
 * For hard negative mining- sort by `high <class name>`
+
+![](gui_label_sample.png)
+
+#### Labeling tool
+
+Use the arrows to adjust which of the sampled images is selected. For each, you can choose:
+
+* Whether to exclude it (not used in training or validation- use this for problematic examples)
+* Whether to reserve it as part of a validation set (not used in training but used for out-of-sample tests)
+* Whether it contains any combinations of your classes
+
+Every time you hit the arrow buttons or the `sample` button the annotations are recorded in your label dataframe. Below the buttons is a table collecting the total number of annotations for each category in each dataset.
 
 ![](gui_label_classes.png)
 
