@@ -20,7 +20,7 @@ For each of the above methods, `patchwork` has a training class that:
   * fits a linear softmax model to predict categories and evaluates accuracy on the test set
   * records test accuracy, confusion matrix, and hyperparameters in TensorBoard.
 
-![alt text](docs/hparams.png)
+![alt text](hparams.png)
 
 
 
@@ -53,7 +53,7 @@ trainer = pw.feature.ContextEncoderTrainer(
 
 Tensorboard logs will be stored for the loss function on `testfiles` as well as visualization on inpainting:
 
-![alt text](docs/inpainting.png)
+![alt text](inpainting.png)
 
 
 
