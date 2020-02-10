@@ -75,6 +75,13 @@ Every time you hit the arrow buttons or the `sample` button the annotations are 
 
 ### Model tab
 
+Once you've got some images labeled, design a model.
+
+* **Fine-tuning model:** inputs feature tensors and returns feature vectors. This could be as simple as a global pooling operation, or an arbitrarily complicated convolutional network.
+* **Output-model:**  inputs feature vector and returns class probabilities. I recommend the sigmoid outputs with label smoothing.
+  * Cosine outputs are also available- while they've produced impressive results in low-shot multiclass problems, I don't find that I'm getting impressive results on single-class multilabel problems. Your mileage may vary.
+* **Semi-supervised learning:** If you add an entropy loss weight above 0, then during training batches of unlabeled images will be pushed through the network and the decision boundary will be biased toward confident outputs.
+
 ![](gui_model.png)
 
 ### Train tab
