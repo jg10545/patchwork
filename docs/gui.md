@@ -54,7 +54,12 @@ The Label tab is there you can annotate images. It has two main parts- a samplin
                         
 ![](gui_label_sample.png)
 
-Choose how to sample the next set of images- choose which 
+Choose how to sample the next set of images- choose which subset of images to sample from (unlabeled, partially labeled, images containing a particular label, etc) and how to prioritize them. You'll probably sample differently as you build your dataset:
+
+* For initial tagging- sort by `random`
+* For active learning by uncertainty sampling- sort by `max entropy`
+* For uncertainty sampling with respect to a particular class- sort by `maxent <class name>`
+* For hard negative mining- sort by `high <class name>`
 
 ![](gui_label_classes.png)
 
