@@ -2,35 +2,36 @@
 import numpy as np
 import tensorflow as tf
 
-from patchwork._augment import _random_rotate, _random_crop, _random_distort, _augment
+from patchwork._augment import augment_function, _poisson, _random_zoom, _choose
+
 
 test_shape = (64,64,3)
 test_img = np.zeros(test_shape, dtype=np.float32)
 test_img_tensor = tf.constant(test_img, dtype=tf.float32)
 
 
-def test_random_rotate():
-    rotated = _random_rotate(test_img_tensor)
-        
-    assert isinstance(rotated, tf.Tensor)
-    assert rotated.numpy().shape == test_shape
+def test_default_augment():
+    augfunc = augment_function(test_shape[:2])
+    augmented = augfunc(test_img_tensor)
     
-    
-def test_random_crop():
-    cropped = _random_crop(test_img_tensor)
-        
-    assert isinstance(cropped, tf.Tensor)
-    assert cropped.numpy().shape == test_shape
-    
-    
-def test_random_distort():
-    distorted = _random_distort(test_img_tensor)
-        
-    assert isinstance(distorted, tf.Tensor)
-    assert distorted.numpy().shape == test_shape
-    
-def test_random_augment():
-    augmented = _augment(test_img_tensor)
-        
     assert isinstance(augmented, tf.Tensor)
-    assert augmented.numpy().shape == test_shape
+    assert augmented.get_shape() == test_img_tensor.get_shape()
+    
+    
+def test_poisson():
+    c = _poisson(100)
+    
+    assert c > 0
+    assert c.dtype == tf.int32
+    
+    
+def test_random_zoom():
+    img = np.random.uniform(0,1, (32,32,3)).astype(np.float32)
+    
+    zoomed = _random_zoom(img, (32,32))
+    assert img.shape == zoomed.shape
+    assert (zoomed.numpy() == img).all() == False
+    
+def test_choose():
+    choice = _choose(0.5)
+    assert choice.dtype == tf.bool

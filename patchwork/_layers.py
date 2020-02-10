@@ -1,38 +1,53 @@
 import tensorflow as tf
-
+import tensorflow.keras.backend as K
 
 
 class CosineDense(tf.keras.layers.Layer):
     """
-    Retuning layer for the "baseline++" model in "A CLOSER LOOK AT FEW-SHOT CLASSIFICATION"
-    by Chen et al
+    Dense layer for multilabel cosine similarity. Expects a [None,d] tensor of
+    features and returns a [None,num_classes] tensor of class probabilities.
     """
     
-    def __init__(self, output_dim, activation=tf.keras.activations.softmax,
-                 **kwargs):
+    def __init__(self, output_dim, **kwargs):
         self.output_dim = output_dim
-        self._activation = activation
         super(CosineDense, self).__init__(**kwargs)
 
     def build(self, input_shape):
-        shape = tf.TensorShape((input_shape[1], self.output_dim))
-        # Create a trainable weight variable for this layer.
-        self.kernel = self.add_weight(name='kernel',
-                                  shape=shape,
-                                  initializer='uniform',
-                                  trainable=True)
+        # input shape (None, d)
+        # matrix to multiply by should be (d, 2*output_dim)
+        kernel_shape = (input_shape[1], 2*self.output_dim)
+        self.kernel = self.add_weight(name="kernel",
+                                     shape=kernel_shape,
+                                     initializer="uniform",
+                                     trainable=True)
+        # class embeddings should be (1, num_classes, 2)
+        embed_shape = (1, self.output_dim, 2)
+        self.class_embeds = self.add_weight(name="class_embeds",
+                                           shape=embed_shape,
+                                           initializer="uniform",
+                                           trainable=True)
         # Be sure to call this at the end
         super(CosineDense, self).build(input_shape)
 
     def call(self, inputs):
-        inputs_norm = tf.keras.backend.l2_normalize(inputs, -1)
-        kernel_norm = tf.keras.backend.l2_normalize(self.kernel, 0)
-        return self._activation(tf.matmul(inputs_norm, kernel_norm))
+        # multiply inputs by weight kernel. (None, d)*(d, 2*output_dim)
+        projected = K.dot(inputs, self.kernel)
+        # reshape
+        reshaped = K.reshape(projected, (-1, self.output_dim, 2))
+        # normalize along final axis
+        projected_norm = K.l2_normalize(reshaped, -1)
+        # normalize embeddings
+        embeds_norm = K.l2_normalize(self.class_embeds, -1)
+        # dot product
+        cosine_similarity = K.sum(projected_norm*embeds_norm, axis=-1)
+        # shift to unit interval
+        return 0.5*(cosine_similarity+1)
+
 
     def compute_output_shape(self, input_shape):
         shape = tf.TensorShape(input_shape).as_list()
-        shape[-1] = self.output_dim
-        return tf.TensorShape(shape)
+        return tf.TensorShape((shape[0], self.output_dim))
+
 
     
 class ChannelWiseDense(tf.keras.layers.Layer):

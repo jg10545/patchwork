@@ -10,7 +10,6 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import panel as pn
-import tensorflow as tf
 
 
 
@@ -32,7 +31,7 @@ def _loss_fig(l):
     fig, ax = plt.subplots()
     ax.plot(l, "o-")
     ax.set_xlabel("epoch", fontsize=14)
-    ax.set_ylabel("cross-entropy", fontsize=14)
+    ax.set_ylabel("loss", fontsize=14)
     ax.grid(True)
     plt.close(fig)
     return fig
@@ -42,19 +41,28 @@ def _hist_fig(df, pred, c):
     """
     
     """
-    pos_labeled = pred[c][df[c] == 1].values
-    neg_labeled = pred[c][df[c] == 0].values
-    unlabeled = pred[c][pd.isnull(df[c])].values
     bins = np.linspace(0, 1, 15)
-
+    
     fig, ax = plt.subplots()
-    ax.hist(pos_labeled, bins=bins, alpha=0.5, label="labeled positive", density=True)
-    ax.hist(neg_labeled, bins=bins, alpha=0.5, label="labeled negative", density=True)
-    ax.hist(unlabeled, bins=bins, alpha=0.5, label="unlabeled", density=True)
+    for l,v in [("train", False), ("val", True)]:
+        pos_labeled = pred[c][(df[c] == 1)&(df["validation"] == v)].values
+        neg_labeled = pred[c][(df[c] == 0)&(df["validation"] == v)].values
+        
+        if len(pos_labeled) > 0:           
+            ax.hist(pos_labeled, bins=bins, alpha=0.5, 
+                    label="labeled positive (%s)"%l, density=True)
+        if len(neg_labeled) > 0:
+            ax.hist(neg_labeled, bins=bins, alpha=0.5, 
+                    label="labeled negative (%s)"%l, density=True)
+    
+    
+    unlabeled = pred[c][pd.isnull(df[c])].values
+    if len(unlabeled) > 0:
+        ax.hist(unlabeled, bins=bins, alpha=0.5, label="unlabeled", density=True)
     ax.legend(loc="upper left")
     ax.set_xlabel("assessed probability", fontsize=14)
     ax.set_ylabel("frequency", fontsize=14)
-    ax.set_title("sigmoid outputs for '%s'"%c, fontsize=14)
+    ax.set_title("model outputs for '%s'"%c, fontsize=14)
     plt.close(fig)
     return fig
 
@@ -111,11 +119,11 @@ class TrainManager():
     def _train_callback(self, *event):
         # for each epoch
         epochs = self._epochs.value
-        #self.loss = []
         for e in range(epochs):
             self._footer.object = "### TRAININ (%s / %s)"%(e+1, epochs)
-            history = self.pw.fit(self._batch_size.value, self._samples_per_epoch.value)
-            self.loss.append(history.history["loss"][-1])
+            self.pw._run_one_training_epoch(self._batch_size.value,
+                                            self._samples_per_epoch.value)
+            self.loss = self.pw.training_loss
             
         if self._eval_after_training.value:
             self._footer.object = "### EVALUATING"

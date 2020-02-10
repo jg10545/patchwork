@@ -86,6 +86,7 @@ def build_tensorboard_projections(feature_extractor, filepaths, logdir,
     :imshape:
     :batch_size:
     """
+    assert False, "tensorboard projector not yet working with TF2.0"
     # compute embeddings
     ds, steps = patchwork._loaders.dataset(filepaths, imshape=imshape,
                                    num_channels=num_channels,

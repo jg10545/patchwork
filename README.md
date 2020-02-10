@@ -1,149 +1,47 @@
 # patchwork
 
 
-### Interactive Machine Learning for an Imperfect World
+## Interactive Machine Learning for an Imperfect World
 
 This project is an experiment on how to leverage machine learning when the problem is poorly-specified. I'm interested in cases where we may not know *exactly* what we're looking for when we start the problem, but expect that starting to systematically sort through data would help us refine our question. In particular, we want a system for sorting through images that can handle:
 
 * a set of classes that may be revised mid-project and may not be mutually disjoint (current approach: represent labels using multi-hot encoding)
 * severe imbalances in one or more classes as well as in which classes are labeled (current approach: build training batches using stratified sampling)
 * a relatively small number of labels (current approach: frozen feature extractor trained with self-supervised learning, active learning for motivating new images to label, few-shot models, semi-supervised loss function)
-* partially-missing labels (current approach: masked multi-hot loss funtion)
-* images whose properties may not be clear to the user(current approach: an option to exclude images during labeling)
+* partially-missing labels (current approach: masked multi-hot loss funtions)
+* images that may have irreducible error with respect to the task at hand (current approach: an option to exclude images during labeling)
+* uses standard data structures and modeling tools that can be scavenged and integrated into other tools and workflows.
 
-If you're going to try this code out- I apologize in advance for the state of the GUI; I'm not really an interface guy.
-
-Right now, 
-
-* Labels are stored in a `pandas.DataFrame`
-* The feature extractor and fine-tuning networks are `keras.Model` objects
-* The interface is built with `panel`
+If you're going to try this code out- I apologize in advance for the state of the GUI; I'm not really an interface guy. This library is a car with no seatbelts.
 
 
-`patchwork` has been tested with `tensorflow` 1.13.
+### What's inside
+
+`patchwork` has two main components (follow links for more details):
+
+* A `feature` module for building [feature extractors](docs/feature.md) with self-supervision. Input a list of paths to unlabeled image files, and train a `keras` fully-convolutional network. 
+
+* A graphical user interface using the `panel` library for [interactive labeling](docs/gui.md). Using a frozen pre-trained feature extractor, iteratively label images, train a fine-tuning model to classify using your labels, then use the model to motivate which images to label next. Save out your classification model directly, or use the `pandas.DataFrame` of labels in your own workflow.
+
+Both parts of the library use a common set of [input and augmentation parameters](docs/input_aug.md).
+
+
+`patchwork` has been tested with `tensorflow` 2.0.
 
 * Free software: MIT license
 
+
+
 ## Installation
 
-## Usage
-
-To start with you'll need:
-
-* A list of paths to all your image files
-* The number of channels for each image
-* A size to rescale all images to
-* An initial (or revised) set of classes
-
-## Label DataFrame
-
-Labels are stored in a `pandas.DataFrame` containing:
-
-* a `filepath` column containing the path to each image
-* an `exclude` column (default `False`) indicating images to be excluded from the training set
-* one column for each category with values `None`, `0`, or `1` (default `None`) indicating whether that image has that label (and if so, whether the class is present)
-
-## Building Feature Extractors
-
-### Context Encoder
-
-The main thing this implementation is missing from the inpainting setup in Pathak et al's paper is the amplified loss function in the border region between masked and unmasked areas.
-
-```{python}
-import tensorflow as tf
-import patchwork
-tf.enable_eager_execution()
-
-
-# load paths to train and test files
-trainfiles = [x.strip() for x in open("mytrainfiles.txt").readlines()]
-testfiles = [x.strip() for x in open("mytestfiles.txt").readlines()]
-
-# call training function (it will initialize models if none provided)
-encoder, inpainter, discriminator = patchwork.feature.train_context_encoder(trainfiles,
-                                        testfiles=testfiles,
-                                        num_epochs=1000,
-                                        logdir="logs/",
-                                        batch_size=64,
-                                        num_parallel_jobs=6)
-```
-
-If you provide a `logdir` argument, tensorboard logs will be stored for the loss function on `testfiles` as well as visualization on inpainting:
-
-![alt text](docs/inpainting.png)
-
-
-
-### DeepCluster
-
-
-```{python}
-import tensorflow as tf
-import patchwork
-
-# load paths to train files
-trainfiles = [x.strip() for x in open("mytrainfiles.txt").readlines()]
-
-# initialize a feature extractor
-fcn = patchwork.feature.BNAlexNetFCN()
-
-# train
-fcn = patchwork.feature.train_deepcluster(trainfiles, fcn, 
-                                            "logs_deepclust/",
-                                            epochs=50,
-                                             num_parallel_calls=6,
-                                             pca_dim=64,
-                                             k=100)
-```
-
-### Visualizing learned features
-                                            
-(not yet fully tested) a quick macro for throwing a couple hundred image embeddings into the tensorboard projector:
-
-```{python}
-import tensorflow as tf
-import patchwork
-
-# load a note-huge set of images to test
-testfiles = [x.strip() for x in open("mytestfiles.txt").readlines()]
-# load your saved feature extractor                                            
-fcn = tf.keras.models.load_model("deepcluster_ucmerced_BNAlexNetFCN.h5")                                        
-patchwork.viz.build_tensorboard_projections(fcn, testfiles, "embed_logs/")
-```
-                                            
-![alt text](docs/embedding.png)
-                                        
-## Interactive Labeling and Fine-Tuning
-
-More details forthcoming. Here are the basic steps to load the GUI inside a Jupyter notebook:
-
-```{python}
-import matplotlib.pyplot as plt
-import panel as pn
-pn.extension()
-plt.ioff()
-
-# prepare a DataFrame to hold labels if this is a new project (or
-# just load the old DataFrame otherwise)
-imfiles = [x.strip() for x in open("allmyfiles.txt").readlines()]                                     
-classes = ["cat", "mammal", "dog"]
-df = patchwork.prep_label_dataframe(imfiles, classes)
-
-# load a feature extractor
-fe = tf.keras.models.load_model("pretrained_feature_extractor.h5")
-fe.trainable = False
-
-# pass dataframe and feature extractor to a Patchwork object and
-# load the GUI
-pw = patchwork.Patchwork(df, feature_extractor=fe, imshape=(256,256), 
-                        outfile="saved_labels.csv")
-pw.panel()
-```
+use pip
                                         
 
 ## Credits
 
 This package was created with Cookiecutter_ and the `audreyr/cookiecutter-pypackage`_ project template.
+
+Images seen in my documentation are from the amazing [UC Merced Land Use dataset](http://weegee.vision.ucmerced.edu/datasets/landuse.html) which is wonderful for prototyping.
 
 .. _Cookiecutter: https://github.com/audreyr/cookiecutter
 .. _`audreyr/cookiecutter-pypackage`: https://github.com/audreyr/cookiecutter-pypackage

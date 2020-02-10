@@ -6,58 +6,50 @@
 GUI code for choosing a model
 
 """
-import param
+#import param
 import panel as pn
-from patchwork._models import model_dict
-
-
-class _ModelPicker(param.Parameterized):
-    """
-    DEPRECATED VERSION
-    
-    For building fine-tuning models
-    """
-    model = "no model yet"
-    num_classes = param.Integer(default=2, bounds=(1,100),
-                               label="Number of classes", constant=True)
-    inpt_channels = param.Integer(default=512, bounds=(1,4096), constant=True,
-                               label="Dimension of input embeddings")
-    model_type = param.ObjectSelector(default=model_dict["Linear"], 
-                                objects=model_dict)
-    
-    build_model = param.Action(lambda x: x._build_model(),
-                              label="Build Model",
-                              doc="Create a new model with these settings")
-    
-    def panel(self):
-        return pn.panel(self, expand=True, expand_button=False)
-    
-    
-    def _build_model(self):
-        self.model = self.model_type._build(self.num_classes, self.inpt_channels)
-        
-   
+import tensorflow as tf
+#from patchwork._models import model_dict
+from patchwork._fine_tuning_models import GlobalPooling, ConvNet
+from patchwork._output_models import SigmoidCrossEntropy, CosineOutput
+from patchwork._training_functions import build_training_function
 
 class ModelPicker(object):
     """
     For building fine-tuning models
     """
-    def __init__(self, num_classes, inpt_channels, pw):
+    def __init__(self, num_classes, inpt_channels, pw, feature_extractor=None):
         """
         
         """
-        self._current_model = pn.pane.Markdown("**Current fine-tuning model:** None")
+        fine_tuning_model_dict = {"Global Pooling":GlobalPooling(), "Convnet":ConvNet()}
+        output_model_dict = {"Sigmoid Cross-entropy":SigmoidCrossEntropy(),
+                    "Cosine":CosineOutput()}
+        
+        self._current_model = pn.pane.Markdown("**No current model**\n")
         self._num_classes = num_classes
         self._inpt_channels = inpt_channels
         self._pw = pw
+        self._feature_extractor = feature_extractor
+        # ------- FINE TUNING MODEL SELECTION AND CONFIGURATION -------
         # dropdown and watcher to pick model type
-        self._model_chooser = pn.widgets.Select(options=model_dict)
-        self._chooser_watcher = self._model_chooser.param.watch(self._chooser_callback, 
+        self._fine_tuning_chooser = pn.widgets.Select(options=fine_tuning_model_dict)
+        self._fine_tuning_watcher = self._fine_tuning_chooser.param.watch(self._fine_tuning_callback, 
                                                                  ["value"])
         # model description pane
-        self._model_desc = pn.pane.Markdown(self._model_chooser.value.description)
+        self._fine_tuning_desc = pn.pane.Markdown(self._fine_tuning_chooser.value.description)
         # model hyperparameters
-        self._hyperparams = pn.panel(self._model_chooser.value)
+        self._fine_tuning_hyperparams = pn.panel(self._fine_tuning_chooser.value)
+        
+        # ------- OUTPUT MODEL SELECTION AND CONFIGURATION -------
+        # dropdown and watcher to pick model type
+        self._output_chooser = pn.widgets.Select(options=output_model_dict)
+        self._output_watcher = self._output_chooser.param.watch(self._output_callback, 
+                                                                 ["value"])
+        # model description pane
+        self._output_desc = pn.pane.Markdown(self._output_chooser.value.description)
+        # model hyperparameters
+        self._output_hyperparams = pn.panel(self._output_chooser.value)
         
         # model-builder button
         self._build_button = pn.widgets.Button(name="Build Model")
@@ -68,41 +60,102 @@ class ModelPicker(object):
                                                     value=0., type=float)
         
     def panel(self):
-        model_options = pn.Column(
-            pn.pane.Markdown("### Model Options"),
-            self._current_model,
-            self._model_chooser,
-            self._model_desc,
-            self._hyperparams,
-            self._build_button
+        """
+        Build the GUI as a panel object
+        """
+        fine_tuning = pn.Column(
+            pn.pane.Markdown("### Fine-tuning model\nMap feature tensor to a dense vector"),
+            self._fine_tuning_chooser,
+            self._fine_tuning_desc,
+            self._fine_tuning_hyperparams
+        )
+        output = pn.Column(
+            pn.pane.Markdown("### Output model\nMap dense vector to class probabilities"),
+            self._output_chooser,
+            self._output_desc,
+            self._output_hyperparams
+        )
+        semisupervised = pn.Column(
+            pn.pane.Markdown("### Semi-supervised learning\nUse unlabeled images to guide decision boundaries"),
+            self._entropy_reg
         )
         
-        semi_supervized_options = pn.Column(
-                pn.pane.Markdown("### Semi-Supervised Learning\n\n*rebuild model after updating*"),
-                self._entropy_reg
-                )
-        
-        return pn.Row(model_options, semi_supervized_options)
+        return pn.Column(
+            pn.pane.Markdown("## Model Options"),
+            pn.Row(fine_tuning, 
+                   pn.Spacer(background="whitesmoke", width=10), 
+                   output, 
+                   pn.Spacer(background="whitesmoke", width=10), 
+                   semisupervised),
+            pn.Row(self._build_button, self._current_model)
+        )
     
-    def _chooser_callback(self, *events):
+    def _fine_tuning_callback(self, *events):
         # update description and hyperparameters
-        self._model_desc.object = self._model_chooser.value.description
-        if hasattr(pn.panel(self._model_chooser.value), "objects"):
-            self._hyperparams.objects = pn.panel(self._model_chooser.value).objects
+        self._fine_tuning_desc.object = self._fine_tuning_chooser.value.description
+        if hasattr(pn.panel(self._fine_tuning_chooser.value), "objects"):
+            self._fine_tuning_hyperparams.objects = pn.panel(self._fine_tuning_chooser.value).objects
         else:
             
-            self._hyperparams.objects = []
+            self._fine_tuning_hyperparams.objects = []
+            
+    def _output_callback(self, *events):
+        # update description and hyperparameters
+        self._output_desc.object = self._output_chooser.value.description
+        if hasattr(pn.panel(self._output_chooser.value), "objects"):
+            self._output_hyperparams.objects = pn.panel(self._output_chooser.value).objects
+        else:
+            
+            self._output_hyperparams.objects = []
         
     def _build_callback(self, *events):
-        self._pw.fine_tuning_model = self._model_chooser.value._build(self._num_classes, 
-                                                                      self._inpt_channels)
-        self._pw.build_model(entropy_reg=self._entropy_reg.value)
-        self._current_model.object = "**Current fine-tuning model:** %s"%self._model_chooser.value.name
-        self._pw.trainmanager.loss = []
-
-     
-# NEW VERSION: I think I might have to abandon param. not sure how the objectselector
-# would work though.
+        """
+        When you hit the build button:
+            -build the fine-tuning model
+            -build the output model and loss function
+            -update the "current model" display
+            -create a new training function
+            -pass everything back to the patchwork object
+        """
+        fine_tuning_model = self._fine_tuning_chooser.value.build(self._inpt_channels)
+        tuning_output_channels = fine_tuning_model.output_shape[-1]
+        output_model, loss = self._output_chooser.value.build(self._num_classes, 
+                                                                      tuning_output_channels)
+        #self._pw.fine_tuning_model = self._model_chooser.value._build(self._num_classes, 
+        #                                                              self._inpt_channels)
+        curr_finetune = "**Current fine-tuning model:** %s (%s parameters)"%(self._fine_tuning_chooser.value.name,
+                                                                            fine_tuning_model.count_params())
+        curr_output = "**Current output model:** %s (%s parameters)"%(self._output_chooser.value.name,
+                                                                            output_model.count_params())
+        self._current_model.object = curr_finetune + "\n\n" + curr_output
+        #self._pw.trainmanager.loss = []
         
-
-#def assemble_model(num_classes, inpt_shape, feature_extractor=None):
+        training_function = build_training_function(loss, fine_tuning_model, output_model,
+                                                    feature_extractor=self._feature_extractor,
+                                                    entropy_reg_weight=self._entropy_reg.value)
+        self._pw._training_function = training_function
+        self._pw.models["fine_tuning"] = fine_tuning_model
+        self._pw.models["output"] = output_model
+        self._pw.training_loss = []
+        self._pw.semisup_loss = []
+        
+        # generate full model (for inference)
+        if self._feature_extractor is not None:
+            inpt = tf.keras.layers.Input(self._feature_extractor.input_shape[1:])
+            net = self._feature_extractor(inpt)
+        else:
+            inpt = tf.keras.layers.Input(fine_tuning_model.input_shape[1:])
+            net = inpt
+        net = fine_tuning_model(net)
+        net = output_model(net)
+        self._pw.models["full"] = tf.keras.Model(inpt, net)
+        
+        
+        self._pw._semi_supervised = self._entropy_reg.value > 0
+        self._pw._opt = tf.keras.optimizers.Adam(1e-3)
+        
+        
+        
+        
+        
+        

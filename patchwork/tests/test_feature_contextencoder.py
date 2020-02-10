@@ -23,7 +23,7 @@ def test_context_encoder_make_test_mask_generator_outputs():
 def test_build_context_encoder_dataset(test_png_path):
     ds = ce._build_context_encoder_dataset([test_png_path],
                                                 input_shape=(64,64,3),
-                                                shuffle_queue=1, 
+                                                shuffle=True, 
                                                 num_parallel_calls=1,
                                                 batch_size=1, prefetch=False)
     for record in ds:
@@ -80,10 +80,11 @@ mock_discriminator = tf.keras.Model(inpt, outpt)
 
     
 def test_context_encoder_inpainter_training_step(test_png_path):
+    inpainter_training_step = ce.build_inpainter_training_step()
     x, y = ce._build_test_dataset([test_png_path], input_shape=(64,64,3))
-    losses = ce.inpainter_training_step(opt, 
-                                        mock_inpainter, 
-                                        mock_discriminator, x, y)
+    losses = inpainter_training_step(opt, 
+                                     mock_inpainter, 
+                                     mock_discriminator, x, y)
     assert len(losses) == 3
     for i in range(3):
         assert losses[i].numpy().size == 1
@@ -91,10 +92,11 @@ def test_context_encoder_inpainter_training_step(test_png_path):
 
 
 def test_context_encoder_discriminator_training_step(test_png_path):
+    discriminator_training_step = ce.build_discriminator_training_step()
     x, y = ce._build_test_dataset([test_png_path], input_shape=(64,64,3))
-    loss = ce.discriminator_training_step(opt, 
-                                          mock_inpainter, 
-                                          mock_discriminator, x, y)
+    loss = discriminator_training_step(opt,
+                                       mock_inpainter, 
+                                       mock_discriminator, x, y)
     assert loss.numpy().size == 1
     assert loss.dtype == tf.float32
     
