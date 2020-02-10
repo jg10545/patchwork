@@ -18,9 +18,9 @@ Here's the intended workflow:
 * When you've built a useful prototype, access the labels in `GUI.df` or the models in `GUI.models` to connect to the next step in whatever problem you're solving!
 
                                         
-## Interactive Labeling and Fine-Tuning
+## Getting started
 
-More details forthcoming. Here are the basic steps to load the GUI inside a Jupyter notebook:
+Here are the basic steps to load the GUI inside a Jupyter notebook:
 
 ```{python}
 import matplotlib.pyplot as plt
@@ -36,18 +36,25 @@ df = patchwork.prep_label_dataframe(imfiles, classes)
 
 # load a feature extractor
 fe = tf.keras.models.load_model("pretrained_feature_extractor.h5")
-fe.trainable = False
 
 # pass dataframe and feature extractor to a Patchwork object and
 # load the GUI
-pw = patchwork.Patchwork(df, feature_extractor=fe, imshape=(256,256), 
+gui = patchwork.GUI(df, feature_extractor=fe, imshape=(256,256), 
                         outfile="saved_labels.csv")
-pw.panel()
+gui.panel()
 ```
 
+You don't have to run inside Jupyter- check the [panel docs](https://panel.holoviz.org/user_guide/Deploy_and_Export.html) for instructions on how to deploy or embed the app elsewhere.
+
 ### Label tab
+
+The Label tab is there you can annotate images. It has two main parts- a sampling tool and a labeling tool.
+
+#### Sampling tool
                         
 ![](gui_label_sample.png)
+
+Choose how to sample the next set of images- choose which 
 
 ![](gui_label_classes.png)
 
