@@ -65,7 +65,7 @@ def build_augment_pair_dataset(imfiles, imshape=(256,256), batch_size=256,
     return ds
 
 
-def build_momentum_contrast_training_step(fcn, mo_fcn, optimizer, buffer, batches_in_buffer, alpha=0.999):
+def build_momentum_contrast_training_step(fcn, mo_fcn, optimizer, buffer, batches_in_buffer, alpha=0.999, tau=0.07):
     """
     Function to build tf.function for a MoCo training step. Basically just follow
     Algorithm 1 in He et al's paper.
@@ -74,6 +74,7 @@ def build_momentum_contrast_training_step(fcn, mo_fcn, optimizer, buffer, batche
     
     @tf.function
     def training_step(img1, img2, step):
+        print("tracing training step")
         batch_size = img1.shape[0]
         with tf.GradientTape() as tape:
             # compute averaged and normalized embeddings for each 
@@ -95,7 +96,7 @@ def build_momentum_contrast_training_step(fcn, mo_fcn, optimizer, buffer, batche
             # compute crossentropy loss
             loss = tf.reduce_mean(
                     tf.nn.sparse_softmax_cross_entropy_with_logits(
-                            labels, all_logits))
+                            labels, all_logits/tau))
     
         # update fast model
         variables = fcn.trainable_variables
@@ -124,7 +125,8 @@ class MomentumContrastTrainer(GenericExtractor):
 
     def __init__(self, logdir, trainingdata, testdata=None, fcn=None, 
                  augment=True, batches_in_buffer=10, alpha=0.999, 
-                 lr=0.05, lr_decay=100000,
+                 tau=0.07,
+                 lr=0.01, lr_decay=100000,
                  imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, num_parallel_calls=None,
                  sobel=False, single_channel=False, notes="",
@@ -137,6 +139,7 @@ class MomentumContrastTrainer(GenericExtractor):
         :augment: (dict) dictionary of augmentation parameters, True for defaults
         :batches_in_buffer:
         :alpha:
+        :tau:
         :lr: (float) initial learning rate
         :lr_decay: (int) steps for learning rate to decay by half (0 to disable)
         :imshape: (tuple) image dimensions in H,W
@@ -195,7 +198,7 @@ class MomentumContrastTrainer(GenericExtractor):
                 momentum_encoder, 
                 self._optimizer, 
                 self._buffer, 
-                batches_in_buffer, alpha)
+                batches_in_buffer, alpha, tau)
         # build evaluation dataset
         #if testdata is not None:
         #    self._test_ds, self._test_steps = dataset(testdata,
@@ -217,7 +220,7 @@ class MomentumContrastTrainer(GenericExtractor):
         # parse and write out config YAML
         self._parse_configs(augment=augment, 
                             batches_in_buffer=batches_in_buffer, 
-                            alpha=alpha, lr=lr, lr_decay=lr_decay, 
+                            alpha=alpha, tau=tau, lr=lr, lr_decay=lr_decay, 
                             imshape=imshape, num_channels=num_channels,
                             norm=norm, batch_size=batch_size,
                             num_parallel_calls=num_parallel_calls, sobel=sobel,
@@ -238,7 +241,22 @@ class MomentumContrastTrainer(GenericExtractor):
             
  
     def evaluate(self):
-        print("foo")
+        b = tf.expand_dims(tf.expand_dims(self._buffer,0),-1)
+        self._record_images(buffer=b)
             
+        if self._downstream_labels is not None:
+            # choose the hyperparameters to record
+            if not hasattr(self, "_hparams_config"):
+                from tensorboard.plugins.hparams import api as hp
+                hparams = {
+                    hp.HParam("tau", hp.RealInterval(0., 10000.)):self.config["tau"],
+                    hp.HParam("alpha", hp.RealInterval(0., 1.)):self.config["alpha"],
+                    hp.HParam("batches_in_buffer", hp.IntInterval(1, 1000000)):self.config["batches_in_buffer"],
+                    hp.HParam("sobel", hp.Discrete([True, False])):self.input_config["sobel"]
+                    }
+            else:
+                hparams=None
+            self._linear_classification_test(hparams)
+        
             
         
