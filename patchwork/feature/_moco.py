@@ -217,6 +217,7 @@ class MomentumContrastTrainer(GenericExtractor):
         self.step = 0
         self._step_var = tf.Variable(0, dtype=tf.int64)
         
+        
         # parse and write out config YAML
         self._parse_configs(augment=augment, 
                             batches_in_buffer=batches_in_buffer, 
@@ -225,7 +226,20 @@ class MomentumContrastTrainer(GenericExtractor):
                             norm=norm, batch_size=batch_size,
                             num_parallel_calls=num_parallel_calls, sobel=sobel,
                             single_channel=single_channel, notes=notes)
+        self._prepopulate_buffer()
         
+    def _prepopulate_buffer(self):
+        i = 0
+        bs = self.input_config["batch_size"]
+        bib = self.config["batches_in_buffer"]
+        flatten = tf.keras.layers.GlobalAvgPool2D()
+        for x,y in self._ds:
+            k = tf.nn.l2_normalize(flatten(
+                    self._models["momentum_encoder"](y)), axis=1)
+            _ = self._buffer[bs*i:bs*(i+1),:].assign(k)
+            i += 1
+            if i >= bib:
+                break
         
     def _run_training_epoch(self, **kwargs):
         """
