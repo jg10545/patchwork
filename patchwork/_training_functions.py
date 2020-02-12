@@ -3,7 +3,9 @@ import tensorflow as tf
 
 from patchwork._losses import entropy_loss
 
-def build_training_function(loss_fn, fine_tuning, output, feature_extractor=None, entropy_reg_weight=0):
+def build_training_function(loss_fn, fine_tuning, output, feature_extractor=None,
+                            entropy_reg_weight=0, mean_teacher_alpha=0,
+                            teacher_finetune=None, teacher_output=None):
     """
     Generate a tensorflow function for training the model.
     
@@ -25,20 +27,32 @@ def build_training_function(loss_fn, fine_tuning, output, feature_extractor=None
             
         with tf.GradientTape() as tape:
             # compute outputs for training data
-            vectors = fine_tuning(x)
-            y_pred = output(vectors)
+            vectors = fine_tuning(x, training=True)
+            y_pred = output(vectors, training=True)
             
             # loss function between labels and predictions
             training_loss = loss_fn(y, y_pred)
             
             # semi-supervised case- loss function for unlabeled data
+            # entropy regularization
             if entropy_reg_weight > 0:
                 if feature_extractor is not None:
                     x_unlab = feature_extractor(x_unlab)
-                vectors_ss = fine_tuning(x_unlab)
-                pred_ss = output(vectors_ss)
+                vectors_ss = fine_tuning(x_unlab, training=True)
+                pred_ss = output(vectors_ss, training=True)
                 
                 entropy_reg_loss = entropy_loss(pred_ss)
+            # mean teacher
+            elif mean_teacher_alpha > 0:
+                if feature_extractor is not None:
+                    x_unlab = feature_extractor(x_unlab)
+                vectors_ss = fine_tuning(x_unlab, training=True)
+                pred_ss = output(vectors_ss, training=True)
+                
+                teach_vector_ss = teacher_finetune(x_unlab, training=True)
+                teach_pred_ss = teacher_output(teach_vector_ss, training=True)
+                
+                entropy_reg_loss = tf.reduce_sum((pred_ss-teach_pred_ss)**2)
             else:
                 entropy_reg_loss = 0.
             
@@ -46,5 +60,12 @@ def build_training_function(loss_fn, fine_tuning, output, feature_extractor=None
         # compute and apply gradients
         gradients = tape.gradient(total_loss, trainvars)
         opt.apply_gradients(zip(gradients, trainvars))
+        
+        if mean_teacher_alpha > 0:
+            from patchwork.feature._moco import exponential_model_update
+            _ = exponential_model_update(teacher_finetune, fine_tuning,
+                                         mean_teacher_alpha)
+            _ = exponential_model_update(teacher_output, output,
+                                         mean_teacher_alpha)
         return training_loss, entropy_reg_loss
     return training_step
