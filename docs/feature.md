@@ -113,3 +113,12 @@ DOCS COMING SOON
 
 * COMING SOON
         
+## Momentum Contrast
+
+DOCS COMING SOON
+
+[paper here](https://arxiv.org/abs/1911.05722)
+
+### Some notes on using MoCo
+
+* COMING SOON
