@@ -30,7 +30,7 @@ def _loss_fig(l):
     """
     fig, ax = plt.subplots()
     ax.plot(l, "o-")
-    ax.set_xlabel("epoch", fontsize=14)
+    ax.set_xlabel("step", fontsize=14)
     ax.set_ylabel("loss", fontsize=14)
     ax.grid(True)
     plt.close(fig)

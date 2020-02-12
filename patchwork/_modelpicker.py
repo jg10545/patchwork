@@ -58,6 +58,8 @@ class ModelPicker(object):
         # semi-supervised
         self._entropy_reg = pn.widgets.LiteralInput(name='Entropy Regularization Weight', 
                                                     value=0., type=float)
+        self._mean_teacher_alpha = pn.widgets.LiteralInput(name='Mean Teacher alpha (0 to disable)', 
+                                                    value=0., type=float)
         
     def panel(self):
         """
@@ -76,8 +78,9 @@ class ModelPicker(object):
             self._output_hyperparams
         )
         semisupervised = pn.Column(
-            pn.pane.Markdown("### Semi-supervised learning\nUse unlabeled images to guide decision boundaries"),
-            self._entropy_reg
+            pn.pane.Markdown("### Semi-supervised learning\nUse unlabeled images to guide decision boundaries. Only one method can be used at a time."),
+            self._entropy_reg,
+            self._mean_teacher_alpha
         )
         
         return pn.Column(
@@ -130,10 +133,10 @@ class ModelPicker(object):
         self._current_model.object = curr_finetune + "\n\n" + curr_output
         #self._pw.trainmanager.loss = []
         
-        training_function = build_training_function(loss, fine_tuning_model, output_model,
-                                                    feature_extractor=self._feature_extractor,
-                                                    entropy_reg_weight=self._entropy_reg.value)
-        self._pw._training_function = training_function
+        #training_function = build_training_function(loss, fine_tuning_model, output_model,
+        #                                            feature_extractor=self._feature_extractor,
+        #                                            entropy_reg_weight=self._entropy_reg.value)
+        #self._pw._training_function = training_function
         self._pw.models["fine_tuning"] = fine_tuning_model
         self._pw.models["output"] = output_model
         self._pw.training_loss = []
@@ -150,8 +153,22 @@ class ModelPicker(object):
         net = output_model(net)
         self._pw.models["full"] = tf.keras.Model(inpt, net)
         
+        # if using mean-teacher- build teacher models
+        if self._mean_teacher_alpha.value > 0:
+            from patchwork.feature._moco import copy_model
+            self._pw.models["teacher_fine_tuning"] = copy_model(self._pw.models["fine_tuning"])
+            self._pw.models["teacher_output"] = copy_model(self._pw.models["output"])
+        else:
+            self._pw.models["teacher_fine_tuning"] = None
+            self._pw.models["teacher_output"] = None
+            
+        training_function = build_training_function(loss, fine_tuning_model,
+                                    output_model,
+                                    feature_extractor=self._feature_extractor,
+                                    entropy_reg_weight=self._entropy_reg.value)
+        self._pw._training_function = training_function
         
-        self._pw._semi_supervised = self._entropy_reg.value > 0
+        self._pw._semi_supervised = (self._entropy_reg.value > 0)|(self._mean_teacher_alpha.value > 0)
         self._pw._opt = tf.keras.optimizers.Adam(1e-3)
         
         
