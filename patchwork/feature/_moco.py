@@ -65,12 +65,12 @@ def build_augment_pair_dataset(imfiles, imshape=(256,256), batch_size=256,
     return ds
 
 
-def build_momentum_contrast_training_step(fcn, mo_fcn, optimizer, buffer, batches_in_buffer, alpha=0.999, tau=0.07):
+def build_momentum_contrast_training_step(model, mo_model, optimizer, buffer, batches_in_buffer, alpha=0.999, tau=0.07):
     """
     Function to build tf.function for a MoCo training step. Basically just follow
     Algorithm 1 in He et al's paper.
     """
-    flatten = tf.keras.layers.GlobalAvgPool2D()
+    #flatten = tf.keras.layers.GlobalAvgPool2D()
     
     @tf.function
     def training_step(img1, img2, step):
@@ -79,8 +79,10 @@ def build_momentum_contrast_training_step(fcn, mo_fcn, optimizer, buffer, batche
         with tf.GradientTape() as tape:
             # compute averaged and normalized embeddings for each 
             # separately-augmented batch of pairs of images. Each is (N,d)
-            q = tf.nn.l2_normalize(flatten(fcn(img1)), axis=1)
-            k = tf.nn.l2_normalize(flatten(mo_fcn(img2)), axis=1)
+            #q = tf.nn.l2_normalize(flatten(fcn(img1)), axis=1)
+            #k = tf.nn.l2_normalize(flatten(mo_fcn(img2)), axis=1)
+            q = tf.nn.l2_normalize(model(img1), axis=1)
+            k = tf.nn.l2_normalize(mo_model(img2), axis=1)
     
             # compute positive logits- (N,1)
             positive_logits = tf.squeeze(
@@ -99,11 +101,11 @@ def build_momentum_contrast_training_step(fcn, mo_fcn, optimizer, buffer, batche
                             labels, all_logits/tau))
     
         # update fast model
-        variables = fcn.trainable_variables
+        variables = model.trainable_variables
         gradients = tape.gradient(loss, variables)
         optimizer.apply_gradients(zip(gradients, variables))
         # update slow model
-        weight_diff = exponential_model_update(mo_fcn, fcn, alpha)
+        weight_diff = exponential_model_update(mo_model, model, alpha)
     
         # update buffer
         i = step % batches_in_buffer
@@ -125,7 +127,7 @@ class MomentumContrastTrainer(GenericExtractor):
 
     def __init__(self, logdir, trainingdata, testdata=None, fcn=None, 
                  augment=True, batches_in_buffer=10, alpha=0.999, 
-                 tau=0.07,
+                 tau=0.07, output_dim=128,
                  lr=0.01, lr_decay=100000,
                  imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, num_parallel_calls=None,
@@ -140,6 +142,7 @@ class MomentumContrastTrainer(GenericExtractor):
         :batches_in_buffer:
         :alpha:
         :tau:
+        :output_dim:
         :lr: (float) initial learning rate
         :lr_decay: (int) steps for learning rate to decay by half (0 to disable)
         :imshape: (tuple) image dimensions in H,W
@@ -168,8 +171,18 @@ class MomentumContrastTrainer(GenericExtractor):
         if fcn is None:
             fcn = tf.keras.applications.ResNet50V2(weights=None, include_top=False)
         self.fcn = fcn
-        momentum_encoder = copy_model(fcn)
-        self._models = {"fcn":fcn, "momentum_encoder":momentum_encoder}
+        # from "technical details" in paper- after FCN they did global pooling
+        # and then a dense layer. i assume linear outputs on it.
+        inpt = tf.keras.layers.Input((None, None, channels))
+        features = fcn(inpt)
+        pooled = tf.keras.layers.GlobalAvgPool2D()(features)
+        outpt = tf.keras.layers.Dense(output_dim)(pooled)
+        full_model = tf.keras.Model(inpt, outpt)
+        
+        momentum_encoder = copy_model(full_model)
+        self._models = {"fcn":fcn, 
+                        "full":full_model,
+                        "momentum_encoder":momentum_encoder}
         
         # build training dataset
         self._ds = build_augment_pair_dataset(trainingdata, 
@@ -189,12 +202,12 @@ class MomentumContrastTrainer(GenericExtractor):
         
         # build buffer
         K = batch_size*batches_in_buffer
-        d = fcn.output_shape[-1]
+        d = output_dim #fcn.output_shape[-1]
         self._buffer = tf.Variable(np.zeros((K,d), dtype=np.float32))
         
         # build training step
         self._training_step = build_momentum_contrast_training_step(
-                fcn, 
+                full_model, 
                 momentum_encoder, 
                 self._optimizer, 
                 self._buffer, 
@@ -221,7 +234,8 @@ class MomentumContrastTrainer(GenericExtractor):
         # parse and write out config YAML
         self._parse_configs(augment=augment, 
                             batches_in_buffer=batches_in_buffer, 
-                            alpha=alpha, tau=tau, lr=lr, lr_decay=lr_decay, 
+                            alpha=alpha, tau=tau, output_dim=output_dim,
+                            lr=lr, lr_decay=lr_decay, 
                             imshape=imshape, num_channels=num_channels,
                             norm=norm, batch_size=batch_size,
                             num_parallel_calls=num_parallel_calls, sobel=sobel,
@@ -232,10 +246,10 @@ class MomentumContrastTrainer(GenericExtractor):
         i = 0
         bs = self.input_config["batch_size"]
         bib = self.config["batches_in_buffer"]
-        flatten = tf.keras.layers.GlobalAvgPool2D()
+        #flatten = tf.keras.layers.GlobalAvgPool2D()
         for x,y in self._ds:
-            k = tf.nn.l2_normalize(flatten(
-                    self._models["momentum_encoder"](y)), axis=1)
+            k = tf.nn.l2_normalize(
+                    self._models["momentum_encoder"](y), axis=1)
             _ = self._buffer[bs*i:bs*(i+1),:].assign(k)
             i += 1
             if i >= bib:
@@ -266,6 +280,7 @@ class MomentumContrastTrainer(GenericExtractor):
                     hp.HParam("tau", hp.RealInterval(0., 10000.)):self.config["tau"],
                     hp.HParam("alpha", hp.RealInterval(0., 1.)):self.config["alpha"],
                     hp.HParam("batches_in_buffer", hp.IntInterval(1, 1000000)):self.config["batches_in_buffer"],
+                    hp.HParam("output_dim", hp.IntInterval(1, 1000000)):self.config["output_dim"],
                     hp.HParam("sobel", hp.Discrete([True, False])):self.input_config["sobel"]
                     }
             else:
