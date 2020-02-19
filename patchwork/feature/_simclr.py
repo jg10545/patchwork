@@ -8,7 +8,7 @@ from patchwork.loaders import _image_file_dataset
 
 BIG_NUMBER = 1000.
 
-def build_simclr_dataset(imfiles, imshape=(256,256), batch_size=256, 
+def _build_simclr_dataset(imfiles, imshape=(256,256), batch_size=256, 
                       num_parallel_calls=None, norm=255,
                       num_channels=3, augment=True,
                       single_channel=False):
@@ -30,7 +30,7 @@ def build_simclr_dataset(imfiles, imshape=(256,256), batch_size=256,
     ds = ds.map(_augment_and_stack, num_parallel_calls=num_parallel_calls)
     
     ds = ds.unbatch()
-    ds = ds.batch(batch_size, drop_remainder=True)
+    ds = ds.batch(2*batch_size, drop_remainder=True)
     ds = ds.prefetch(1)
     return ds
 
@@ -52,7 +52,7 @@ def _build_embedding_model(fcn, imshape, num_channels, num_hidden, output_dim):
 
 
 
-def build_simclr_training_step(embed_model, optimizer, temperature=0.1):
+def _build_simclr_training_step(embed_model, optimizer, temperature=0.1):
     """
     
     """
@@ -60,6 +60,9 @@ def build_simclr_training_step(embed_model, optimizer, temperature=0.1):
     def training_step(x,y):
         eye = tf.linalg.eye(x.shape[0])
         index = tf.range(0, x.shape[0])
+        # the labels tell which similarity is the "correct" one- the augmented
+        # pair from the same image. so index+y should look like [1,0,3,2,5,4...]
+        labels = index+y
 
         with tf.GradientTape() as tape:
             # run each image through the convnet and
@@ -72,9 +75,7 @@ def build_simclr_training_step(embed_model, optimizer, temperature=0.1):
             # subtract a large number from diagonals to effectively remove
             # them from the sum, and rescale by temperature
             logits = (sim - BIG_NUMBER*eye)/temperature
-            # the labels tell which similarity is the "correct" one- the augmented
-            # pair from the same image. so index+y should look like [1,0,3,2,5,4...]
-            labels = index+y
+            
             loss = tf.reduce_mean(
                     tf.nn.sparse_softmax_cross_entropy_with_logits(labels, logits))
 
@@ -82,6 +83,7 @@ def build_simclr_training_step(embed_model, optimizer, temperature=0.1):
         optimizer.apply_gradients(zip(gradients,
                                       embed_model.trainable_variables))
         return loss
+    return training_step
 
 
 
@@ -150,7 +152,7 @@ class SimCLRTrainer(GenericExtractor):
                         "full":embed_model}
         
         # build training dataset
-        self._ds = build_simclr_dataset(trainingdata, 
+        self._ds = _build_simclr_dataset(trainingdata, 
                                         imshape=imshape, batch_size=batch_size,
                                         num_parallel_calls=num_parallel_calls, 
                                         norm=norm, num_channels=num_channels, 
@@ -168,7 +170,7 @@ class SimCLRTrainer(GenericExtractor):
         
         
         # build training step
-        self._training_step = build_simclr_training_step(
+        self._training_step = _build_simclr_training_step(
                 embed_model, 
                 self._optimizer, 
                 temperature)
