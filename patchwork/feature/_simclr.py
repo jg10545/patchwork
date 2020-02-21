@@ -69,7 +69,7 @@ def _build_simclr_training_step(embed_model, optimizer, temperature=0.1):
             # projection head
             embeddings = embed_model(x, training=True)
             # normalize the embeddings
-            embeds_norm = tf.nn.l2_normalize(embeddings)
+            embeds_norm = tf.nn.l2_normalize(embeddings, axis=1)
             # compute the pairwise matrix of cosine similarities
             sim = tf.matmul(embeds_norm, embeds_norm, transpose_b=True)
             # subtract a large number from diagonals to effectively remove
@@ -166,7 +166,7 @@ class SimCLRTrainer(GenericExtractor):
                                             staircase=False)
         else:
             learnrate = lr
-        self._optimizer = tf.keras.optimizers.SGD(learnrate, momentum=0.9)
+        self._optimizer = tf.keras.optimizers.Adam(learnrate, momentum=0.9)
         
         
         # build training step
