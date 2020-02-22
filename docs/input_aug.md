@@ -15,25 +15,47 @@ Augmentation is a critical part of effectively using self-supervision for imager
 
 ## Augmentation parameters
 
-You can pass `False` to the `augment` parameter to disable augmentation, `True` to use defaults, or a dictionary containing any of the following (with the rest disabled):
+You can pass `False` to the `augment` parameter to disable augmentation, `True` to use defaults, or a dictionary containing any of the following (with the rest disabled). Operations are applied in the order given here:
+
+DEFAULT_AUGMENT_PARAMS = {
+    "gaussian_blur":0.2,
+    "drop_color":0.2,
+    "gaussian_noise":0.2,
+    "sobel_prob":0.1,
+    "brightness_delta":0.2,
+    "contrast_delta":0.1,
+    "saturation_delta":0.1,
+    "hue_delta":0.05,
+    "flip_left_right":True,
+    "flip_up_down":True,
+    "rot90":True,
+    "zoom_scale":0.2,
+    "mask":0.2
+}
 
 
-* `max_brightness_delta` (default 0.2): randomly adjust brightness within this range
-* `contrast_min` (default 0.4) and `contrast_max` (default 1.4): randomly adjust contrast within this range
-* `max_hue_delta` (default 0.1): randomly adjust hue within this range
-* `max_saturation_delta` (default 0.5): randomly adjust saturation within this range
-* `left_right_flip` (default True): if True, flip images left-to-right 50% of the time
-* `up_down_flip` (default True): if True, flip images top-to-bottom 50% of the time
-* `rot90` (default True): if True, rotate images 0, 90, 180, or 270 degrees with equal probability
-* `zoom_scale` (default 0.3): add a random pad to each side of the image, then randomly crop from each side- this parameter sets the scale for both.
-* `select_prob` (default 0.5) flip a weighted coin with this probability for each of the augmentation steps to decide whether to apply it.
+* `gaussian_blur` (default `0.2`) with the specified probability, smooth the image by convolving with a 7x7 Gaussian kernel
+* `gaussian_noise` (default `0.2`) with the specified probability, add normally-distributed white noise to the image with standard deviation 0.1.
+* `brightness_delta` (default `0.2`) shift the image's brightness by a value randomly chosen from this interval
+* `contrast_delta` (default `0.1`) shift the image's contrast by a value randomly chosen from this interval
+* `saturation_delta` (default `0.1`) shift the image's saturation by a value randomly chosen from this interval
+* `hue_delta` (default `0.05`) shift the image's hue by a value randomly chosen from this interval
+* `flip_left_right` (default `True`) if `True`, flip the image left-to-right with 50% probability
+* `flip_up_down` (default `True`) if `True`, flip the image top-to-bottom with 50% probability
+* `rot90` (default `True`) if `True`, rotate the image by 0, 90, 180, or 270 degrees with equal probability
+* `drop_color` (default `0.2`) with the specified probability, drop color information by replacing every channel with its pixelwise average
+* `sobel_prob` (default `0.1`) with the specified probability, use a Sobel filter to trace the edges of the image and return the average of the two outputs 
+* `zoom_scale` (default `0.2`) add a random pad to each side of the image, then randomly crop from each side- this parameter sets the scale for both (with `1` being the scale of the image).
+* `mask` (default `0.2`) with the specified probability, randomly mask out a rectangle from the image
 
 Use `patchwork.viz.augplot()` to experiment with augmentation:
 
+
 ```{python}
-aug = {"max_brightness_delta":0.3, "contrast_min":0.4, "contrast_max":1.4,
-        "max_hue_delta":0.2, "max_saturation_delta":0.5,"left_right_flip":True, 
-        "up_down_flip":True, "rot90":True, "zoom_scale":0.2, "select_prob":0.5}
+aug = {"brightness_delta":0.2, "contrast_delta":0.4, "hue_delta":0.1,
+        "gaussian_blur":0.25,  "drop_color":0.2, "gaussian_noise":0.2,
+        "sobel_prob":0.1, "saturation_delta":0.1, "flip_left_right":True,
+        "flip_up_down":True, "rot90":True, "zoom_scale":0.4, "mask":0.25}
 # imfiles is a list of paths to image files
 pw.viz.augplot(imfiles, aug)
 ```
