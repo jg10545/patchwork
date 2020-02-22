@@ -43,7 +43,7 @@ def test_dataset_with_augmentation(test_png_path):
     
     ds, ns = dataset(imfiles, ys=None, imshape=(11,17),
                      num_channels=3, norm=255,
-                     batch_size=5, augment={"rot90":False})
+                     batch_size=5, augment={})
     
     for x in ds:
         x = x.numpy()
@@ -77,7 +77,7 @@ def test_dataset_with_unlabeled_images(test_png_path, test_tif_path):
     ds, ns = dataset(imfiles, unlab_fps=unlab_files, 
                      imshape=(11,17),
                      num_channels=3, norm=255,
-                     batch_size=5, augment={"rot90":False})
+                     batch_size=5, augment={})
     
     for x,y in ds:
         x = x.numpy()
@@ -97,7 +97,7 @@ def test_dataset_with_both(test_png_path, test_tif_path):
                      unlab_fps=unlab_files, 
                      imshape=(11,17),
                      num_channels=3, norm=255,
-                     batch_size=5, augment={"rot90":False})
+                     batch_size=5, augment={})
     
     for (w,x),y in ds:
         w = w.numpy()
@@ -119,7 +119,7 @@ def test_stratified_training_dataset(test_png_path):
                                          num_channels=3,
                                          batch_size=10,
                                          mult=1,
-                                         augment={"rot90":False})
+                                         augment={})
     
     for x,y in ds:
         x = x.numpy()
