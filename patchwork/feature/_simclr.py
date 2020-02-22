@@ -166,7 +166,7 @@ class SimCLRTrainer(GenericExtractor):
                                             staircase=False)
         else:
             learnrate = lr
-        self._optimizer = tf.keras.optimizers.Adam(learnrate, momentum=0.9)
+        self._optimizer = tf.keras.optimizers.Adam(learnrate)
         
         
         # build training step
