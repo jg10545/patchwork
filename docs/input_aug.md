@@ -17,23 +17,6 @@ Augmentation is a critical part of effectively using self-supervision for imager
 
 You can pass `False` to the `augment` parameter to disable augmentation, `True` to use defaults, or a dictionary containing any of the following (with the rest disabled). Operations are applied in the order given here:
 
-DEFAULT_AUGMENT_PARAMS = {
-    "gaussian_blur":0.2,
-    "drop_color":0.2,
-    "gaussian_noise":0.2,
-    "sobel_prob":0.1,
-    "brightness_delta":0.2,
-    "contrast_delta":0.1,
-    "saturation_delta":0.1,
-    "hue_delta":0.05,
-    "flip_left_right":True,
-    "flip_up_down":True,
-    "rot90":True,
-    "zoom_scale":0.2,
-    "mask":0.2
-}
-
-
 * `gaussian_blur` (default `0.2`) with the specified probability, smooth the image by convolving with a 7x7 Gaussian kernel
 * `gaussian_noise` (default `0.2`) with the specified probability, add normally-distributed white noise to the image with standard deviation 0.1.
 * `brightness_delta` (default `0.2`) shift the image's brightness by a value randomly chosen from this interval
