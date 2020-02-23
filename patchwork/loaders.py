@@ -110,7 +110,8 @@ def _image_file_dataset(fps, imshape=(256,256),
             
         if single_channel:
             resized = tf.concat(num_channels*[resized], -1)
-        return tf.cast(resized[:,:,:num_channels], tf.float32)/255
+        normed = tf.cast(resized[:,:,:num_channels], tf.float32)/norm
+        return tf.reshape(normed, (imshape[0], imshape[1], num_channels))
 
     ds = ds.map(lambda x,y: _load_img(x,y), num_parallel_calls=num_parallel_calls)
     return ds

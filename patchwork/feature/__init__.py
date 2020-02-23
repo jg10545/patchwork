@@ -3,3 +3,5 @@ from patchwork.feature._models import BNAlexNetFCN
 from patchwork.feature._deepcluster import DeepClusterTrainer
 from patchwork.feature._iic import InvariantInformationClusteringTrainer
 from patchwork.feature._moco import MomentumContrastTrainer
+from patchwork.feature._simclr import SimCLRTrainer
+from patchwork.feature._simclr_multi import DistributedSimCLRTrainer

@@ -4,7 +4,7 @@ The `patchwork.feature` module has several models implemented for unsupervised o
 
 * [Context Encoders](https://arxiv.org/abs/1604.07379)
 * [DeepCluster](https://arxiv.org/abs/1807.05520)
-* [Invariant Information Clustering](https://arxiv.org/abs/1807.06653)
+* [SimCLR](https://arxiv.org/abs/2002.05709)
 
 The module has a class to manage the training of each model. You can initialize the trainer with a fully-convolutional `keras` model for it to train (otherwise it will use a default model).
 
@@ -22,6 +22,7 @@ For each of the above methods, `patchwork` has a training class that:
 
 ![alt text](hparams.png)
 
+Click [here](ucmerced.md) for an example comparing these methods on the UCMerced Land Use dataset.
 
 
 ## Context Encoder
@@ -104,6 +105,22 @@ dctrainer.fit(10)
 * I notice much faster training when I transfer learn from a network pretrained on ImageNet than with random weights (within 10 epochs rather than hundreds on UCMerced, for example)
 * Transfer learning from a network pretrained with DeepCluster, using different parameters, can give weird results.
         
+
+## SimCLR
+
+`patchwork` contains a TensorFlow implementation of the algorithm in Chen *et al*'s [A Simple Framework for Contrastive Learning of Visual Representations](https://arxiv.org/abs/2002.05709). For the moment, my implementation uses Adam rather than the LARS optimizer.
+
+### Some notes on using SimCLR
+
+
+Note that SimCLR is much more critically dependent on image augmentation for its learning than Context Encoders or DeepCluster, so it's worth the time to experiment to find a good set of augmentation parameters. 
+        
+
+        
+# Deprecated
+        
+These feature extractors are coded up in `patchwork`, but either (1) seem to have been superceded by other inventions or (2) I personally found them finicky to work with. They are unlikely to be developed further.
+
 ## Invariant Information Clustering
 
 DOCS COMING SOON
