@@ -19,15 +19,41 @@ def _build_distributed_training_step(strategy, embed_model,
     replicas = strategy.num_replicas_in_sync
     @tf.function
     def train_step(x, y):
-        step_fn = _build_simclr_training_step(embed_model, optimizer, 
-                                               temperature, replicas)
-    
+        def step_fn(x,y):
+            eye = tf.linalg.eye(x.shape[0])
+            index = tf.range(0, x.shape[0])
+            # the labels tell which similarity is the "correct" one- the augmented
+            # pair from the same image. so index+y should look like [1,0,3,2,5,4...]
+            labels = index+y
+
+            with tf.GradientTape() as tape:
+                # run each image through the convnet and
+                # projection head
+                embeddings = embed_model(x, training=True)
+                # normalize the embeddings
+                embeds_norm = tf.nn.l2_normalize(embeddings, axis=1)
+                # compute the pairwise matrix of cosine similarities
+                sim = tf.matmul(embeds_norm, embeds_norm, transpose_b=True)
+                # subtract a large number from diagonals to effectively remove
+                # them from the sum, and rescale by temperature
+                logits = (sim - BIG_NUMBER*eye)/temperature
+            
+                loss = tf.reduce_mean(
+                        tf.nn.sparse_softmax_cross_entropy_with_logits(labels, logits))/replicas
+
+                gradients = tape.gradient(loss, embed_model.trainable_variables)
+                optimizer.apply_gradients(zip(gradients,
+                                      embed_model.trainable_variables))
+                return loss
+        
         per_example_losses = strategy.experimental_run_v2(
                                         step_fn, args=(x,y))
-        mean_loss = strategy.reduce(
-                        tf.distribute.ReduceOp.MEAN, 
-                        per_example_losses, axis=0)
-        return mean_loss
+        print(per_example_losses)
+        #mean_loss = strategy.reduce(
+        #                tf.distribute.ReduceOp.MEAN, 
+        #                per_example_losses, axis=0)
+        #return mean_loss
+        return per_example_losses
     return train_step
 
 
@@ -133,7 +159,7 @@ class DistributedSimCLRTrainer(GenericExtractor):
                             lr=lr, lr_decay=lr_decay, 
                             imshape=imshape, num_channels=num_channels,
                             norm=norm, batch_size=batch_size,
-                            num_parallel_calls=num_parallel_calls, sobel=sobel,
+                            num_parallel_calls=num_parallel_calls, 
                             single_channel=single_channel, notes=notes)
 
     def _run_training_epoch(self, **kwargs):
@@ -155,8 +181,7 @@ class DistributedSimCLRTrainer(GenericExtractor):
                 hparams = {
                     hp.HParam("temperature", hp.RealInterval(0., 10000.)):self.config["temperature"],
                     hp.HParam("num_hidden", hp.IntInterval(1, 1000000)):self.config["num_hidden"],
-                    hp.HParam("output_dim", hp.IntInterval(1, 1000000)):self.config["output_dim"],
-                    hp.HParam("sobel", hp.Discrete([True, False])):self.input_config["sobel"]
+                    hp.HParam("output_dim", hp.IntInterval(1, 1000000)):self.config["output_dim"]
                     }
             else:
                 hparams=None

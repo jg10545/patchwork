@@ -191,7 +191,7 @@ class SimCLRTrainer(GenericExtractor):
                             lr=lr, lr_decay=lr_decay, 
                             imshape=imshape, num_channels=num_channels,
                             norm=norm, batch_size=batch_size,
-                            num_parallel_calls=num_parallel_calls, sobel=sobel,
+                            num_parallel_calls=num_parallel_calls,
                             single_channel=single_channel, notes=notes)
 
     def _run_training_epoch(self, **kwargs):
@@ -213,8 +213,7 @@ class SimCLRTrainer(GenericExtractor):
                 hparams = {
                     hp.HParam("temperature", hp.RealInterval(0., 10000.)):self.config["temperature"],
                     hp.HParam("num_hidden", hp.IntInterval(1, 1000000)):self.config["num_hidden"],
-                    hp.HParam("output_dim", hp.IntInterval(1, 1000000)):self.config["output_dim"],
-                    hp.HParam("sobel", hp.Discrete([True, False])):self.input_config["sobel"]
+                    hp.HParam("output_dim", hp.IntInterval(1, 1000000)):self.config["output_dim"]
                     }
             else:
                 hparams=None
