@@ -8,18 +8,6 @@ import numpy as np
 import tensorflow as tf
 
 
-_DEFAULT_AUGMENT_PARAMS = {
-        "max_brightness_delta":0.2, 
-        "contrast_min":0.4, 
-        "contrast_max":1.4,
-        "max_hue_delta":0.1, 
-        "max_saturation_delta":0.5,
-        "left_right_flip":True, 
-        "up_down_flip":True,
-        "rot90":True,
-        "zoom_scale":0.3,
-        "select_prob":0.5
-        }
 
 DEFAULT_AUGMENT_PARAMS = {
     "gaussian_blur":0.2,
