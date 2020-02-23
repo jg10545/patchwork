@@ -4,7 +4,7 @@ The `patchwork.feature` module has several models implemented for unsupervised o
 
 * [Context Encoders](https://arxiv.org/abs/1604.07379)
 * [DeepCluster](https://arxiv.org/abs/1807.05520)
-* [Invariant Information Clustering](https://arxiv.org/abs/1807.06653)
+* [SimCLR](https://arxiv.org/abs/2002.05709)
 
 The module has a class to manage the training of each model. You can initialize the trainer with a fully-convolutional `keras` model for it to train (otherwise it will use a default model).
 
