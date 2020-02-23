@@ -3,100 +3,36 @@ import numpy as np
 import tensorflow as tf
 
 from patchwork.feature._generic import GenericExtractor
-from patchwork._augment import augment_function
-from patchwork.loaders import _image_file_dataset
+
+from patchwork.feature._simclr import _build_simclr_dataset 
+from patchwork.feature._simclr import _build_embedding_model
+from patchwork.feature._simclr import _build_simclr_training_step
+
 
 BIG_NUMBER = 1000.
 
-def _build_simclr_dataset(imfiles, imshape=(256,256), batch_size=256, 
-                      num_parallel_calls=None, norm=255,
-                      num_channels=3, augment=True,
-                      single_channel=False):
+def _build_distributed_training_step(strategy, embed_model, 
+                                     optimizer, temperature=0.1):
     """
     
     """
-    assert augment, "don't you need to augment your data?"
-    _aug = augment_function(imshape, augment)
-    
-    ds = _image_file_dataset(imfiles, imshape=imshape, 
-                             num_parallel_calls=num_parallel_calls,
-                             norm=norm, num_channels=num_channels,
-                             shuffle=True, single_channel=single_channel)  
+    replicas = strategy.num_replicas_in_sync
     @tf.function
-    def _augment_and_stack(x):
-        y = tf.constant(np.array([1,-1]).astype(np.int32))
-        return tf.stack([_aug(x),_aug(x)]), y
-
-    ds = ds.map(_augment_and_stack, num_parallel_calls=num_parallel_calls)
+    def train_step(x, y):
+        step_fn = _build_simclr_training_step(embed_model, optimizer, 
+                                               temperature, replicas)
     
-    ds = ds.unbatch()
-    ds = ds.batch(2*batch_size, drop_remainder=True)
-    ds = ds.prefetch(1)
-    return ds
-
-
-def _build_embedding_model(fcn, imshape, num_channels, num_hidden, output_dim):
-    """
-    Create a Keras model that wraps the base encoder and 
-    the projection head
-    """
-    inpt = tf.keras.layers.Input((imshape[0], imshape[1], num_channels))
-    net = fcn(inpt)
-    net = tf.keras.layers.Flatten()(net)
-    net = tf.keras.layers.Dense(num_hidden, activation="relu")(net)
-    net = tf.keras.layers.Dense(output_dim)(net)
-    embedding_model = tf.keras.Model(inpt, net)
-    return embedding_model
+        per_example_losses = strategy.experimental_run_v2(
+                                        step_fn, args=(x,y))
+        mean_loss = strategy.reduce(
+                        tf.distribute.ReduceOp.MEAN, 
+                        per_example_losses, axis=0)
+        return mean_loss
+    return train_step
 
 
 
-
-
-def _build_simclr_training_step(embed_model, optimizer, temperature=0.1, replicas=1):
-    """
-    Generate a tensorflow function to run the training step for SimCLR.
-    
-    :embed_model: full Keras model including both the convnet and 
-        projection head
-    :optimizer: Keras optimizer
-    :temperature: hyperparameter for scaling cosine similarities
-    :replicas:
-    """
-    @tf.function
-    def training_step(x,y):
-        eye = tf.linalg.eye(x.shape[0])
-        index = tf.range(0, x.shape[0])
-        # the labels tell which similarity is the "correct" one- the augmented
-        # pair from the same image. so index+y should look like [1,0,3,2,5,4...]
-        labels = index+y
-
-        with tf.GradientTape() as tape:
-            # run each image through the convnet and
-            # projection head
-            embeddings = embed_model(x, training=True)
-            # normalize the embeddings
-            embeds_norm = tf.nn.l2_normalize(embeddings, axis=1)
-            # compute the pairwise matrix of cosine similarities
-            sim = tf.matmul(embeds_norm, embeds_norm, transpose_b=True)
-            # subtract a large number from diagonals to effectively remove
-            # them from the sum, and rescale by temperature
-            logits = (sim - BIG_NUMBER*eye)/temperature
-            
-            loss = tf.reduce_mean(
-                    tf.nn.sparse_softmax_cross_entropy_with_logits(labels, logits))/replicas
-
-        gradients = tape.gradient(loss, embed_model.trainable_variables)
-        optimizer.apply_gradients(zip(gradients,
-                                      embed_model.trainable_variables))
-        return loss
-    return training_step
-
-
-
-
-
-
-class SimCLRTrainer(GenericExtractor):
+class DistributedSimCLRTrainer(GenericExtractor):
     """
     Class for training a SimCLR model.
     
@@ -104,7 +40,7 @@ class SimCLRTrainer(GenericExtractor):
     Representations" by Chen et al.
     """
 
-    def __init__(self, logdir, trainingdata, testdata=None, fcn=None, 
+    def __init__(self, strategy, logdir, trainingdata, testdata=None, fcn=None, 
                  augment=True, temperature=1., num_hidden=128,
                  output_dim=64,
                  lr=0.01, lr_decay=100000,
@@ -113,6 +49,7 @@ class SimCLRTrainer(GenericExtractor):
                  single_channel=False, notes="",
                  downstream_labels=None):
         """
+        :strategy: a tf.distribute Strategy object.
         :logdir: (string) path to log directory
         :trainingdata: (list) list of paths to training images
         :testdata: (list) filepaths of a batch of images to use for eval
@@ -136,6 +73,7 @@ class SimCLRTrainer(GenericExtractor):
         :downstream_labels: dictionary mapping image file paths to labels
         """
         assert augment is not False, "this method needs an augmentation scheme"
+        self._strategy = strategy
         self.logdir = logdir
         self.trainingdata = trainingdata
         self._downstream_labels = downstream_labels
@@ -145,23 +83,26 @@ class SimCLRTrainer(GenericExtractor):
         
         # if no FCN is passed- build one
         if fcn is None:
-            fcn = tf.keras.applications.ResNet50V2(weights=None, include_top=False)
+            with strategy.scope():
+                fcn = tf.keras.applications.ResNet50V2(weights=None, include_top=False)
         self.fcn = fcn
         # Create a Keras model that wraps the base encoder and 
         # the projection head
-        embed_model = _build_embedding_model(fcn, imshape, num_channels,
+        with strategy.scope():
+            embed_model = _build_embedding_model(fcn, imshape, num_channels,
                                              num_hidden, output_dim)
         
         self._models = {"fcn":fcn, 
                         "full":embed_model}
         
         # build training dataset
-        self._ds = _build_simclr_dataset(trainingdata, 
-                                        imshape=imshape, batch_size=batch_size,
-                                        num_parallel_calls=num_parallel_calls, 
-                                        norm=norm, num_channels=num_channels, 
-                                        augment=augment,
-                                        single_channel=single_channel)
+        self._ds = strategy.experimental_distribute_dataset(
+                _build_simclr_dataset(trainingdata, 
+                                      imshape=imshape, batch_size=batch_size,
+                                      num_parallel_calls=num_parallel_calls,
+                                      norm=norm, num_channels=num_channels,
+                                      augment=augment,
+                                      single_channel=single_channel))
         
         # create optimizer
         if lr_decay > 0:
@@ -170,14 +111,15 @@ class SimCLRTrainer(GenericExtractor):
                                             staircase=False)
         else:
             learnrate = lr
-        self._optimizer = tf.keras.optimizers.Adam(learnrate)
+        with strategy.scope():
+            self._optimizer = tf.keras.optimizers.Adam(learnrate)
         
         
         # build training step
-        self._training_step = _build_simclr_training_step(
-                embed_model, 
-                self._optimizer, 
-                temperature)
+        self._training_step = _build_distributed_training_step(strategy,
+                                        embed_model, 
+                                        self._optimizer, 
+                                        temperature=temperature)
         
         self._test = False
         self._test_labels = None
