@@ -179,9 +179,32 @@ class SimCLRTrainer(GenericExtractor):
                 self._optimizer, 
                 temperature)
         
-        self._test = False
-        self._test_labels = None
-        self._old_test_labels = None
+        if testdata is not None:
+            self._test_ds = _build_simclr_dataset(testdata, 
+                                        imshape=imshape, batch_size=batch_size,
+                                        num_parallel_calls=num_parallel_calls, 
+                                        norm=norm, num_channels=num_channels, 
+                                        augment=augment,
+                                        single_channel=single_channel)
+            
+            @tf.function
+            def test_loss(x,y):
+                eye = tf.linalg.eye(x.shape[0])
+                index = tf.range(0, x.shape[0])
+                labels = index+y
+
+                embeddings = self._models["full"](x)
+                embeds_norm = tf.nn.l2_normalize(embeddings, axis=1)
+                sim = tf.matmul(embeds_norm, embeds_norm, transpose_b=True)
+                logits = (sim - BIG_NUMBER*eye)/self.config["temperature"]
+            
+                loss = tf.reduce_mean(
+                    tf.nn.sparse_softmax_cross_entropy_with_logits(labels, logits))
+                return loss, sim
+            self._test_loss = test_loss
+            self._test = True
+        else:
+            self._test = False
         
         self.step = 0
         
@@ -203,9 +226,16 @@ class SimCLRTrainer(GenericExtractor):
             
             self._record_scalars(loss=loss)
             self.step += 1
-            
- 
+             
     def evaluate(self):
+        if self._test:
+            test_loss = 0
+            for x, y in self._test_ds:
+                loss, sim = self._test_loss(x,y)
+                test_loss += loss.numpy()
+                
+            self._record_scalars(test_loss=test_loss)
+            self._record_images(scalar_products=tf.expand_dims(tf.expand_dims(sim,-1), 0))
         if self._downstream_labels is not None:
             # choose the hyperparameters to record
             if not hasattr(self, "_hparams_config"):
