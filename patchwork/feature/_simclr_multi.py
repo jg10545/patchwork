@@ -4,19 +4,18 @@ import tensorflow as tf
 
 from patchwork.feature._generic import GenericExtractor
 
-from patchwork.feature._simclr import _build_simclr_dataset 
-from patchwork.feature._simclr import _build_embedding_model
-from patchwork.feature._simclr import _build_simclr_training_step
+from patchwork.feature._simclr import _build_simclr_dataset,  _build_embedding_model
+from patchwork.feature._simclr import _build_simclr_training_step, SimCLRTrainer
 
 
 BIG_NUMBER = 1000.
 
-def _build_distributed_training_step(strategy, embed_model, 
-                                     optimizer, temperature=0.1):
+def _build_distributed_training_step(strategy, embed_model, optimizer, 
+                                     global_batch_size, temperature=0.1):
     """
     
     """
-    replicas = strategy.num_replicas_in_sync
+    #replicas = strategy.num_replicas_in_sync
     @tf.function
     def train_step(x, y):
         def step_fn(x,y):
@@ -37,28 +36,26 @@ def _build_distributed_training_step(strategy, embed_model,
                 # subtract a large number from diagonals to effectively remove
                 # them from the sum, and rescale by temperature
                 logits = (sim - BIG_NUMBER*eye)/temperature
-            
-                loss = tf.reduce_mean(
-                        tf.nn.sparse_softmax_cross_entropy_with_logits(labels, logits))/replicas
+                
+                crossent = tf.nn.sparse_softmax_cross_entropy_with_logits(labels, logits)
+                loss = tf.reduce_sum(crossent)/global_batch_size
 
                 gradients = tape.gradient(loss, embed_model.trainable_variables)
                 optimizer.apply_gradients(zip(gradients,
                                       embed_model.trainable_variables))
-                return loss
+                return crossent
         
         per_example_losses = strategy.experimental_run_v2(
                                         step_fn, args=(x,y))
-        print(per_example_losses)
-        #mean_loss = strategy.reduce(
-        #                tf.distribute.ReduceOp.MEAN, 
-        #                per_example_losses, axis=0)
-        #return mean_loss
-        return per_example_losses
+        total_loss = strategy.reduce(
+                        tf.distribute.ReduceOp.SUM, 
+                        per_example_losses, axis=0)
+        return total_loss/global_batch_size
     return train_step
 
 
 
-class DistributedSimCLRTrainer(GenericExtractor):
+class DistributedSimCLRTrainer(SimCLRTrainer):
     """
     Class for training a SimCLR model.
     
@@ -145,11 +142,37 @@ class DistributedSimCLRTrainer(GenericExtractor):
         self._training_step = _build_distributed_training_step(strategy,
                                         embed_model, 
                                         self._optimizer, 
+                                        batch_size*strategy.num_replicas_in_sync,
                                         temperature=temperature)
         
-        self._test = False
-        self._test_labels = None
-        self._old_test_labels = None
+        #self._test = False
+        if testdata is not None:
+            self._test_ds = _build_simclr_dataset(testdata, 
+                                        imshape=imshape, batch_size=batch_size,
+                                        num_parallel_calls=num_parallel_calls, 
+                                        norm=norm, num_channels=num_channels, 
+                                        augment=augment,
+                                        single_channel=single_channel)
+            
+            @tf.function
+            def test_loss(x,y):
+                eye = tf.linalg.eye(x.shape[0])
+                index = tf.range(0, x.shape[0])
+                labels = index+y
+
+                embeddings = self._models["full"](x)
+                embeds_norm = tf.nn.l2_normalize(embeddings, axis=1)
+                sim = tf.matmul(embeds_norm, embeds_norm, transpose_b=True)
+                logits = (sim - BIG_NUMBER*eye)/self.config["temperature"]
+            
+                loss = tf.reduce_mean(
+                    tf.nn.sparse_softmax_cross_entropy_with_logits(labels, logits))
+                return loss, sim
+            self._test_loss = test_loss
+            self._test = True
+        else:
+            self._test = False
+
         
         self.step = 0
         
@@ -162,10 +185,9 @@ class DistributedSimCLRTrainer(GenericExtractor):
                             num_parallel_calls=num_parallel_calls, 
                             single_channel=single_channel, notes=notes)
 
+"""
     def _run_training_epoch(self, **kwargs):
-        """
-        
-        """
+
         for x, y in self._ds:
             loss = self._training_step(x,y)
             
@@ -187,3 +209,4 @@ class DistributedSimCLRTrainer(GenericExtractor):
                 hparams=None
             self._linear_classification_test(hparams)
         
+"""
