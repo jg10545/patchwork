@@ -1,11 +1,8 @@
 # -*- coding: utf-8 -*-
-import numpy as np
 import tensorflow as tf
 
-from patchwork.feature._generic import GenericExtractor
-
 from patchwork.feature._simclr import _build_simclr_dataset,  _build_embedding_model
-from patchwork.feature._simclr import _build_simclr_training_step, SimCLRTrainer
+from patchwork.feature._simclr import SimCLRTrainer
 
 
 BIG_NUMBER = 1000.
@@ -57,7 +54,13 @@ def _build_distributed_training_step(strategy, embed_model, optimizer,
 
 class DistributedSimCLRTrainer(SimCLRTrainer):
     """
-    Class for training a SimCLR model.
+    Experimental distributed version Class for training a SimCLR model.
+    
+    If you're passing an FCN to the constructor- make sure you build it 
+    using the strategy-
+    
+    with strategy.scope():
+        fcn = tf.keras.models.load_model("fcn.h5")
     
     Based on "A Simple Framework for Contrastive Learning of Visual
     Representations" by Chen et al.
