@@ -5,3 +5,4 @@ from patchwork.feature._iic import InvariantInformationClusteringTrainer
 from patchwork.feature._moco import MomentumContrastTrainer
 from patchwork.feature._simclr import SimCLRTrainer
 from patchwork.feature._simclr_multi import DistributedSimCLRTrainer
+from patchwork.feature._autoencoder import AutoEncoderTrainer
