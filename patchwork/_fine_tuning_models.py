@@ -25,9 +25,8 @@ class ConvNet(param.Parameterized):
     """
     Convolutional network
     """
-    number_of_layers = param.Integer(1, doc="Number of convolutional layers")
-    filters_per_layer = param.Integer(256, doc="Number of convolutional filters per layer")
-    kernel_size = param.ObjectSelector(default=1, objects=[1,3], doc="Spatial size of filters")
+    layers = param.String(default="128,p,128", doc="Comma-separated list of filters")
+    kernel_size = param.ObjectSelector(default=1, objects=[1,3,5], doc="Spatial size of filters")
     separable_convolutions = param.Boolean(False, doc="Whether to use depthwise separable convolutions")
     dropout_rate = param.Number(0, bounds=(0,0.95), doc="Spatial dropout rate. 0 to disable.")
     pooling_type = param.ObjectSelector(default="max pool", objects=["max pool", "average pool"], 
@@ -41,16 +40,26 @@ class ConvNet(param.Parameterized):
     def build(self, inpt_channels):
         inpt = tf.keras.layers.Input((None, None, inpt_channels))
         net = inpt
-        for n in range(self.number_of_layers):
-            if self.dropout_rate > 0:
-                net = tf.keras.layers.SpatialDropout2D(self.dropout_rate)(net)
-            if self.separable_convolutions:
-                net = tf.keras.layers.SeparableConvolution2D(self.filters_per_layer,
+        for l in self.layers.split(","):
+            l = l.strip()
+            # MAX POOL LAYER
+            if l.lower() == "p":
+                net = tf.keras.layers.MaxPool2D(2,2)(net)
+            # CONVOLUTION LAYER
+            else:
+                num_filters = int(l)
+                # Choose whether to add a dropout layer first,
+                # as well as whether to use normal or separable
+                # convolutions
+                if self.dropout_rate > 0:
+                    net = tf.keras.layers.SpatialDropout2D(self.dropout_rate)(net)
+                if self.separable_convolutions:
+                    net = tf.keras.layers.SeparableConvolution2D(num_filters,
                                                             self.kernel_size,
                                                             padding="same",
                                                             activation="relu")(net)
-            else:
-                net = tf.keras.layers.Conv2D(self.filters_per_layer,
+                else:
+                    net = tf.keras.layers.Conv2D(num_filters,
                                              self.kernel_size,
                                              padding="same",
                                              activation="relu")(net)

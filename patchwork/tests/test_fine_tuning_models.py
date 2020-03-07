@@ -38,37 +38,40 @@ def test_ConvNet():
     c = ConvNet()
     
     c.dropout_rate = 0
-    c.number_of_layers = 2
-    c.filters_per_layer = 5
+    #c.number_of_layers = 2
+    #c.filters_per_layer = 5
+    c.layers = "10,p,11"
     model = c.build(7)
     
     assert isinstance(model, tf.keras.Model)
-    assert len(model.layers) == 4
-    assert model.output_shape[1] == 5
+    assert len(model.layers) == 5
+    assert model.output_shape[1] == 11
     
     
 def test_ConvNet_with_dropout():
     c = ConvNet()
     
     c.dropout_rate = 0.5
-    c.number_of_layers = 2
-    c.filters_per_layer = 5
+    #c.number_of_layers = 2
+    #c.filters_per_layer = 5
+    c.layers = "7,p,11,p,13"
     model = c.build(7)
     
     assert isinstance(model, tf.keras.Model)
-    assert len(model.layers) == 6
-    assert model.output_shape[1] == 5
+    assert len(model.layers) == 10
+    assert model.output_shape[1] == 13
     
 def test_ConvNet_with_separable_convolutions():
     c = ConvNet()
     
     c.dropout_rate = 0
-    c.number_of_layers = 2
-    c.filters_per_layer = 5
+    #c.number_of_layers = 2
+    #c.filters_per_layer = 5
+    c.layers = "5,13"
     c.separable_convolutions = True
     model = c.build(7)
     
     assert isinstance(model, tf.keras.Model)
     assert len(model.layers) == 4
-    assert model.output_shape[1] == 5
+    assert model.output_shape[1] == 13
     
