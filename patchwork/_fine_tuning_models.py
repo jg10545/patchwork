@@ -25,10 +25,10 @@ class ConvNet(param.Parameterized):
     """
     Convolutional network
     """
-    layers = param.String(default="128,p,128", doc="Comma-separated list of filters")
+    layers = param.String(default="128,p,d,128", doc="Comma-separated list of filters")
     kernel_size = param.ObjectSelector(default=1, objects=[1,3,5], doc="Spatial size of filters")
     separable_convolutions = param.Boolean(False, doc="Whether to use depthwise separable convolutions")
-    dropout_rate = param.Number(0, bounds=(0,0.95), doc="Spatial dropout rate. 0 to disable.")
+    dropout_rate = param.Number(0.5, bounds=(0.05,0.95), doc="Spatial dropout rate.")
     pooling_type = param.ObjectSelector(default="max pool", objects=["max pool", "average pool"], 
                                         doc="Whether to use global mean or max pooling.")
     
@@ -45,14 +45,17 @@ class ConvNet(param.Parameterized):
             # MAX POOL LAYER
             if l.lower() == "p":
                 net = tf.keras.layers.MaxPool2D(2,2)(net)
+            # DROPOUT   LAYER
+            elif l.lower() == "d":   
+                net = tf.keras.layers.SpatialDropout2D(self.dropout_rate)(net)
             # CONVOLUTION LAYER
             else:
                 num_filters = int(l)
                 # Choose whether to add a dropout layer first,
                 # as well as whether to use normal or separable
                 # convolutions
-                if self.dropout_rate > 0:
-                    net = tf.keras.layers.SpatialDropout2D(self.dropout_rate)(net)
+                #if self.dropout_rate > 0:
+                #     net = tf.keras.layers.SpatialDropout2D(self.dropout_rate)(net)
                 if self.separable_convolutions:
                     net = tf.keras.layers.SeparableConvolution2D(num_filters,
                                                             self.kernel_size,
