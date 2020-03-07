@@ -124,14 +124,14 @@ class AutoEncoderTrainer(GenericExtractor):
         self._train_ds, _ = dataset(trainingdata, imshape=imshape,norm=norm,
                                     sobel=False, num_channels=num_channels,
                                     augment=augment, single_channel=single_channel,
-                                    batch_size=batch_size)
+                                    batch_size=batch_size, shuffle=True)
         # build evaluation dataset
         if testdata is not None:
             self._test_ds, self._test_steps = dataset(testdata,
                                      imshape=imshape,norm=norm,
                                      sobel=False, num_channels=num_channels,
                                      single_channel=single_channel,
-                                     batch_size=batch_size)
+                                     batch_size=batch_size, shuffle=False)
             self._test = True
         else:
             self._test = False
