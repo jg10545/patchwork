@@ -26,7 +26,7 @@ def masked_binary_crossentropy(y_true, y_pred, label_smoothing=0):
     mask = K.cast(K.not_equal(y_true, -1), K.floatx())
     # count number of nonempty masks so that we can
     # compute the mean
-    norm = K.sum(mask)
+    norm = K.sum(mask) + K.epsilon()
 
     y_true = K.cast(y_true, K.floatx())
     if label_smoothing > 0:
@@ -46,6 +46,31 @@ def masked_mean_average_error(y_true, y_pred):
     y_pred = K.cast(y_pred, K.floatx())
     # count number of nonempty masks so that we can
     # compute the mean
-    norm = K.sum(mask)
+    norm = K.sum(mask) + K.epsilon()
     return K.sum(
             K.abs(y_true*mask - y_pred*mask))/norm
+            
+            
+def masked_sparse_categorical_crossentropy(y_true, y_pred):
+    """
+    Sparse categorical crossentropy wrapper that masks out any values
+    where y_true = -1    
+    """
+    mask = K.cast(K.not_equal(y_true, -1), K.floatx())
+    # count number of nonempty masks so that we can
+    # compute the mean
+    norm = K.sum(mask) + K.epsilon()
+
+    y_true_clipped = K.cast(tf.clip_by_value(y_true, 0, 10000), tf.int64)
+    #y_true = K.cast(y_true, K.floatx())
+    #if label_smoothing > 0:
+    #    y_true = y_true*(1-label_smoothing) + 0.5*label_smoothing
+    # the sparse categorical crossent function will return a 
+    # 1D tensor of length batch_size
+    crossent = K.sparse_categorical_crossentropy(y_true_clipped, y_pred)
+    # return the average over the unmasked values
+    return K.sum(crossent*mask)/norm
+            
+            
+            
+            
