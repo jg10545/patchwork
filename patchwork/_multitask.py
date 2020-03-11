@@ -70,18 +70,18 @@ def _dataframe_to_classes(train, val, tasks, filepath="filepath"):
     return outdict, class_dict
 
 
-def _next_layer(spec, kernel_size=3, padding="same"):
+def _next_layer(old_layer, spec, kernel_size=3, padding="same"):
     """
     Convenience function for writing networks
     """
     if spec == "p":
-        return tf.keras.layers.MaxPool2D(2,2)
+        return tf.keras.layers.MaxPool2D(2,2)(old_layer)
     elif spec == "d":
-        return tf.keras.layers.SpatialDropout2D(0.5)
+        return tf.keras.layers.SpatialDropout2D(0.5)(old_layer)
     else:
         return tf.keras.layers.Conv2D(spec, kernel_size,
                                      activation="relu",
-                                     padding=padding)
+                                     padding=padding)(old_layer)
         
         
 def _assemble_full_network(fcn, task_dimensions, shared_layers=[], 
@@ -89,28 +89,21 @@ def _assemble_full_network(fcn, task_dimensions, shared_layers=[],
                          train_fcn=False, global_pooling="max",
                            **kwargs):
     """
-    
+    Macro for generating a multihead keras network
     """
-    trainvars = []
     outputs = []
-    if train_fcn:
-        trainvars += fcn.trainable_variables
     # set up shared layers
     inpt = fcn.input
     shared = fcn.output
     
     for s in shared_layers:
-        l = _next_layer(s, **kwargs)
-        shared = l(shared)
-        trainvars += l.trainable_variables
+        shared = _next_layer(shared, s, **kwargs)
         
     # set up output head networks
     for d in task_dimensions:
         net = shared
         for s in task_layers:
-            l = _next_layer(s, **kwargs) 
-            net = l(net)
-            trainvars += l.trainable_variables
+            net = _next_layer(net, s, **kwargs) 
         if global_pooling == "max":
             net = tf.keras.layers.GlobalMaxPool2D()(net)
         elif global_pooling == "average":
@@ -119,10 +112,17 @@ def _assemble_full_network(fcn, task_dimensions, shared_layers=[],
             assert False, "don't know how to pool your model"
         final = tf.keras.layers.Dense(d, activation="softmax")
         outputs.append(final(net))
-        trainvars += final.trainable_variables
         
     shared_model = tf.keras.Model(inpt, shared)
     full_model = tf.keras.Model(inpt, outputs)
+    
+    # get a list of variables to optimize during training- if we're freezing
+    # the feature extractor, leave those out
+    trainvars = full_model.trainable_variables
+    if not train_fcn:
+        fcn_varnames = [v.name for v in fcn.trainable_variables]
+        trainvars = [v for v in trainvars if v.name not in fcn_varnames]
+        
     return {"fcn":fcn, "shared":shared_model,
            "full":full_model}, trainvars
             
@@ -191,6 +191,13 @@ class MultiTaskTrainer(object):
     Expects training and validation data to be a pandas DataFrame
     with one column containing paths to files, and one categorical 
     column per task.
+    
+    The shared_layers and task_layer kwargs use a shorthand for defining
+    part of a convnet- each inputs a list with one element per layer:
+        -if the layer is an integer: add a 3x3 convolution with that many
+            filters, ReLU activation, and same padding
+        -if the layer is "p": add a 2x2 max pooling layer
+        -if the layer is "d": add a 2D spatial dropout layer with prob=0.5
     """
     
     
@@ -212,7 +219,8 @@ class MultiTaskTrainer(object):
         :filepaths: string; name of column containing file path data
         :task_weights: list of weights for each task
         :shared_layers: specify shared layers downstream of the feature extractor
-        :task_layers: specify layer structure for each task head
+        :task_layers: specify layer structure for each task head, downstream
+            of the shared layers
         :train_fcn: (bool) whether to let the feature extractor train
         :lr: learning rate
         :lr_decay: learning rate decay (set to 0 to disable)
