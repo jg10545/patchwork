@@ -186,7 +186,11 @@ def _mtdataset(filepaths, labels, imshape, num_parallel_calls, norm,
 
 class MultiTaskTrainer(object):
     """
+    Class for managing training of a multitask convnet.
     
+    Expects training and validation data to be a pandas DataFrame
+    with one column containing paths to files, and one categorical 
+    column per task.
     """
     
     
@@ -212,7 +216,9 @@ class MultiTaskTrainer(object):
         :train_fcn: (bool) whether to let the feature extractor train
         :lr: learning rate
         :lr_decay: learning rate decay (set to 0 to disable)
-        :balance_probs:
+        :balance_probs: if True, bias sampling during training to attempt to
+            make sure each task is represented. Does not correct for class 
+            imbalance within tasks.
         :augment: (dict) dictionary of augmentation parameters, True for defaults or
             False to disable augmentation
         :extractor_param: kwarg for extractor
@@ -370,9 +376,7 @@ class MultiTaskTrainer(object):
             norm = tf.reduce_sum(mask) + K.epsilon()
             
             acc = tf.reduce_sum(tf.cast(class_preds == y_true, tf.float32)*mask)/norm
-            #loss = masked_sparse_categorical_crossentropy(y_true, preds)
-            self._record_scalars(**{"%s_val_accuracy"%task:acc})#,
-                                    #"%s_val_loss"%task:loss})
+            self._record_scalars(**{"%s_val_accuracy"%task:acc})
             
             
     def _record_scalars(self, **scalars):
