@@ -96,3 +96,43 @@ class ChannelWiseDense(tf.keras.layers.Layer):
         
     def compute_output_shape(self, input_shape):
         return input_shape
+    
+    
+    
+    
+def _next_layer(old_layer, spec, kernel_size=3, padding="same"):
+    """
+    Convenience function for writing networks. Input the outputs
+    from the previous layer and a spec; return the outputs from
+    the next layer. Possible specs:
+        
+        -an integer: add a convolutional layer with that many filters
+        -"p": add a 2x2 max pooling layer
+        -"d": add a 2D spatial dropout layer with probability 0.5
+        -"r": add a residual layer
+    
+    """
+    if spec == "p":
+        return tf.keras.layers.MaxPool2D(2,2)(old_layer)
+    elif spec == "d":
+        return tf.keras.layers.SpatialDropout2D(0.5)(old_layer)
+    elif spec == "r":
+        k = old_layer.shape[-1]
+        
+        inside_block = tf.keras.layers.Conv2D(k, kernel_size,
+                                              activation="relu",
+                                              padding="same")(old_layer)
+        second_conv = tf.keras.layers.Conv2D(k, kernel_size,
+                                              padding="same")(inside_block)
+        added = tf.keras.layers.Add()([inside_block, second_conv])
+        return tf.keras.layers.Activation("relu")(added)
+        
+    else:
+        return tf.keras.layers.Conv2D(spec, kernel_size,
+                                     activation="relu",
+                                     padding=padding)(old_layer)
+        
+        
+        
+        
+        

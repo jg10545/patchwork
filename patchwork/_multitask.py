@@ -12,6 +12,7 @@ import yaml
 from patchwork._losses import masked_sparse_categorical_crossentropy
 from patchwork.loaders import _image_file_dataset
 from patchwork._augment import augment_function
+from patchwork._layers import _next_layer
 
 INPUT_PARAMS = ["imshape", "num_channels", "norm", "batch_size",
                 "shuffle", "num_parallel_calls", "sobel", "single_channel"]
@@ -70,18 +71,7 @@ def _dataframe_to_classes(train, val, tasks, filepath="filepath"):
     return outdict, class_dict
 
 
-def _next_layer(old_layer, spec, kernel_size=3, padding="same"):
-    """
-    Convenience function for writing networks
-    """
-    if spec == "p":
-        return tf.keras.layers.MaxPool2D(2,2)(old_layer)
-    elif spec == "d":
-        return tf.keras.layers.SpatialDropout2D(0.5)(old_layer)
-    else:
-        return tf.keras.layers.Conv2D(spec, kernel_size,
-                                     activation="relu",
-                                     padding=padding)(old_layer)
+
         
         
 def _assemble_full_network(fcn, task_dimensions, shared_layers=[], 
@@ -198,6 +188,7 @@ class MultiTaskTrainer(object):
             filters, ReLU activation, and same padding
         -if the layer is "p": add a 2x2 max pooling layer
         -if the layer is "d": add a 2D spatial dropout layer with prob=0.5
+        -if the layer is "r": add a residual convolutional layer
     """
     
     
