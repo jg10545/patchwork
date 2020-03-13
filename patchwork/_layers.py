@@ -100,7 +100,7 @@ class ChannelWiseDense(tf.keras.layers.Layer):
     
     
     
-def _next_layer(old_layer, spec, kernel_size=3, padding="same"):
+def _next_layer(old_layer, spec, kernel_size=3, padding="same", dropout_rate=0.5):
     """
     Convenience function for writing networks. Input the outputs
     from the previous layer and a spec; return the outputs from
@@ -115,7 +115,7 @@ def _next_layer(old_layer, spec, kernel_size=3, padding="same"):
     if spec == "p":
         return tf.keras.layers.MaxPool2D(2,2)(old_layer)
     elif spec == "d":
-        return tf.keras.layers.SpatialDropout2D(0.5)(old_layer)
+        return tf.keras.layers.SpatialDropout2D(dropout_rate)(old_layer)
     elif spec == "r":
         k = old_layer.shape[-1]
         
@@ -128,6 +128,7 @@ def _next_layer(old_layer, spec, kernel_size=3, padding="same"):
         return tf.keras.layers.Activation("relu")(added)
         
     else:
+        spec = int(spec)
         return tf.keras.layers.Conv2D(spec, kernel_size,
                                      activation="relu",
                                      padding=padding)(old_layer)

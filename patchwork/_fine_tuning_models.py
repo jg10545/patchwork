@@ -2,6 +2,8 @@
 import param
 import tensorflow as tf
 
+from patchwork._layers import _next_layer
+
 class GlobalPooling(param.Parameterized):
     """
     Just a single pooling layer.
@@ -42,31 +44,9 @@ class ConvNet(param.Parameterized):
         net = inpt
         for l in self.layers.split(","):
             l = l.strip()
-            # MAX POOL LAYER
-            if l.lower() == "p":
-                net = tf.keras.layers.MaxPool2D(2,2)(net)
-            # DROPOUT   LAYER
-            elif l.lower() == "d":   
-                net = tf.keras.layers.SpatialDropout2D(self.dropout_rate)(net)
-            # CONVOLUTION LAYER
-            else:
-                num_filters = int(l)
-                # Choose whether to add a dropout layer first,
-                # as well as whether to use normal or separable
-                # convolutions
-                #if self.dropout_rate > 0:
-                #     net = tf.keras.layers.SpatialDropout2D(self.dropout_rate)(net)
-                if self.separable_convolutions:
-                    net = tf.keras.layers.SeparableConvolution2D(num_filters,
-                                                            self.kernel_size,
-                                                            padding="same",
-                                                            activation="relu")(net)
-                else:
-                    net = tf.keras.layers.Conv2D(num_filters,
-                                             self.kernel_size,
-                                             padding="same",
-                                             activation="relu")(net)
-                
+            net = _next_layer(net, l, kernel_size=self.kernel_size,
+                              dropout_rate=self.dropout_rate)
+            
         if self.pooling_type == "max pool":
             net = tf.keras.layers.GlobalMaxPool2D()(net)
         else:
