@@ -248,7 +248,8 @@ class MultiTaskTrainer(object):
         task_dimensions = [len(class_dict[t]) for t in tasks]
         
         models, trainvars = _assemble_full_network(fcn, task_dimensions, shared_layers,
-                                              [128,"p",128], train_fcn, 
+                                              task_layers=task_layers, 
+                                              train_fcn=train_fcn, 
                                               global_pooling="max")
         self._models = models
         
