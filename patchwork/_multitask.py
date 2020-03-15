@@ -50,7 +50,18 @@ def _encode_classes(train, val):
 
 def _dataframe_to_classes(train, val, tasks, filepath="filepath"):
     """
+    Parse a multitask-labeled dataframe into the data structures
+    we'll need.
     
+    :train: pandas dataframe of training labels- one column for file locations
+        and one per task
+    :val: pandas dataframe of validation labels; same format as train
+    :task: list of strings; names of task columns
+    :filepath: string; name of column containing file locations
+    
+    Returns
+    :outdict: dictionary containing all the train and validation data structures
+    :class_dict: dictionary keeping track of the possible values for each class
     """
     class_dict = {}
     train_indices = []
@@ -80,6 +91,15 @@ def _assemble_full_network(fcn, task_dimensions, shared_layers=[],
                            **kwargs):
     """
     Macro for generating a multihead keras network
+    
+    :fcn: keras Model object; fully-convolutional network to use as feature extractor
+    :task_dimensions: list of ints; number of classes per task
+    :shared layers: list specifying 0 or more layers after the feature extractor,
+        before the task heads
+    :task_layers: list specifying 0 or more hidden layers to use for each head
+    :train_fcn: Boolean; whether to update fcn weights during training
+    :global_pooling: "max" or "average"; how to pool task features for classification
+    :**kwargs: passed to the _next_layer() function
     """
     outputs = []
     # set up shared layers
@@ -196,6 +216,11 @@ class MultiTaskTrainer(object):
         -if the layer is "p": add a 2x2 max pooling layer
         -if the layer is "d": add a 2D spatial dropout layer with prob=0.5
         -if the layer is "r": add a residual convolutional layer
+        
+    If you set the kwarg task_weights="adaptive", the trainer will use the noise
+    model from "Multi-Task Learning Using Uncertainty to Weigh Losses for Scene
+    Geometry and Semantics" by Kendall et al (2018) to try to adaptively balance
+    the weights.
     """
     
     
@@ -206,7 +231,7 @@ class MultiTaskTrainer(object):
                  lr=1e-3, lr_decay=0, balance_probs=True,
                  augment=False, imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, shuffle=True, num_parallel_calls=None,
-                 single_channel=False):
+                 single_channel=False, notes=""):
         """
         :logdir: (string) path to log directory
         :trainingdata: pandas dataframe of training data
@@ -239,6 +264,7 @@ class MultiTaskTrainer(object):
         :sobel: whether to replace the input image with its sobel edges
         :single_channel: if True, expect a single-channel input image and 
             stack it num_channels times.
+        :notes: any experimental notes you want recorded in the config.yml file
         """
         adaptive = task_weights == "adaptive"
         self.logdir = logdir
@@ -293,15 +319,14 @@ class MultiTaskTrainer(object):
         self.step = 0
         
         self._parse_configs(augment=augment, filepaths=filepaths, 
-                            #task_weights=task_weights, shared_layers=shared_layers,
-                            shared_layers=shared_layers,
+                            adaptive=adaptive, shared_layers=shared_layers,
                             task_layers=task_layers, train_fcn=train_fcn,
                             lr=lr, 
                             lr_decay=lr_decay, imshape=imshape, 
                             num_channels=num_channels,
                             norm=norm, batch_size=batch_size, shuffle=shuffle,
                             num_parallel_calls=num_parallel_calls,
-                            single_channel=single_channel)
+                            single_channel=single_channel, notes=notes)
         
         
         
@@ -355,8 +380,7 @@ class MultiTaskTrainer(object):
                 loss, task_losses = self._training_step(x,y)
 
                 self._record_scalars(total_loss=loss)
-                #self._record_scalars(**dict(zip(self._tasks, task_losses)))
-                self._record_scalars(**{x+"_loss":t for x,t in 
+                self._record_scalars(**{"loss_"+x:t for x,t in 
                                         zip(self._tasks, task_losses)})
                 
                 self.step += 1
@@ -391,7 +415,7 @@ class MultiTaskTrainer(object):
             norm = tf.reduce_sum(mask) + K.epsilon()
             
             acc = tf.reduce_sum(tf.cast(class_preds == y_true, tf.float32)*mask)/norm
-            self._record_scalars(**{"%s_val_accuracy"%task:acc})
+            self._record_scalars(**{"val_accuracy_%s"%task:acc})
             
             self._record_scalars(**{"weight_%s"%t:w for t,w in
                                     zip(self._tasks, self._task_weights)})
