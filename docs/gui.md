@@ -93,8 +93,7 @@ I recommend starting with Global Pooling/maxpool for the fine-tuning network, si
 
 ### Configuring the Convnet
 
-
-Inputs a comma-separated list specifying the layers for the fine-tuning convnet. Each element represents the next layer:
+I gave up trying to find the right balance of flexibility and simplicity for a design-your-own-convnet tool. Instead, the **Convnet** widget just inputs a comma-separated list specifying the layers. Each element represents the next layer; elements can be:
 
 * **an integer:** add a convolutional layer with that many filters, the kernel size specified below, a ReLU activation and same pooling
 * **p:** add a 2x2 max pooling with 2x2 stride
