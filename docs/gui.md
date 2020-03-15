@@ -91,6 +91,17 @@ I recommend starting with Global Pooling/maxpool for the fine-tuning network, si
 
 ![](gui_model.png)
 
+### Configuring the Convnet
+
+
+Inputs a comma-separated list specifying the layers for the fine-tuning convnet. Each element represents the next layer:
+
+* **an integer:** add a convolutional layer with that many filters, the kernel size specified below, a ReLU activation and same pooling
+* **p:** add a 2x2 max pooling with 2x2 stride
+* **d:** add a 2D spatial dropout layer with rate specified below
+* **r:** add a convolutional residual block
+
+
 ## Train tab
 
 Once you have labeled images and a model built, use this tab for training. During training, `patchwork` will stratify by class as well as by class value to try to handle varying class imbalance as well as label missingness imbalance. The loss functions are all masked so that partially-missing labels will only pass gradients through the filled-in parts.
