@@ -155,7 +155,6 @@ def _build_multitask_training_step(model, trainvars, optimizer,
                 task_loss = masked_sparse_categorical_crossentropy(y_true, pred)
                 task_losses.append(task_loss)
                 if adaptive:
-                    print("USING ADAPTIVE WEIGHTS")
                     # interpret weight as log(sigma^2). Kendall's paper mentions
                     # that they use this as it's more numerically stable
                     sig_sq = tf.math.exp(weight)
