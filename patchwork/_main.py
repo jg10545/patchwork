@@ -103,24 +103,43 @@ class GUI(object):
     
     def _training_dataset(self, batch_size=32, num_samples=None):
         """
-        Build a single-epoch training set
+        Build a single-epoch training set.
+        
+        Supervised case: returns tf.data.Dataset object with
+            structure (x,y)
+            
+        Semi-supervised case: returns tf.data.Dataset object
+            with structure ((x,y), x_unlab)
         """
         if num_samples is None:
             num_samples = len(self.df)
         # LIVE FEATURE EXTRACTOR CASE
         if self.feature_vecs is None:
             files, ys = stratified_sample(self.df, num_samples)
-            unlab_fps = None
-            if self._semi_supervised:
-                unlabeled_filepaths = self.df.filepath.values[find_unlabeled(self.df)]
-                
-                unlab_fps = np.random.choice(unlabeled_filepaths,
-                                             replace=True, size=num_samples)
-            return dataset(files, ys, imshape=self._imshape, 
+            # (x,y) dataset
+            ds = dataset(files, ys, imshape=self._imshape, 
                        num_channels=self._num_channels,
                        num_parallel_calls=self._num_parallel_calls, 
                        batch_size=batch_size,
-                       augment=self._aug, unlab_fps=unlab_fps)[0]
+                       augment=self._aug)[0]
+            
+            # include unlabeled data as well if 
+            # we're doing semisupervised learning
+            if self._semi_supervised:
+                # choose unlabeled files for this epoch
+                unlabeled_filepaths = self.df.filepath.values[find_unlabeled(self.df)]
+                unlab_fps = np.random.choice(unlabeled_filepaths,
+                                             replace=True, size=num_samples)
+                # construct a dataset to load the unlabeled files
+                # and zip with the (x,y) dataset
+                unlab_ds = dataset(unlab_fps, imshape=self._imshape, 
+                       num_channels=self._num_channels,
+                       num_parallel_calls=self._num_parallel_calls, 
+                       batch_size=batch_size,
+                       augment=self._aug)[0]
+                ds = tf.data.Dataset.zip((ds, unlab_ds))
+            return ds
+
         # PRE-EXTRACTED FEATURE CASE
         else:
             inds, ys = stratified_sample(self.df, num_samples, return_indices=True)
@@ -204,7 +223,8 @@ class GUI(object):
         ds = self._training_dataset(batch_size, num_samples)
         
         if self._semi_supervised:
-            for (x, x_unlab), y in ds:
+            #for (x, x_unlab), y in ds:
+            for (x,y) , x_unlab in ds:
                 loss, ss_loss = self._training_function(x, y, self._opt, x_unlab)
                 self.training_loss.append(loss.numpy())
                 self.semisup_loss.append(ss_loss.numpy())

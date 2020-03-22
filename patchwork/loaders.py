@@ -121,7 +121,7 @@ def _image_file_dataset(fps, imshape=(256,256),
 
 def dataset(fps, ys = None, imshape=(256,256), num_channels=3, 
                  num_parallel_calls=None, norm=255, batch_size=256,
-                 augment=False, unlab_fps=None, shuffle=False,
+                 augment=False, shuffle=False,
                  sobel=False, single_channel=False):
     """
     return a tf dataset that iterates over a list of images once
@@ -132,8 +132,6 @@ def dataset(fps, ys = None, imshape=(256,256), num_channels=3,
     :num_channels: channel depth of images
     :batch_size: just what you think it is
     :augment: augmentation parameters (or True for defaults, or False to disable)
-    :unlab_fps: list of filepaths (same length as fps) for semi-
-        supervised learning
     :shuffle: whether to shuffle the dataset
     :sobel: whether to replace the input image with its sobel edges
     :single_channel: if True, expect a single-channel input image and 
@@ -154,24 +152,12 @@ def dataset(fps, ys = None, imshape=(256,256), num_channels=3,
     if augment: ds = ds.map(_aug, num_parallel_calls=num_parallel_calls)
     if sobel: ds = ds.map(_sobelize, num_parallel_calls=num_parallel_calls)
         
-    if unlab_fps is not None:
-        u_ds = _image_file_dataset(unlab_fps, imshape=imshape, num_channels=num_channels, 
-                      num_parallel_calls=num_parallel_calls, norm=norm,
-                      single_channel=single_channel)
-        if augment: u_ds = u_ds.map(_aug, num_parallel_calls=num_parallel_calls)
-        if sobel: u_ds = u_ds.map(_sobelize, num_parallel_calls=num_parallel_calls)
-        ds = tf.data.Dataset.zip((ds, u_ds))
         
     if ys is not None:
         ys = tf.data.Dataset.from_tensor_slices(ys)
-        #if unlab_fps is not None:
-        #    ys = ds.zip((ys,ys))
-        #    #ys = ds.zip((u_ds,ys))
         ds = ds.zip((ds, ys))
         
     ds = ds.batch(batch_size)
-    #if sobel:
-    #    ds = ds.map(_sobelize, num_parallel_calls=num_parallel_calls)
     ds = ds.prefetch(1)
     
     num_steps = int(np.ceil(len(fps)/batch_size))
