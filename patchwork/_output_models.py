@@ -3,7 +3,7 @@ import param
 import tensorflow as tf
 
 from patchwork._losses import masked_binary_crossentropy
-from patchwork._losses import masked_mean_average_error
+#from patchwork._losses import masked_mean_average_error
 
 from patchwork._layers import CosineDense
 
@@ -41,4 +41,4 @@ class CosineOutput(param.Parameterized):
         inpt = tf.keras.layers.Input((inpt_channels))
         dense = CosineDense(num_classes)(inpt)
         
-        return tf.keras.Model(inpt, dense), masked_mean_average_error
+        return tf.keras.Model(inpt, dense), masked_binary_crossentropy
