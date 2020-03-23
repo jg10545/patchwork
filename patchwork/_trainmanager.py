@@ -38,36 +38,6 @@ def _loss_fig(l):
     return fig
 
 
-def _hist_fig_old(df, pred, c):
-    """
-    
-    """
-    bins = np.linspace(0, 1, 15)
-    
-    fig, ax = plt.subplots()
-    for l,v in [("train", False), ("val", True)]:
-        pos_labeled = pred[c][(df[c] == 1)&(df["validation"] == v)].values
-        neg_labeled = pred[c][(df[c] == 0)&(df["validation"] == v)].values
-        
-        if len(pos_labeled) > 0:           
-            ax.hist(pos_labeled, bins=bins, alpha=0.5, 
-                    label="labeled positive (%s)"%l, density=True)
-        if len(neg_labeled) > 0:
-            ax.hist(neg_labeled, bins=bins, alpha=0.5, 
-                    label="labeled negative (%s)"%l, density=True)
-    
-    
-    unlabeled = pred[c][pd.isnull(df[c])].values
-    if len(unlabeled) > 0:
-        ax.hist(unlabeled, bins=bins, alpha=0.5, label="unlabeled", density=True)
-    ax.legend(loc="upper left")
-    ax.set_xlabel("assessed probability", fontsize=14)
-    ax.set_ylabel("frequency", fontsize=14)
-    ax.set_title("model outputs for '%s'"%c, fontsize=14)
-    plt.close(fig)
-    return fig
-
-
 def _auc(pos, neg, rnd=2):
     """
     macro for computing ROC AUC score for display from arrays
@@ -100,7 +70,8 @@ def _hist_fig(df, pred, c):
         ax1.hist(neg_labeled, bins=bins, alpha=0.5, 
                     label="labeled negative (train)", density=True)
     if len(unlabeled) > 0:
-        ax1.hist(unlabeled, bins=bins, alpha=0.5, label="unlabeled", density=True)
+        ax1.hist(unlabeled, bins=bins, alpha=1., label="unlabeled", 
+                 density=True, histtype="step", lw=2)
       
     # bottom plot: validation data
     pos_labeled = pred[c][(df[c] == 1)&(df["validation"] == True)].values
@@ -113,7 +84,8 @@ def _hist_fig(df, pred, c):
         ax2.hist(neg_labeled, bins=bins, alpha=0.5, 
                     label="labeled negative (val)", density=True)
     if len(unlabeled) > 0:
-        ax2.hist(unlabeled, bins=bins, alpha=0.5, label="unlabeled", density=True)
+        ax2.hist(unlabeled, bins=bins, alpha=1., label="unlabeled", 
+                 density=True, histtype="step", lw=2)
     
     for a in [ax1, ax2]:
         a.legend(loc="upper left")
