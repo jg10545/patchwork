@@ -38,7 +38,7 @@ def _loss_fig(l):
     return fig
 
 
-def _hist_fig(df, pred, c):
+def _hist_fig_old(df, pred, c):
     """
     
     """
@@ -66,6 +66,49 @@ def _hist_fig(df, pred, c):
     ax.set_title("model outputs for '%s'"%c, fontsize=14)
     plt.close(fig)
     return fig
+
+
+def _hist_fig(df, pred, c):
+    """
+    
+    """
+    bins = np.linspace(0, 1, 15)
+    unlabeled = pred[c][pd.isnull(df[c])].values
+    
+    fig, (ax1, ax2) = plt.subplots(2,1)
+    
+    # top plot: training data
+    pos_labeled = pred[c][(df[c] == 1)&(df["validation"] == False)].values
+    neg_labeled = pred[c][(df[c] == 0)&(df["validation"] == False)].values
+    if len(pos_labeled) > 0:           
+        ax1.hist(pos_labeled, bins=bins, alpha=0.5, 
+                    label="labeled positive (train)", density=True)
+    if len(neg_labeled) > 0:
+        ax1.hist(neg_labeled, bins=bins, alpha=0.5, 
+                    label="labeled negative (train)", density=True)
+    if len(unlabeled) > 0:
+        ax1.hist(unlabeled, bins=bins, alpha=0.5, label="unlabeled", density=True)
+      
+    # bottom plot: validation data
+    pos_labeled = pred[c][(df[c] == 1)&(df["validation"] == True)].values
+    neg_labeled = pred[c][(df[c] == 0)&(df["validation"] == True)].values
+    if len(pos_labeled) > 0:           
+        ax2.hist(pos_labeled, bins=bins, alpha=0.5, 
+                    label="labeled positive (val)", density=True)
+    if len(neg_labeled) > 0:
+        ax2.hist(neg_labeled, bins=bins, alpha=0.5, 
+                    label="labeled negative (val)", density=True)
+    if len(unlabeled) > 0:
+        ax2.hist(unlabeled, bins=bins, alpha=0.5, label="unlabeled", density=True)
+    
+    for a in [ax1, ax2]:
+        a.legend(loc="upper left")
+        a.set_xlabel("assessed probability", fontsize=14)
+        a.set_ylabel("frequency", fontsize=14)
+    ax1.set_title("model outputs for '%s'"%c, fontsize=14)
+    plt.close(fig)
+    return fig
+
 
 
 
