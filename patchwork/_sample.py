@@ -145,16 +145,16 @@ def _build_in_memory_dataset(features, indices, labels, batch_size=16, unlabeled
     :labels: label vectors corresponding to indices
     :unlabeled_indices: indices of unlabeled features for semi-supervised learning
     """
+    x = features[indices].astype(np.float32)
     if unlabeled_indices is not None:
         unlabeled_samp_indices = np.random.choice(unlabeled_indices, replace=True, size=len(indices))
         #ds = tf.data.Dataset.from_tensor_slices(((features[indices].astype(np.float32), 
         #                                          features[unlabeled_samp_indices].astype(np.float32)), 
         #                                         labels))
-        ds = tf.data.Dataset.from_tensor_slices(((features[indices].astype(np.float32), 
-                                                  labels),
-                                                  features[unlabeled_samp_indices].astype(np.float32)))
+        x_unlab = features[unlabeled_samp_indices].astype(np.float32)
+        ds = tf.data.Dataset.from_tensor_slices(((x,labels), x_unlab))
     else:
-        ds = tf.data.Dataset.from_tensor_slices((features[indices].astype(np.float32), labels))
+        ds = tf.data.Dataset.from_tensor_slices((x, labels))
     ds = ds.batch(batch_size)
     ds = ds.prefetch(1)
     return ds
