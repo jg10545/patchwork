@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import panel as pn
 import tensorflow as tf
+import os
 
 from patchwork._labeler import Labeler
 from patchwork._modelpicker import ModelPicker
@@ -270,7 +271,16 @@ class GUI(object):
         return _load_img(f, norm=self._norm, num_channels=self._num_channels, 
                 resize=self._imshape)
     
-    
+    def save(self):
+        """
+        Macro to write out labels, predictions, and models
+        """
+        if self._logdir is not None:
+            self.df.to_csv(os.path.join(self._logdir, "labels.csv"), index=False)
+            self.pred_df.to_csv(os.path.join(self._logdir, "predictions.csv"), index=False)
+            for m in self.models:
+                if self.models[m] is not None:
+                    self.models[m].save(os.path.join(self._logdir, m+".h5"))
     
     
     

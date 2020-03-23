@@ -166,6 +166,7 @@ class TrainManager():
         self._loss_fig.object = _loss_fig(self.loss)
         self._hist_callback()
         self._footer.object = "### DONE"
+        self.pw.save()
         
         
     def _hist_callback(self, *events):
