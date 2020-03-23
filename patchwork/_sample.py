@@ -148,9 +148,7 @@ def _build_in_memory_dataset(features, indices, labels, batch_size=16, unlabeled
     x = features[indices].astype(np.float32)
     if unlabeled_indices is not None:
         unlabeled_samp_indices = np.random.choice(unlabeled_indices, replace=True, size=len(indices))
-        #ds = tf.data.Dataset.from_tensor_slices(((features[indices].astype(np.float32), 
-        #                                          features[unlabeled_samp_indices].astype(np.float32)), 
-        #                                         labels))
+
         x_unlab = features[unlabeled_samp_indices].astype(np.float32)
         ds = tf.data.Dataset.from_tensor_slices(((x,labels), x_unlab))
     else:
