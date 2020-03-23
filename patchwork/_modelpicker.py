@@ -169,7 +169,7 @@ class ModelPicker(object):
         self._pw._training_function = training_function
         
         self._pw._semi_supervised = (self._entropy_reg.value > 0)|(self._mean_teacher_alpha.value > 0)
-        self._pw._opt = tf.keras.optimizers.Adam(1e-3)
+        #self._pw._opt = tf.keras.optimizers.Adam(1e-3)
         
         
         

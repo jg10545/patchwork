@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import panel as pn
+import tensorflow as tf
 
 
 
@@ -79,6 +80,7 @@ class TrainManager():
         """
         self.pw = pw
         self._header = pn.pane.Markdown("#### Train model on current set of labeled patches")
+        self._learn_rate =  pn.widgets.LiteralInput(name="Learning rate", value=1e-3, type=float)                               
         self._batch_size = pn.widgets.LiteralInput(name='Batch size', value=16, type=int)
         self._samples_per_epoch = pn.widgets.LiteralInput(name='Samples per epoch', value=1000, type=int)
         self._epochs = pn.widgets.LiteralInput(name='Epochs', value=10, type=int)
@@ -101,6 +103,7 @@ class TrainManager():
         Return code for a training panel
         """
         controls =  pn.Column(self._header,
+                        self._learn_rate,
                          self._batch_size, 
                          self._samples_per_epoch,
                          self._epochs,
@@ -118,6 +121,7 @@ class TrainManager():
     
     def _train_callback(self, *event):
         # for each epoch
+        self.pw._opt = tf.keras.optimizers.Adam(self._learn_rate.value)
         epochs = self._epochs.value
         for e in range(epochs):
             self._footer.object = "### TRAININ (%s / %s)"%(e+1, epochs)

@@ -54,6 +54,7 @@ class GUI(object):
         self._logdir = logdir
         self.models = {"feature_extractor":feature_extractor}
         
+        
         if "exclude" not in df.columns:
             df["exclude"] = False
             
@@ -81,6 +82,8 @@ class GUI(object):
                                        feature_extractor=feature_extractor)
         # make a train manager- pass this object to it
         self.trainmanager = TrainManager(self)
+        # default optimizer
+        self._opt = tf.keras.optimizers.Adam(1e-3)
         
         
         
@@ -252,12 +255,7 @@ class GUI(object):
         """
         ds, num_steps = self._pred_dataset(batch_size)
         predictions = self.models["full"].predict(ds, steps=num_steps)
-        #if self.feature_vecs is not None:
-        #    predictions = self.model.predict(self.feature_vecs, 
-        #                                     batch_size=batch_size)
-        #else:
-        #    dataset, num_steps = self._pred_dataset(batch_size)
-        #    predictions = self.model.predict(dataset, steps=num_steps)
+
         self.pred_df.loc[:, self.classes] = predictions
     
     def _stratified_sample(self, N=None):
