@@ -41,7 +41,8 @@ class CosineDense(tf.keras.layers.Layer):
         # dot product
         cosine_similarity = K.sum(projected_norm*embeds_norm, axis=-1)
         # shift to unit interval
-        return 0.5*(cosine_similarity+1)
+        #return 0.5*(cosine_similarity+1)
+        return tf.nn.sigmoid(cosine_similarity)
 
 
     def compute_output_shape(self, input_shape):

@@ -62,11 +62,12 @@ def _single_class_radiobuttons(width=125, height=25):
 
 
 
+
 class ButtonPanel(object):
     """
     panel widget that has all the pieces for displaying and labeling patches
     """
-    def __init__(self, classes, df, load_func, dim=3, size=800):
+    def __init__(self, classes, df, load_func, dim=3, size=700):
         """
         :classes: list of strings- name of each class
         :df: pandas DataFrame

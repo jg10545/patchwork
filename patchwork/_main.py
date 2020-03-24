@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import panel as pn
 import tensorflow as tf
+import os
 
 from patchwork._labeler import Labeler
 from patchwork._modelpicker import ModelPicker
@@ -54,6 +55,7 @@ class GUI(object):
         self._logdir = logdir
         self.models = {"feature_extractor":feature_extractor}
         
+        
         if "exclude" not in df.columns:
             df["exclude"] = False
             
@@ -81,6 +83,8 @@ class GUI(object):
                                        feature_extractor=feature_extractor)
         # make a train manager- pass this object to it
         self.trainmanager = TrainManager(self)
+        # default optimizer
+        self._opt = tf.keras.optimizers.Adam(1e-3)
         
         
         
@@ -103,24 +107,43 @@ class GUI(object):
     
     def _training_dataset(self, batch_size=32, num_samples=None):
         """
-        Build a single-epoch training set
+        Build a single-epoch training set.
+        
+        Supervised case: returns tf.data.Dataset object with
+            structure (x,y)
+            
+        Semi-supervised case: returns tf.data.Dataset object
+            with structure ((x,y), x_unlab)
         """
         if num_samples is None:
             num_samples = len(self.df)
         # LIVE FEATURE EXTRACTOR CASE
         if self.feature_vecs is None:
             files, ys = stratified_sample(self.df, num_samples)
-            unlab_fps = None
-            if self._semi_supervised:
-                unlabeled_filepaths = self.df.filepath.values[find_unlabeled(self.df)]
-                
-                unlab_fps = np.random.choice(unlabeled_filepaths,
-                                             replace=True, size=num_samples)
-            return dataset(files, ys, imshape=self._imshape, 
+            # (x,y) dataset
+            ds = dataset(files, ys, imshape=self._imshape, 
                        num_channels=self._num_channels,
                        num_parallel_calls=self._num_parallel_calls, 
                        batch_size=batch_size,
-                       augment=self._aug, unlab_fps=unlab_fps)[0]
+                       augment=self._aug)[0]
+            
+            # include unlabeled data as well if 
+            # we're doing semisupervised learning
+            if self._semi_supervised:
+                # choose unlabeled files for this epoch
+                unlabeled_filepaths = self.df.filepath.values[find_unlabeled(self.df)]
+                unlab_fps = np.random.choice(unlabeled_filepaths,
+                                             replace=True, size=num_samples)
+                # construct a dataset to load the unlabeled files
+                # and zip with the (x,y) dataset
+                unlab_ds = dataset(unlab_fps, imshape=self._imshape, 
+                       num_channels=self._num_channels,
+                       num_parallel_calls=self._num_parallel_calls, 
+                       batch_size=batch_size,
+                       augment=self._aug)[0]
+                ds = tf.data.Dataset.zip((ds, unlab_ds))
+            return ds
+
         # PRE-EXTRACTED FEATURE CASE
         else:
             inds, ys = stratified_sample(self.df, num_samples, return_indices=True)
@@ -204,7 +227,8 @@ class GUI(object):
         ds = self._training_dataset(batch_size, num_samples)
         
         if self._semi_supervised:
-            for (x, x_unlab), y in ds:
+            #for (x, x_unlab), y in ds:
+            for (x,y) , x_unlab in ds:
                 loss, ss_loss = self._training_function(x, y, self._opt, x_unlab)
                 self.training_loss.append(loss.numpy())
                 self.semisup_loss.append(ss_loss.numpy())
@@ -232,12 +256,7 @@ class GUI(object):
         """
         ds, num_steps = self._pred_dataset(batch_size)
         predictions = self.models["full"].predict(ds, steps=num_steps)
-        #if self.feature_vecs is not None:
-        #    predictions = self.model.predict(self.feature_vecs, 
-        #                                     batch_size=batch_size)
-        #else:
-        #    dataset, num_steps = self._pred_dataset(batch_size)
-        #    predictions = self.model.predict(dataset, steps=num_steps)
+
         self.pred_df.loc[:, self.classes] = predictions
     
     def _stratified_sample(self, N=None):
@@ -252,7 +271,16 @@ class GUI(object):
         return _load_img(f, norm=self._norm, num_channels=self._num_channels, 
                 resize=self._imshape)
     
-    
+    def save(self):
+        """
+        Macro to write out labels, predictions, and models
+        """
+        if self._logdir is not None:
+            self.df.to_csv(os.path.join(self._logdir, "labels.csv"), index=False)
+            self.pred_df.to_csv(os.path.join(self._logdir, "predictions.csv"), index=False)
+            for m in self.models:
+                if self.models[m] is not None:
+                    self.models[m].save(os.path.join(self._logdir, m+".h5"))
     
     
     

@@ -10,8 +10,9 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import panel as pn
+import tensorflow as tf
 
-
+from sklearn.metrics import roc_auc_score
 
 def _empty_fig():
     """
@@ -37,34 +38,64 @@ def _loss_fig(l):
     return fig
 
 
+def _auc(pos, neg, rnd=2):
+    """
+    macro for computing ROC AUC score for display from arrays
+    of scores for positive and negative cases
+    """
+    if (len(pos) > 0)&(len(neg) > 0):
+        y_true = np.concatenate([np.ones(len(pos)), np.zeros(len(neg))])
+        y_pred = np.concatenate([pos, neg])
+        return round(roc_auc_score(y_true, y_pred), rnd)
+    else:
+        return 0
+
 def _hist_fig(df, pred, c):
     """
     
     """
     bins = np.linspace(0, 1, 15)
-    
-    fig, ax = plt.subplots()
-    for l,v in [("train", False), ("val", True)]:
-        pos_labeled = pred[c][(df[c] == 1)&(df["validation"] == v)].values
-        neg_labeled = pred[c][(df[c] == 0)&(df["validation"] == v)].values
-        
-        if len(pos_labeled) > 0:           
-            ax.hist(pos_labeled, bins=bins, alpha=0.5, 
-                    label="labeled positive (%s)"%l, density=True)
-        if len(neg_labeled) > 0:
-            ax.hist(neg_labeled, bins=bins, alpha=0.5, 
-                    label="labeled negative (%s)"%l, density=True)
-    
-    
     unlabeled = pred[c][pd.isnull(df[c])].values
+    
+    fig, (ax1, ax2) = plt.subplots(2,1)
+    
+    # top plot: training data
+    pos_labeled = pred[c][(df[c] == 1)&(df["validation"] == False)].values
+    neg_labeled = pred[c][(df[c] == 0)&(df["validation"] == False)].values
+    train_auc = _auc(pos_labeled, neg_labeled)
+    if len(pos_labeled) > 0: 
+        ax1.hist(pos_labeled, bins=bins, alpha=0.5, 
+                    label="labeled positive (train)", density=True)
+    if len(neg_labeled) > 0:
+        ax1.hist(neg_labeled, bins=bins, alpha=0.5, 
+                    label="labeled negative (train)", density=True)
     if len(unlabeled) > 0:
-        ax.hist(unlabeled, bins=bins, alpha=0.5, label="unlabeled", density=True)
-    ax.legend(loc="upper left")
-    ax.set_xlabel("assessed probability", fontsize=14)
-    ax.set_ylabel("frequency", fontsize=14)
-    ax.set_title("model outputs for '%s'"%c, fontsize=14)
+        ax1.hist(unlabeled, bins=bins, alpha=1., label="unlabeled", 
+                 density=True, histtype="step", lw=2)
+      
+    # bottom plot: validation data
+    pos_labeled = pred[c][(df[c] == 1)&(df["validation"] == True)].values
+    neg_labeled = pred[c][(df[c] == 0)&(df["validation"] == True)].values
+    test_auc = _auc(pos_labeled, neg_labeled)
+    if len(pos_labeled) > 0:           
+        ax2.hist(pos_labeled, bins=bins, alpha=0.5, 
+                    label="labeled positive (val)", density=True)
+    if len(neg_labeled) > 0:
+        ax2.hist(neg_labeled, bins=bins, alpha=0.5, 
+                    label="labeled negative (val)", density=True)
+    if len(unlabeled) > 0:
+        ax2.hist(unlabeled, bins=bins, alpha=1., label="unlabeled", 
+                 density=True, histtype="step", lw=2)
+    
+    for a in [ax1, ax2]:
+        a.legend(loc="upper left")
+        a.set_xlabel("assessed probability", fontsize=14)
+        a.set_ylabel("frequency", fontsize=14)
+    title = "model outputs for '%s'\nAUC train %s, test AUC %s"%(c, train_auc, test_auc)
+    ax1.set_title(title, fontsize=14)
     plt.close(fig)
     return fig
+
 
 
 
@@ -79,6 +110,7 @@ class TrainManager():
         """
         self.pw = pw
         self._header = pn.pane.Markdown("#### Train model on current set of labeled patches")
+        self._learn_rate =  pn.widgets.LiteralInput(name="Learning rate", value=1e-3, type=float)                               
         self._batch_size = pn.widgets.LiteralInput(name='Batch size', value=16, type=int)
         self._samples_per_epoch = pn.widgets.LiteralInput(name='Samples per epoch', value=1000, type=int)
         self._epochs = pn.widgets.LiteralInput(name='Epochs', value=10, type=int)
@@ -101,6 +133,7 @@ class TrainManager():
         Return code for a training panel
         """
         controls =  pn.Column(self._header,
+                        self._learn_rate,
                          self._batch_size, 
                          self._samples_per_epoch,
                          self._epochs,
@@ -118,6 +151,7 @@ class TrainManager():
     
     def _train_callback(self, *event):
         # for each epoch
+        self.pw._opt = tf.keras.optimizers.Adam(self._learn_rate.value)
         epochs = self._epochs.value
         for e in range(epochs):
             self._footer.object = "### TRAININ (%s / %s)"%(e+1, epochs)
@@ -132,6 +166,7 @@ class TrainManager():
         self._loss_fig.object = _loss_fig(self.loss)
         self._hist_callback()
         self._footer.object = "### DONE"
+        self.pw.save()
         
         
     def _hist_callback(self, *events):
