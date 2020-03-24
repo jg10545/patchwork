@@ -11,7 +11,8 @@ class SigmoidCrossEntropy(param.Parameterized):
     """
     Output network for the basic sigmoid case
     """
-    label_smoothing = param.Number(0, bounds=(0, 0.5), doc="epsilon for label smoothing")
+    label_smoothing = param.Number(0, bounds=(0, 0.25), step=0.05, 
+                                   doc="epsilon for label smoothing")
     
     
     description = """
