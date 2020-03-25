@@ -3,8 +3,8 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 
-from patchwork._multitask import _encode_classes, _dataframe_to_classes
-from patchwork._multitask import _assemble_full_network
+from patchwork.feature._multitask import _encode_classes, _dataframe_to_classes
+from patchwork.feature._multitask import _assemble_full_network
 
 
 def test_encode_classes():

@@ -157,8 +157,10 @@ def _build_multitask_training_step(model, trainvars, optimizer,
                 if adaptive:
                     # interpret weight as log(sigma^2). Kendall's paper mentions
                     # that they use this as it's more numerically stable
-                    sig_sq = tf.math.exp(weight)
-                    loss += task_loss/(sig_sq + K.epsilon()) + 0.5*weight
+                    #sig_sq = tf.math.exp(weight)
+                    inv_sig_sq = tf.math.exp(-1*weight)
+                    #loss += task_loss/(sig_sq + K.epsilon()) + 0.5*weight
+                    loss += task_loss*inv_sig_sq + 0.5*weight
                 else:
                     loss += weight*task_loss
                 

@@ -4,3 +4,4 @@ from patchwork.feature._deepcluster import DeepClusterTrainer
 from patchwork.feature._simclr import SimCLRTrainer
 from patchwork.feature._simclr_multi import DistributedSimCLRTrainer
 from patchwork.feature._autoencoder import AutoEncoderTrainer
+from patchwork.feature._multitask import MultiTaskTrainer
