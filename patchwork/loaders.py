@@ -159,9 +159,12 @@ def dataset(fps, ys = None, imshape=(256,256), num_channels=3,
     ds = _image_file_dataset(fps, ys=ys, imshape=imshape, num_channels=num_channels, 
                       num_parallel_calls=num_parallel_calls, norm=norm,
                       shuffle=shuffle, single_channel=single_channel)
-    
-    if augment: ds = ds.map(_aug, num_parallel_calls=num_parallel_calls)
-    if sobel: ds = ds.map(_sobelize, num_parallel_calls=num_parallel_calls)
+    if ys is None:
+        if augment: ds = ds.map(_aug, num_parallel_calls=num_parallel_calls)
+        if sobel: ds = ds.map(_sobelize, num_parallel_calls=num_parallel_calls)
+    else:
+        if augment: ds = ds.map(lambda x,y: (_aug(x),y), num_parallel_calls=num_parallel_calls)
+        if sobel: ds = ds.map(lambda x,y: (_sobelize(x),y), num_parallel_calls=num_parallel_calls)
         
     ds = ds.batch(batch_size)
     ds = ds.prefetch(1)
