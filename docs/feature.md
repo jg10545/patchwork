@@ -34,10 +34,12 @@ The trainer can input a list of test files- a small out-of-sample dataset is han
 ```{python}
 import tensorflow as tf
 import patchwork as pw
+import json
 
 # load paths to train and test files
 trainfiles = [x.strip() for x in open("mytrainfiles.txt").readlines()]
 testfiles = [x.strip() for x in open("mytestfiles.txt").readlines()]
+labeldict = json.load(open("dictionary_mapping_some_images_to_labels.json"))
 
 # initialize trainer and train
 trainer = pw.feature.ContextEncoderTrainer(
@@ -48,7 +50,8 @@ trainer = pw.feature.ContextEncoderTrainer(
     augment=aug_params,
     lr=1e-3,
     batch_size=32,
-    imshape=(255,255)
+    imshape=(255,255),
+    downstream_labels=labeldict
 )
 ```
 
@@ -78,6 +81,7 @@ import patchwork as pw
 
 # load paths to train files
 trainfiles = [x.strip() for x in open("mytrainfiles.txt").readlines()]
+labeldict = json.load(open("dictionary_mapping_some_images_to_labels.json"))
 
 # initialize a feature extractor
 fcn = patchwork.feature.BNAlexNetFCN()
@@ -94,7 +98,8 @@ dctrainer = pw.feature.DeepClusterTrainer(
         lr=1e-3,
         lr_decay=100000,
         batch_size=64,
-        num_parallel_calls=6
+        num_parallel_calls=6,
+        downstream_labels=labeldict
     )
 
 dctrainer.fit(10)
@@ -110,32 +115,111 @@ dctrainer.fit(10)
 
 `patchwork` contains a TensorFlow implementation of the algorithm in Chen *et al*'s [A Simple Framework for Contrastive Learning of Visual Representations](https://arxiv.org/abs/2002.05709). For the moment, my implementation uses Adam rather than the LARS optimizer.
 
+   
+```{python}
+import tensorflow as tf
+import patchwork as pw
+
+# load paths to train files
+trainfiles = [x.strip() for x in open("mytrainfiles.txt").readlines()]
+labeldict = json.load(open("dictionary_mapping_some_images_to_labels.json"))
+
+# initialize a feature extractor
+fcn = tf.keras.applications.ResNet50V2(weights=None, include_top=False)
+
+# choose augmentation parameters
+aug_params = {
+        "max_brightness_delta":0.3, 
+        "contrast_min":0.4, 
+        "contrast_max":1.4,
+        "max_hue_delta":0.1, 
+        "max_saturation_delta":0.5,
+        "left_right_flip":True, 
+        "up_down_flip":True,
+        "rot90":True,
+        "zoom_scale":0.4,
+        "select_prob":0.75
+        }
+# generally a good idea to visualize what your augmentation is doing
+pw.viz.augplot(trainfiles, aug_params)   
+
+
+# train
+trainer = pw.feature.SimCLRTrainer(
+    logdir,
+    trainfiles,
+    testdata=testfiles,
+    fcn=fcn,
+    num_parallel_calls=6,
+    augment=aug_params,
+    lr=1e-4,
+    lr_decay=0,
+    temperature=0.1,
+    num_hidden=128,
+    output_dim=32,
+    batch_size=32,
+    imshape=(256,256),
+    downstream_labels=downstream_labels
+)
+
+trainer.fit(10)
+```
+
 ### Some notes on using SimCLR
 
 
-Note that SimCLR is much more critically dependent on image augmentation for its learning than Context Encoders or DeepCluster, so it's worth the time to experiment to find a good set of augmentation parameters. 
-        
+Note that SimCLR is much more critically dependent on image augmentation for its learning than Context Encoders or DeepCluster, so it's worth the time to experiment to find a good set of augmentation parameters. My experience so far is that SimCLR benefits from more aggressive augmentation than you'd use for supervised learning.
+     
+    
+## Distributed SimCLR
 
-        
+Multi-GPU support for custom training loops in TensorFlow is still experimental, so 
+I'm keeping this code separate for now. The main difference from the normal `SimCLRTrainer`
+is that you need to define a `tf.distribute` strategy, and **use it when you initialize
+or load your feature extractor.**
+
+```
+# same basic setup as before, but....
+
+strategy = tf.distribute.MirroredStrategy()
+
+# check this- it should return the number of GPUs if it's working correctly
+assert strategy.num_replicas_in_sync == number_of_gpus_i_was_expecting
+
+with strategy.scope():
+    # initialize a new model
+    fcn = tf.keras.applications.ResNet50V2(weights=None, include_top=False)
+    # and/or transfer learn from your last one
+    fcn.load_weights("my_previous_model.h5")
+
+trainer = pw.feature.DistributedSimCLRTrainer(
+    strategy,
+    logdir,
+    trainfiles,
+    testdata=testfiles,
+    fcn=fcn,
+    num_parallel_calls=6,
+    augment=aug_params,
+    lr=1e-4,
+    lr_decay=0,
+    temperature=0.1,
+    num_hidden=128,
+    output_dim=64,
+    batch_size=32,
+    imshape=(256,256),
+    downstream_labels=downstream_labels
+)   
+```
+    
+      
 # Deprecated
         
 These feature extractors are coded up in `patchwork`, but either (1) seem to have been superceded by other inventions or (2) I personally found them finicky to work with. They are unlikely to be developed further.
 
 ## Invariant Information Clustering
 
-DOCS COMING SOON
-
-
-### Some notes on using IIC
-
-* COMING SOON
+[paper here](https://arxiv.org/abs/1807.06653)
         
 ## Momentum Contrast
 
-DOCS COMING SOON
-
 [paper here](https://arxiv.org/abs/1911.05722)
-
-### Some notes on using MoCo
-
-* COMING SOON
