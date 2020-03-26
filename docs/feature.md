@@ -128,18 +128,19 @@ labeldict = json.load(open("dictionary_mapping_some_images_to_labels.json"))
 fcn = tf.keras.applications.ResNet50V2(weights=None, include_top=False)
 
 # choose augmentation parameters
-aug_params = {
-        "max_brightness_delta":0.3, 
-        "contrast_min":0.4, 
-        "contrast_max":1.4,
-        "max_hue_delta":0.1, 
-        "max_saturation_delta":0.5,
-        "left_right_flip":True, 
-        "up_down_flip":True,
-        "rot90":True,
-        "zoom_scale":0.4,
-        "select_prob":0.75
-        }
+aug_params = {'gaussian_blur': 0.25,
+             'drop_color': 0.2,
+             'gaussian_noise': 0.2,
+             'sobel_prob': 0.15,
+             'brightness_delta': 0.2,
+             'contrast_delta': 0.4,
+             'saturation_delta': 0.1,
+             'hue_delta': 0.1,
+             'flip_left_right': True,
+             'flip_up_down': True,
+             'rot90': True,
+             'zoom_scale': 0.4,
+             'mask': 0.25}
 # generally a good idea to visualize what your augmentation is doing
 pw.viz.augplot(trainfiles, aug_params)   
 
@@ -208,7 +209,8 @@ trainer = pw.feature.DistributedSimCLRTrainer(
     batch_size=32,
     imshape=(256,256),
     downstream_labels=downstream_labels
-)   
+)  
+trainer.fit(10) 
 ```
     
       

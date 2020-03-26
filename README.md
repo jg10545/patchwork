@@ -20,10 +20,11 @@ If you're going to try this code out- I apologize in advance for the state of th
 `patchwork` has two main components (follow links for more details):
 
 * A `feature` module for building [feature extractors](docs/feature.md) with self-supervision. Input a list of paths to unlabeled image files, and train a `keras` fully-convolutional network. 
+  * I am also experimenting with tools for [multitask learning](docs/multitask.md).
 
 * A graphical user interface using the `panel` library for [interactive labeling](docs/gui.md). Using a frozen pre-trained feature extractor, iteratively label images, train a fine-tuning model to classify using your labels, then use the model to motivate which images to label next. Save out your classification model directly, or use the `pandas.DataFrame` of labels in your own workflow.
 
-Both parts of the library use a common set of [input and augmentation parameters](docs/input_aug.md).
+Both parts of the library use a common set of [input and augmentation parameters](docs/input_aug.md). The loading functions used for the feature extractors and GUI [can also be used with the Keras API](docs/input_keras.md).
 
 
 `patchwork` has been tested with `tensorflow` 2.0.
