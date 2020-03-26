@@ -24,7 +24,7 @@ model.compile("adam",
                 loss=tf.keras.losses.sparse_categorical_crossentropy,
                 metrics=["accuracy"])
 
-# ---------- CHOOSE AUGUMENTATION STRATEGY ----------
+# ---------- CHOOSE AUGMENTATION STRATEGY ----------
 
 # choose how you want data augmented, or use aug_params=True for
 # defaults or aug_params=False to disable              
