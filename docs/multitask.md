@@ -76,7 +76,7 @@ aug_params = {'gaussian_blur': 0.25,
 pw.viz.augplot(train_labels.trainfiles.values, aug_params)   
 
 
-# train
+# ---------- TRAIN ----------
 shared_layers = [512, "r"]
 task_layers = [128, "p", "d", 256]
 tasks = ["task_name_1", "task_name_2"] # column names in your dataframes
