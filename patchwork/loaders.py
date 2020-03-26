@@ -51,7 +51,7 @@ def _generate_imtypes(fps):
             imtypes[i] = 3
     return imtypes
 
-def _image_file_dataset(fps, imshape=(256,256), 
+def _image_file_dataset(fps, ys=None, imshape=(256,256), 
                  num_parallel_calls=None, norm=255,
                  num_channels=3, shuffle=False,
                  single_channel=False):
@@ -60,6 +60,7 @@ def _image_file_dataset(fps, imshape=(256,256),
     PIL.Image or gdal instead of the tensorflow decode functions
     
     :fps: list of filepaths
+    :ys: optional list of labels
     :imshape: constant shape to resize images to
     :num_parallel_calls: number of processes to use for loading
     :norm: value for normalizing images
@@ -68,11 +69,18 @@ def _image_file_dataset(fps, imshape=(256,256),
     :single_channel: if True, expect a single-channel input image and 
         stack it num_channels times.
     
-    Returns images as a 3D float32 tensor
+    Returns tf.data.Dataset object with structure (x,y) if labels were passed, 
+        and (x) otherwise. images (x) are a 3D float32 tensor and labels
+        should be a 0D int64 tensor
     """
+    if ys is None:
+        no_labels = True
+        ys = np.zeros(len(fps), dtype=np.int64)
+    else:
+        no_labels = False
     # get an integer index for each filepath
     imtypes = _generate_imtypes(fps)
-    ds = tf.data.Dataset.from_tensor_slices((fps, imtypes))
+    ds = tf.data.Dataset.from_tensor_slices((fps, imtypes, ys))
     # do the shuffling before loading so we can have a big queue without
     # taking up much memory
     if shuffle:
@@ -113,7 +121,10 @@ def _image_file_dataset(fps, imshape=(256,256),
         normed = tf.cast(resized[:,:,:num_channels], tf.float32)/norm
         return tf.reshape(normed, (imshape[0], imshape[1], num_channels))
 
-    ds = ds.map(lambda x,y: _load_img(x,y), num_parallel_calls=num_parallel_calls)
+    ds = ds.map(lambda x,t,y: (_load_img(x,t),y), num_parallel_calls=num_parallel_calls)
+    # if no labels were passed, strip out the y.
+    if no_labels:
+        ds = ds.map(lambda x,y: x)
     return ds
 
 
@@ -145,17 +156,12 @@ def dataset(fps, ys = None, imshape=(256,256), num_channels=3,
     """
     if augment:
         _aug = augment_function(imshape, augment)
-    ds = _image_file_dataset(fps, imshape=imshape, num_channels=num_channels, 
+    ds = _image_file_dataset(fps, ys=ys, imshape=imshape, num_channels=num_channels, 
                       num_parallel_calls=num_parallel_calls, norm=norm,
                       shuffle=shuffle, single_channel=single_channel)
     
     if augment: ds = ds.map(_aug, num_parallel_calls=num_parallel_calls)
     if sobel: ds = ds.map(_sobelize, num_parallel_calls=num_parallel_calls)
-        
-        
-    if ys is not None:
-        ys = tf.data.Dataset.from_tensor_slices(ys)
-        ds = ds.zip((ds, ys))
         
     ds = ds.batch(batch_size)
     ds = ds.prefetch(1)
