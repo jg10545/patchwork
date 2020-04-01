@@ -47,7 +47,7 @@ def _build_distributed_training_step(strategy, embed_model, optimizer,
         total_loss = strategy.reduce(
                         tf.distribute.ReduceOp.SUM, 
                         per_example_losses, axis=0)
-        return total_loss/global_batch_size
+        return total_loss#/global_batch_size
     return train_step
 
 
@@ -64,6 +64,8 @@ class DistributedSimCLRTrainer(SimCLRTrainer):
     
     Based on "A Simple Framework for Contrastive Learning of Visual
     Representations" by Chen et al.
+    
+    The batch size you pass is the batch size PER REPLICA.
     """
 
     def __init__(self, strategy, logdir, trainingdata, testdata=None, fcn=None, 
@@ -73,7 +75,7 @@ class DistributedSimCLRTrainer(SimCLRTrainer):
                  imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, num_parallel_calls=None,
                  single_channel=False, notes="",
-                 downstream_labels=None):
+                 downstream_labels=None, stratify=None):
         """
         :strategy: a tf.distribute Strategy object.
         :logdir: (string) path to log directory
@@ -90,13 +92,15 @@ class DistributedSimCLRTrainer(SimCLRTrainer):
         :num_channels: (int) number of image channels
         :norm: (int or float) normalization constant for images (for rescaling to
                unit interval)
-        :batch_size: (int) batch size for training
+        :batch_size: (int) batch size PER REPLICA for training
         :num_parallel_calls: (int) number of threads for loader mapping
         :single_channel: if True, expect a single-channel input image and 
                 stack it num_channels times.
         :notes: (string) any notes on the experiment that you want saved in the
                 config.yml file
         :downstream_labels: dictionary mapping image file paths to labels
+        :stratify: pass a list of image labels here to stratify by batch
+            during training
         """
         assert augment is not False, "this method needs an augmentation scheme"
         self._strategy = strategy
@@ -122,13 +126,15 @@ class DistributedSimCLRTrainer(SimCLRTrainer):
                         "full":embed_model}
         
         # build training dataset
+        global_batch_size = batch_size*strategy.num_replicas_in_sync
         self._ds = strategy.experimental_distribute_dataset(
                 _build_simclr_dataset(trainingdata, 
                                       imshape=imshape, batch_size=batch_size,
                                       num_parallel_calls=num_parallel_calls,
                                       norm=norm, num_channels=num_channels,
                                       augment=augment,
-                                      single_channel=single_channel))
+                                      single_channel=single_channel,
+                                      stratify=stratify))
         
         # create optimizer
         if lr_decay > 0:
@@ -155,7 +161,8 @@ class DistributedSimCLRTrainer(SimCLRTrainer):
                                         num_parallel_calls=num_parallel_calls, 
                                         norm=norm, num_channels=num_channels, 
                                         augment=augment,
-                                        single_channel=single_channel)
+                                        single_channel=single_channel,
+                                        global_batch_size=global_batch_size)
             
             @tf.function
             def test_loss(x,y):

@@ -21,7 +21,8 @@ from patchwork.loaders import dataset
 
 
 INPUT_PARAMS = ["imshape", "num_channels", "norm", "batch_size",
-                "shuffle", "num_parallel_calls", "sobel", "single_channel"]
+                "shuffle", "num_parallel_calls", "sobel", "single_channel",
+                "global_batch_size"]
 
 
 

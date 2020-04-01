@@ -8,14 +8,34 @@ from patchwork.loaders import _image_file_dataset
 
 BIG_NUMBER = 1000.
 
+
+
 def _build_simclr_dataset(imfiles, imshape=(256,256), batch_size=256, 
                       num_parallel_calls=None, norm=255,
                       num_channels=3, augment=True,
-                      single_channel=False):
+                      single_channel=False, stratify=None):
+    """
+    :stratify: if not None, a list of categories for each element in
+        imfile.
     """
     
-    """
-    assert augment, "don't you need to augment your data?"
+    if stratify is not None:
+        categories = list(set(stratify))
+        file_lists = [[imfiles[i] for i in range(len(imfiles)) 
+                        if stratify[i] == c]
+                for c in categories
+        ]
+        datasets = [_build_simclr_dataset(f, imshape=imshape, 
+                                          batch_size=batch_size, 
+                                          num_parallel_calls=num_parallel_calls, 
+                                          norm=norm, num_channels=num_channels, 
+                                          augment=augment, 
+                                          single_channel=single_channel,
+                                          stratify=None)
+                    for f in file_lists]
+        return tf.data.experimental.sample_from_datasets(datasets)
+    
+    assert augment != False, "don't you need to augment your data?"
     _aug = augment_function(imshape, augment)
     
     ds = _image_file_dataset(imfiles, imshape=imshape, 
@@ -111,7 +131,7 @@ class SimCLRTrainer(GenericExtractor):
                  imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, num_parallel_calls=None,
                  single_channel=False, notes="",
-                 downstream_labels=None):
+                 downstream_labels=None, stratify=None):
         """
         :logdir: (string) path to log directory
         :trainingdata: (list) list of paths to training images
@@ -134,6 +154,8 @@ class SimCLRTrainer(GenericExtractor):
         :notes: (string) any notes on the experiment that you want saved in the
                 config.yml file
         :downstream_labels: dictionary mapping image file paths to labels
+        :stratify: pass a list of image labels here to stratify by batch
+            during training
         """
         assert augment is not False, "this method needs an augmentation scheme"
         self.logdir = logdir
@@ -161,7 +183,8 @@ class SimCLRTrainer(GenericExtractor):
                                         num_parallel_calls=num_parallel_calls, 
                                         norm=norm, num_channels=num_channels, 
                                         augment=augment,
-                                        single_channel=single_channel)
+                                        single_channel=single_channel,
+                                        stratify=stratify)
         
         # create optimizer
         if lr_decay > 0:
