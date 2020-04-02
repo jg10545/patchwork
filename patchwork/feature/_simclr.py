@@ -72,7 +72,7 @@ def _build_embedding_model(fcn, imshape, num_channels, num_hidden, output_dim):
 
 
 
-def _build_simclr_training_step(embed_model, optimizer, temperature=0.1, replicas=1):
+def _build_simclr_training_step(embed_model, optimizer, temperature=0.1):
     """
     Generate a tensorflow function to run the training step for SimCLR.
     
@@ -80,7 +80,11 @@ def _build_simclr_training_step(embed_model, optimizer, temperature=0.1, replica
         projection head
     :optimizer: Keras optimizer
     :temperature: hyperparameter for scaling cosine similarities
-    :replicas:
+    
+    The training function returns:
+    :loss: value of the loss function for training
+    :rms_grads: total root mean square value of gradients through trainable variables
+    :avg_cosine_sim: average value of the batch's matrix of dot products
     """
     @tf.function
     def training_step(x,y):
@@ -103,12 +107,16 @@ def _build_simclr_training_step(embed_model, optimizer, temperature=0.1, replica
             logits = (sim - BIG_NUMBER*eye)/temperature
             
             loss = tf.reduce_mean(
-                    tf.nn.sparse_softmax_cross_entropy_with_logits(labels, logits))/replicas
+                    tf.nn.sparse_softmax_cross_entropy_with_logits(labels, logits))
 
         gradients = tape.gradient(loss, embed_model.trainable_variables)
         optimizer.apply_gradients(zip(gradients,
                                       embed_model.trainable_variables))
-        return loss
+        rms_grads = 0
+        for g in gradients:
+            rms_grads += tf.math.sqrt(tf.reduce_mean(g**2))
+        avg_cosine_sim = tf.reduce_mean(sim)
+        return loss, rms_grads, avg_cosine_sim
     return training_step
 
 
@@ -245,9 +253,10 @@ class SimCLRTrainer(GenericExtractor):
         
         """
         for x, y in self._ds:
-            loss = self._training_step(x,y)
+            loss, rms_grads, avg_cosine_sim = self._training_step(x,y)
             
-            self._record_scalars(loss=loss)
+            self._record_scalars(loss=loss, rms_gradients=rms_grads, 
+                                 avg_cosine_sim=avg_cosine_sim)
             self.step += 1
              
     def evaluate(self):
