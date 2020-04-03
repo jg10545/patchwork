@@ -6,6 +6,7 @@
 """
 import numpy as np
 import tensorflow as tf
+import tensorflow.keras.backend as K
 
 
 
@@ -67,7 +68,7 @@ def _sobelize(x, prob=0.1, **kwargs):
         # rescale for contrast
         maxval = tf.reduce_max(x)
         minval = tf.reduce_min(x)
-        x = (x - minval)/(maxval-minval)
+        x = (x - minval)/(maxval-minval + K.epsilon())
         # stack back to original number of channels
         x = tf.stack(num_channels*[x], -1)
     return x

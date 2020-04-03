@@ -112,11 +112,9 @@ def _build_simclr_training_step(embed_model, optimizer, temperature=0.1):
         gradients = tape.gradient(loss, embed_model.trainable_variables)
         optimizer.apply_gradients(zip(gradients,
                                       embed_model.trainable_variables))
-        rms_grads = 0
-        for g in gradients:
-            rms_grads += tf.math.sqrt(tf.reduce_mean(g**2))
+
         avg_cosine_sim = tf.reduce_mean(sim)
-        return loss, rms_grads, avg_cosine_sim
+        return loss, avg_cosine_sim
     return training_step
 
 
@@ -253,9 +251,9 @@ class SimCLRTrainer(GenericExtractor):
         
         """
         for x, y in self._ds:
-            loss, rms_grads, avg_cosine_sim = self._training_step(x,y)
+            loss, avg_cosine_sim = self._training_step(x,y)
             
-            self._record_scalars(loss=loss, rms_gradients=rms_grads, 
+            self._record_scalars(loss=loss,
                                  avg_cosine_sim=avg_cosine_sim)
             self.step += 1
              

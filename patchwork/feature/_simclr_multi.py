@@ -46,24 +46,18 @@ def _build_distributed_training_step(strategy, embed_model, optimizer,
                 optimizer.apply_gradients(zip(gradients,
                                       embed_model.trainable_variables))
                 
-                rms_grads = 0
-                for g in gradients:
-                    rms_grads += tf.math.sqrt(tf.reduce_mean(g**2))
                 avg_cosine_sim = tf.reduce_mean(sim)
                 return crossent, rms_grads, avg_cosine_sim
         
-        per_example_losses, rms_grads, avg_cos = strategy.experimental_run_v2(
+        per_example_losses, avg_cos = strategy.experimental_run_v2(
                                         step_fn, args=(x,y))
         total_loss = strategy.reduce(
                         tf.distribute.ReduceOp.SUM, 
                         per_example_losses, axis=0)
-        rms_grads = strategy.reduce(
-                        tf.distribute.ReduceOp.MEAN, 
-                        rms_grads, axis=None)
         avg_cos = strategy.reduce(
                         tf.distribute.ReduceOp.MEAN, 
                         avg_cos, axis=None)
-        return total_loss, rms_grads, avg_cos
+        return total_loss,  avg_cos
     return train_step
 
 
@@ -142,7 +136,6 @@ class DistributedSimCLRTrainer(SimCLRTrainer):
                         "full":embed_model}
         
         # build training dataset
-        global_batch_size = batch_size*strategy.num_replicas_in_sync
         self._ds = strategy.experimental_distribute_dataset(
                 _build_simclr_dataset(trainingdata, 
                                       imshape=imshape, batch_size=batch_size,
@@ -177,8 +170,7 @@ class DistributedSimCLRTrainer(SimCLRTrainer):
                                         num_parallel_calls=num_parallel_calls, 
                                         norm=norm, num_channels=num_channels, 
                                         augment=augment,
-                                        single_channel=single_channel,
-                                        global_batch_size=global_batch_size)
+                                        single_channel=single_channel)
             
             @tf.function
             def test_loss(x,y):
