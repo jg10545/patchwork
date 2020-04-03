@@ -10,7 +10,12 @@ BIG_NUMBER = 1000.
 def _build_distributed_training_step(strategy, embed_model, optimizer, 
                                      global_batch_size, temperature=0.1):
     """
+    Returns a distributed version of the SimCLR training step as a tf.function.
     
+    The training step returns:
+    :loss: value of the loss function for training
+    :rms_grads: total root mean square value of gradients through trainable variables
+    :avg_cosine_sim: average value of the batch's matrix of dot products
     """
     #replicas = strategy.num_replicas_in_sync
     @tf.function
@@ -40,14 +45,19 @@ def _build_distributed_training_step(strategy, embed_model, optimizer,
                 gradients = tape.gradient(loss, embed_model.trainable_variables)
                 optimizer.apply_gradients(zip(gradients,
                                       embed_model.trainable_variables))
-                return crossent
+                
+                avg_cosine_sim = tf.reduce_mean(sim)
+                return crossent, rms_grads, avg_cosine_sim
         
-        per_example_losses = strategy.experimental_run_v2(
+        per_example_losses, avg_cos = strategy.experimental_run_v2(
                                         step_fn, args=(x,y))
         total_loss = strategy.reduce(
                         tf.distribute.ReduceOp.SUM, 
                         per_example_losses, axis=0)
-        return total_loss/global_batch_size
+        avg_cos = strategy.reduce(
+                        tf.distribute.ReduceOp.MEAN, 
+                        avg_cos, axis=None)
+        return total_loss,  avg_cos
     return train_step
 
 
@@ -64,6 +74,8 @@ class DistributedSimCLRTrainer(SimCLRTrainer):
     
     Based on "A Simple Framework for Contrastive Learning of Visual
     Representations" by Chen et al.
+    
+    The batch size you pass is the GLOBAL batch size.
     """
 
     def __init__(self, strategy, logdir, trainingdata, testdata=None, fcn=None, 
@@ -73,7 +85,7 @@ class DistributedSimCLRTrainer(SimCLRTrainer):
                  imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, num_parallel_calls=None,
                  single_channel=False, notes="",
-                 downstream_labels=None):
+                 downstream_labels=None, stratify=None):
         """
         :strategy: a tf.distribute Strategy object.
         :logdir: (string) path to log directory
@@ -97,6 +109,8 @@ class DistributedSimCLRTrainer(SimCLRTrainer):
         :notes: (string) any notes on the experiment that you want saved in the
                 config.yml file
         :downstream_labels: dictionary mapping image file paths to labels
+        :stratify: pass a list of image labels here to stratify by batch
+            during training
         """
         assert augment is not False, "this method needs an augmentation scheme"
         self._strategy = strategy
@@ -128,7 +142,8 @@ class DistributedSimCLRTrainer(SimCLRTrainer):
                                       num_parallel_calls=num_parallel_calls,
                                       norm=norm, num_channels=num_channels,
                                       augment=augment,
-                                      single_channel=single_channel))
+                                      single_channel=single_channel,
+                                      stratify=stratify))
         
         # create optimizer
         if lr_decay > 0:
@@ -187,29 +202,3 @@ class DistributedSimCLRTrainer(SimCLRTrainer):
                             norm=norm, batch_size=batch_size,
                             num_parallel_calls=num_parallel_calls, 
                             single_channel=single_channel, notes=notes)
-
-"""
-    def _run_training_epoch(self, **kwargs):
-
-        for x, y in self._ds:
-            loss = self._training_step(x,y)
-            
-            self._record_scalars(loss=loss)
-            self.step += 1
-            
- 
-    def evaluate(self):
-        if self._downstream_labels is not None:
-            # choose the hyperparameters to record
-            if not hasattr(self, "_hparams_config"):
-                from tensorboard.plugins.hparams import api as hp
-                hparams = {
-                    hp.HParam("temperature", hp.RealInterval(0., 10000.)):self.config["temperature"],
-                    hp.HParam("num_hidden", hp.IntInterval(1, 1000000)):self.config["num_hidden"],
-                    hp.HParam("output_dim", hp.IntInterval(1, 1000000)):self.config["output_dim"]
-                    }
-            else:
-                hparams=None
-            self._linear_classification_test(hparams)
-        
-"""

@@ -8,14 +8,34 @@ from patchwork.loaders import _image_file_dataset
 
 BIG_NUMBER = 1000.
 
+
+
 def _build_simclr_dataset(imfiles, imshape=(256,256), batch_size=256, 
                       num_parallel_calls=None, norm=255,
                       num_channels=3, augment=True,
-                      single_channel=False):
+                      single_channel=False, stratify=None):
+    """
+    :stratify: if not None, a list of categories for each element in
+        imfile.
     """
     
-    """
-    assert augment, "don't you need to augment your data?"
+    if stratify is not None:
+        categories = list(set(stratify))
+        file_lists = [[imfiles[i] for i in range(len(imfiles)) 
+                        if stratify[i] == c]
+                for c in categories
+        ]
+        datasets = [_build_simclr_dataset(f, imshape=imshape, 
+                                          batch_size=batch_size, 
+                                          num_parallel_calls=num_parallel_calls, 
+                                          norm=norm, num_channels=num_channels, 
+                                          augment=augment, 
+                                          single_channel=single_channel,
+                                          stratify=None)
+                    for f in file_lists]
+        return tf.data.experimental.sample_from_datasets(datasets)
+    
+    assert augment != False, "don't you need to augment your data?"
     _aug = augment_function(imshape, augment)
     
     ds = _image_file_dataset(imfiles, imshape=imshape, 
@@ -52,7 +72,7 @@ def _build_embedding_model(fcn, imshape, num_channels, num_hidden, output_dim):
 
 
 
-def _build_simclr_training_step(embed_model, optimizer, temperature=0.1, replicas=1):
+def _build_simclr_training_step(embed_model, optimizer, temperature=0.1):
     """
     Generate a tensorflow function to run the training step for SimCLR.
     
@@ -60,7 +80,11 @@ def _build_simclr_training_step(embed_model, optimizer, temperature=0.1, replica
         projection head
     :optimizer: Keras optimizer
     :temperature: hyperparameter for scaling cosine similarities
-    :replicas:
+    
+    The training function returns:
+    :loss: value of the loss function for training
+    :rms_grads: total root mean square value of gradients through trainable variables
+    :avg_cosine_sim: average value of the batch's matrix of dot products
     """
     @tf.function
     def training_step(x,y):
@@ -83,12 +107,14 @@ def _build_simclr_training_step(embed_model, optimizer, temperature=0.1, replica
             logits = (sim - BIG_NUMBER*eye)/temperature
             
             loss = tf.reduce_mean(
-                    tf.nn.sparse_softmax_cross_entropy_with_logits(labels, logits))/replicas
+                    tf.nn.sparse_softmax_cross_entropy_with_logits(labels, logits))
 
         gradients = tape.gradient(loss, embed_model.trainable_variables)
         optimizer.apply_gradients(zip(gradients,
                                       embed_model.trainable_variables))
-        return loss
+
+        avg_cosine_sim = tf.reduce_mean(sim)
+        return loss, avg_cosine_sim
     return training_step
 
 
@@ -111,7 +137,7 @@ class SimCLRTrainer(GenericExtractor):
                  imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, num_parallel_calls=None,
                  single_channel=False, notes="",
-                 downstream_labels=None):
+                 downstream_labels=None, stratify=None):
         """
         :logdir: (string) path to log directory
         :trainingdata: (list) list of paths to training images
@@ -134,6 +160,8 @@ class SimCLRTrainer(GenericExtractor):
         :notes: (string) any notes on the experiment that you want saved in the
                 config.yml file
         :downstream_labels: dictionary mapping image file paths to labels
+        :stratify: pass a list of image labels here to stratify by batch
+            during training
         """
         assert augment is not False, "this method needs an augmentation scheme"
         self.logdir = logdir
@@ -161,7 +189,8 @@ class SimCLRTrainer(GenericExtractor):
                                         num_parallel_calls=num_parallel_calls, 
                                         norm=norm, num_channels=num_channels, 
                                         augment=augment,
-                                        single_channel=single_channel)
+                                        single_channel=single_channel,
+                                        stratify=stratify)
         
         # create optimizer
         if lr_decay > 0:
@@ -222,9 +251,10 @@ class SimCLRTrainer(GenericExtractor):
         
         """
         for x, y in self._ds:
-            loss = self._training_step(x,y)
+            loss, avg_cosine_sim = self._training_step(x,y)
             
-            self._record_scalars(loss=loss)
+            self._record_scalars(loss=loss,
+                                 avg_cosine_sim=avg_cosine_sim)
             self.step += 1
              
     def evaluate(self):

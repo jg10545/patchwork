@@ -31,6 +31,29 @@ def test_simclr_dataset(test_png_path):
     assert x.shape[0] == 2*batch_size
     assert (y.numpy() == np.array([1,-1,1,-1,1,-1,1,-1,1,-1])).all()
     
+def test_stratified_simclr_dataset(test_png_path, test_jpg_path):
+    filepaths = 10*[test_png_path, test_jpg_path]
+    labels = 10*["png", "jpg"]
+    
+    batch_size = 5
+    ds = _build_simclr_dataset(filepaths, imshape=(32,32),
+                              num_channels=3, norm=255,
+                              augment={}, single_channel=False,
+                              batch_size=batch_size, stratify=labels)
+    
+    assert isinstance(ds, tf.data.Dataset)
+    for x,y in ds:
+        x = x.numpy()
+        break
+    # since SimCLR makes augmented pairs, the batch size
+    # is doubled
+    assert x.shape[0] == 2*batch_size
+    # since we're using a stratified dataset- each element of a particular
+    # batch should be from one stratification category (which in this
+    # case is an identical image)
+    assert (x[0] == x[2]).all()
+    
+    
     
 def test_build_embedding_model():
     model = _build_embedding_model(fcn, (32,32), 3, 17, 11)
@@ -46,7 +69,7 @@ def test_build_simclr_training_step():
     
     x = tf.zeros((4,32,32,3), dtype=tf.float32)
     y = np.array([1,-1,1,-1]).astype(np.int32)
-    loss = step(x,y)
+    loss, avg_cosine_sim = step(x,y)
     
     assert isinstance(loss.numpy(), np.float32)
     
