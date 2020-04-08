@@ -114,35 +114,31 @@ class ModelPicker(object):
     def _build_callback(self, *events):
         """
         When you hit the build button:
-            -build the fine-tuning model
-            -build the output model and loss function
-            -update the "current model" display
-            -create a new training function
-            -pass everything back to the patchwork object
+            1) build the fine-tuning model
+            2) build the output model and loss function
+            3) generate the full end-to-end model for inference
+            4) if doing mean-teacher semi-supervision, set up teacher model
+            5) reset the lists for recording training loss in the GUI object
         """
+        # 1) BUILD THE FINE-TUNING MODEL
         fine_tuning_model = self._fine_tuning_chooser.value.build(self._inpt_channels)
         tuning_output_channels = fine_tuning_model.output_shape[-1]
+        # 2) BUILD THE OUTPUT MODEL AND LOSS FUNCTION
         output_model, loss = self._output_chooser.value.build(self._num_classes, 
                                                                       tuning_output_channels)
-        #self._pw.fine_tuning_model = self._model_chooser.value._build(self._num_classes, 
-        #                                                              self._inpt_channels)
+        self._pw.loss_fn = loss
+
         curr_finetune = "**Current fine-tuning model:** %s (%s parameters)"%(self._fine_tuning_chooser.value.name,
                                                                             fine_tuning_model.count_params())
         curr_output = "**Current output model:** %s (%s parameters)"%(self._output_chooser.value.name,
                                                                             output_model.count_params())
         self._current_model.object = curr_finetune + "\n\n" + curr_output
-        #self._pw.trainmanager.loss = []
-        
-        #training_function = build_training_function(loss, fine_tuning_model, output_model,
-        #                                            feature_extractor=self._feature_extractor,
-        #                                            entropy_reg_weight=self._entropy_reg.value)
-        #self._pw._training_function = training_function
+        # update GUI object's model dictionary
         self._pw.models["fine_tuning"] = fine_tuning_model
         self._pw.models["output"] = output_model
-        self._pw.training_loss = []
-        self._pw.semisup_loss = []
         
-        # generate full model (for inference)
+
+        # 3) GENERATE FULL MODEL (for inference)
         if self._feature_extractor is not None:
             inpt = tf.keras.layers.Input(self._feature_extractor.input_shape[1:])
             net = self._feature_extractor(inpt)
@@ -153,7 +149,7 @@ class ModelPicker(object):
         net = output_model(net)
         self._pw.models["full"] = tf.keras.Model(inpt, net)
         
-        # if using mean-teacher- build teacher models
+        # 4) IF USING: SET UP MEAN TEACHER MODELS
         if self._mean_teacher_alpha.value > 0:
             from patchwork.feature._moco import copy_model
             self._pw.models["teacher_fine_tuning"] = copy_model(self._pw.models["fine_tuning"])
@@ -161,17 +157,13 @@ class ModelPicker(object):
         else:
             self._pw.models["teacher_fine_tuning"] = None
             self._pw.models["teacher_output"] = None
-            
-        training_function = build_training_function(loss, fine_tuning_model,
-                                    output_model,
-                                    feature_extractor=self._feature_extractor,
-                                    entropy_reg_weight=self._entropy_reg.value)
-        self._pw._training_function = training_function
-        
+
         self._pw._semi_supervised = (self._entropy_reg.value > 0)|(self._mean_teacher_alpha.value > 0)
-        #self._pw._opt = tf.keras.optimizers.Adam(1e-3)
-        
-        
+
+        # 5) RESET LOSS RECORDERS
+        self._pw.training_loss = []
+        self._pw.semisup_loss = []
+                
         
         
         
