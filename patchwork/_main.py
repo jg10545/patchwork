@@ -8,6 +8,7 @@ from patchwork._labeler import Labeler
 from patchwork._modelpicker import ModelPicker
 from patchwork._trainmanager import TrainManager
 from patchwork._sample import stratified_sample, find_unlabeled, _build_in_memory_dataset
+from patchwork._training_functions import build_training_function
 from patchwork.loaders import dataset
 from patchwork._losses import entropy_loss, masked_binary_crossentropy
 from patchwork._util import _load_img
@@ -41,7 +42,7 @@ class GUI(object):
         self.fine_tuning_model = None
         # by default, pandas maps empty values to np.nan. in case the user
         # is passing saved labels in, replace those with None
-        self.df = df.replace({pd.np.nan: None})
+        self.df = df.replace({np.nan: None})
         self.feature_vecs = feature_vecs
         self.feature_extractor = feature_extractor
         self._aug = aug
@@ -53,7 +54,10 @@ class GUI(object):
         self._num_parallel_calls = num_parallel_calls
         self._semi_supervised = False
         self._logdir = logdir
-        self.models = {"feature_extractor":feature_extractor}
+        self.models = {"feature_extractor":feature_extractor, 
+                       "teacher_fine_tuning":None,
+                       "teacher_output":None}
+        self.params = {"entropy_reg_weight":0, "mean_teacher_alpha":0}
         
         
         if "exclude" not in df.columns:
@@ -172,7 +176,19 @@ class GUI(object):
         else:
             return tf.data.Dataset.from_tensor_slices(self.feature_vecs
                                                       ).batch(batch_size), num_steps
-    
+    def build_training_step(self, lr=1e-3):
+        """
+        
+        """
+        opt = tf.keras.optimizers.Adam(lr)
+        self._training_function = build_training_function(self.loss_fn, opt,
+                                        self.models["fine_tuning"],
+                                        self.models["output"],
+                                        feature_extractor=self.feature_extractor,
+                                        entropy_reg_weight=self.params["entropy_reg_weight"],
+                                        mean_teacher_alpha=self.params["mean_teacher_alpha"],
+                                        teacher_finetune=self.models["teacher_fine_tuning"],
+                                        teacher_output=self.models["teacher_output"])
     
     def build_model(self, entropy_reg=0):
         """
@@ -181,6 +197,7 @@ class GUI(object):
         NOTE the semisup case will have different predict outputs. maybe
         separate self.model from a self.training_model?
         """
+        assert False, "LOOK HOW DEPRECATED I AM"
         opt = tf.keras.optimizers.RMSprop(1e-3)
 
         # JUST A FINE-TUNING NETWORK

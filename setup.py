@@ -18,7 +18,10 @@ requirements = [
         "panel",
         "param",
         "pillow",
-        "gdal"
+        "gdal",
+        "matplotlib",
+        "tqdm",
+        "sklearn"
         ]
 
 setup_requirements = [ ]

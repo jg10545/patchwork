@@ -21,7 +21,8 @@ class SigmoidCrossEntropy(param.Parameterized):
     
     def build(self, num_classes, inpt_channels):
         # return output model as well as loss function
-        inpt = tf.keras.layers.Input((None, inpt_channels))
+        #inpt = tf.keras.layers.Input((None, inpt_channels))
+        inpt = tf.keras.layers.Input((inpt_channels))
         dense = tf.keras.layers.Dense(num_classes, activation="sigmoid")(inpt)
         def loss(y_true, y_pred):
             return masked_binary_crossentropy(y_true, y_pred, label_smoothing=self.label_smoothing)

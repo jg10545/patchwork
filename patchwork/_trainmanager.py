@@ -150,8 +150,9 @@ class TrainManager():
     
     
     def _train_callback(self, *event):
+        # update the training function
+        self.pw.build_training_step(self._learn_rate.value)
         # for each epoch
-        self.pw._opt = tf.keras.optimizers.Adam(self._learn_rate.value)
         epochs = self._epochs.value
         for e in range(epochs):
             self._footer.object = "### TRAININ (%s / %s)"%(e+1, epochs)

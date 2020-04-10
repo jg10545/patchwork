@@ -2,14 +2,16 @@
 import tensorflow as tf
 
 from patchwork._losses import entropy_loss
+from patchwork.feature._moco import exponential_model_update
 
-def build_training_function(loss_fn, fine_tuning, output, feature_extractor=None,
+def build_training_function(loss_fn, opt, fine_tuning, output, feature_extractor=None,
                             entropy_reg_weight=0, mean_teacher_alpha=0,
                             teacher_finetune=None, teacher_output=None):
     """
     Generate a tensorflow function for training the model.
     
     :loss_fn: training loss function
+    :opt: Keras optimizer
     :fine_tuning: Keras model that maps pre-extracted features to semantic vectors
     :output: Keras model that maps semantic vectors to class predictions
     :feature_extractor: Keras model; fully-convolutional network for mapping raw
@@ -19,7 +21,7 @@ def build_training_function(loss_fn, fine_tuning, output, feature_extractor=None
     # are the features precomputed or generated on the fly?
     
     @tf.function
-    def training_step(x, y, opt, x_unlab=None):
+    def training_step(x, y, x_unlab=None):
         # for dynamically-computed features, run images through the
         # feature extractor
         if feature_extractor is not None:
@@ -62,7 +64,6 @@ def build_training_function(loss_fn, fine_tuning, output, feature_extractor=None
         opt.apply_gradients(zip(gradients, trainvars))
         
         if mean_teacher_alpha > 0:
-            from patchwork.feature._moco import exponential_model_update
             _ = exponential_model_update(teacher_finetune, fine_tuning,
                                          mean_teacher_alpha)
             _ = exponential_model_update(teacher_output, output,
