@@ -10,7 +10,7 @@ import tensorflow.keras.backend as K
 import warnings
 
 from patchwork._augment import augment_function
-from patchwork.loaders import _image_file_dataset, _sobelize
+from patchwork.loaders import _image_file_dataset
 from patchwork._util import _load_img
 from patchwork._layers import ChannelWiseDense
 from patchwork.feature._models import build_encoder, build_decoder, build_discriminator
@@ -59,7 +59,7 @@ def maskinator(img, mask):
 def _build_context_encoder_dataset(filepaths, input_shape=(256,256,3), norm=255,
                                    shuffle=True, num_parallel_calls=4,
                                    batch_size=32, prefetch=True, augment=False,
-                                   sobel=False, single_channel=False):
+                                   single_channel=False):
     """
     Build a tf.data.Dataset object to use for training.
     """
@@ -79,8 +79,6 @@ def _build_context_encoder_dataset(filepaths, input_shape=(256,256,3), norm=255,
         _aug = augment_function(input_shape[:2], augment)
         #_aug = augment_function(augment)
         img_ds = img_ds.map(_aug, num_parallel_calls=num_parallel_calls)
-    if sobel:
-        img_ds = img_ds.map(_sobelize, num_parallel_calls=num_parallel_calls)
     # combine the image and mask datasets
     zipped_ds = tf.data.Dataset.zip((img_ds, mask_ds))
     # precompute masked images for context encoder input
@@ -92,7 +90,7 @@ def _build_context_encoder_dataset(filepaths, input_shape=(256,256,3), norm=255,
     
     
 def _build_test_dataset(filepaths, input_shape=(256,256,3), norm=255,
-                        sobel=False, single_channel=False):
+                        single_channel=False):
     """
     Load a set of images into memory from file and mask the centers to
     use as a test set.
@@ -104,13 +102,7 @@ def _build_test_dataset(filepaths, input_shape=(256,256,3), norm=255,
     Returns
     img_arr, mask
     """
-    if sobel:
-        img_arr = np.stack([_sobelize(_load_img(f, norm=norm, num_channels=input_shape[2],
-                                  resize=input_shape[:2])) 
-                                    for f in filepaths])
-        input_shape = (input_shape[0], input_shape[1], 3)
-    else:
-        img_arr = np.stack([_load_img(f, norm=norm, num_channels=input_shape[2],
+    img_arr = np.stack([_load_img(f, norm=norm, num_channels=input_shape[2],
                                   resize=input_shape[:2]) 
                         for f in filepaths])
 
@@ -263,7 +255,7 @@ class ContextEncoderTrainer(GenericExtractor):
                  recon_weight=1, adv_weight=1e-3, lr=1e-4,
                   imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, shuffle=True, num_parallel_calls=None,
-                 sobel=False, single_channel=False, notes="",
+                 single_channel=False, notes="",
                  downstream_labels=None):
         """
         :logdir: (string) path to log directory
@@ -284,7 +276,6 @@ class ContextEncoderTrainer(GenericExtractor):
                unit interval)
         :batch_size: (int) batch size for training
         :num_parallel_calls: (int) number of threads for loader mapping
-        :sobel: whether to replace the input image with its sobel edges
         :single_channel: if True, expect a single-channel input image and 
             stack it num_channels times.
         :notes: (string) any notes on the experiment that you want saved in the
@@ -293,10 +284,7 @@ class ContextEncoderTrainer(GenericExtractor):
         """
         self.logdir = logdir
         self._downstream_labels = downstream_labels
-        if sobel:
-            input_shape = (imshape[0], imshape[1], 3)
-        else:
-            input_shape = (imshape[0], imshape[1], num_channels)
+        input_shape = (imshape[0], imshape[1], num_channels)
         
         self._file_writer = tf.summary.create_file_writer(logdir, flush_millis=10000)
         self._file_writer.set_as_default()
@@ -325,7 +313,7 @@ class ContextEncoderTrainer(GenericExtractor):
                                 norm=norm, shuffle=True, 
                                 num_parallel_calls=num_parallel_calls,
                                 batch_size=batch_size, prefetch=True,
-                                augment=augment, sobel=sobel,
+                                augment=augment, 
                                 single_channel=single_channel)
         else:
             assert isinstance(trainingdata, tf.data.Dataset), "i don't know what to do with this"
@@ -335,7 +323,7 @@ class ContextEncoderTrainer(GenericExtractor):
         if testdata is not None:
             self._test_ims, self._test_mask = _build_test_dataset(testdata,
                                             input_shape=input_shape,
-                                            norm=norm, sobel=sobel,
+                                            norm=norm, 
                                             single_channel=single_channel)
             self._test_masked_ims = (1-self._test_mask)*self._test_ims
             self._test = True
@@ -356,7 +344,7 @@ class ContextEncoderTrainer(GenericExtractor):
                             adv_weight=adv_weight, lr=lr,
                             imshape=imshape, num_channels=num_channels,
                             norm=norm, batch_size=batch_size, 
-                            num_parallel_calls=num_parallel_calls, sobel=sobel,
+                            num_parallel_calls=num_parallel_calls, 
                             single_channel=single_channel, notes=notes)
         
         

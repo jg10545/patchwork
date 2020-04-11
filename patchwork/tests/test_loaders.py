@@ -2,7 +2,6 @@
 import numpy as np
 import tensorflow as tf
 from patchwork.loaders import _image_file_dataset, dataset, stratified_training_dataset
-from patchwork.loaders import _sobelize
 
 
 
@@ -20,6 +19,25 @@ def test_image_file_dataset(test_png_path):
     assert x.min() >= 0
     assert x.shape == (33, 21, 3)
 
+
+def test_image_file_dataset_multi_input(test_png_path):
+    imfiles = [[test_png_path], [test_png_path]]
+    ds = _image_file_dataset(imfiles, 
+                             imshape=[(33,21), (17,23)],
+                             norm=[255,255], 
+                             num_channels=[3,3],
+                             single_channel=[False,False],
+                             shuffle=False)
+    for x,y in ds:
+        x = x.numpy()
+        y = y.numpy()
+    
+    assert isinstance(ds, tf.data.Dataset)
+    assert isinstance(x, np.ndarray)
+    assert x.max() <= 1
+    assert x.min() >= 0
+    assert x.shape == (33, 21, 3)
+    assert y.shape == (17, 23, 3)
 
 
 def test_dataset_without_augmentation(test_png_path):
@@ -89,13 +107,14 @@ def test_stratified_training_dataset(test_png_path):
     # check to make sure it stratified correctly
     assert y.mean() == 0.5
     
-    
+"""    
 def test_sobelize():
     inpt = tf.zeros((7,11,4), dtype=tf.float32)
     outpt = _sobelize(inpt)
     
     assert outpt.shape == (7,11,3)
     assert outpt.numpy()[:,:,2].max() == 0
+"""
     
 
 def test_image_file_dataset_stripping_alpha_channel(test_rgba_png_path, test_png_path):
