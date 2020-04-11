@@ -37,3 +37,4 @@ def test_geotif_path():
 def test_rgba_png_path():
     this_dir = os.path.dirname(os.path.abspath(__file__))
     return os.path.join(this_dir, "fixtures", "rgba_img.png")
+

@@ -2,8 +2,37 @@
 import numpy as np
 import tensorflow as tf
 from patchwork.loaders import _image_file_dataset, dataset, stratified_training_dataset
+from patchwork.loaders import _build_load_function
 
 
+
+def test_build_load_function_png(test_png_path):
+    load_fn = _build_load_function((64,64), 255, 3, False)
+    loaded = load_fn(test_png_path,0)
+    
+    assert isinstance(loaded, tf.Tensor)
+    assert loaded.numpy().shape == (64,64,3)
+    assert loaded.numpy().max() <= 1
+
+
+
+def test_build_load_function_jpg(test_jpg_path):
+    load_fn = _build_load_function((17,23), 255, 3, False)
+    loaded = load_fn(test_jpg_path,1)
+    
+    assert isinstance(loaded, tf.Tensor)
+    assert loaded.numpy().shape == (17,23,3)
+    assert loaded.numpy().max() <= 1
+
+
+
+def test_build_load_function_single_channel_png(test_single_channel_png_path):
+    load_fn = _build_load_function((13,17), 255, 3, True)
+    loaded = load_fn(test_single_channel_png_path,0)
+    
+    assert isinstance(loaded, tf.Tensor)
+    assert loaded.numpy().shape == (13,17,3)
+    assert loaded.numpy().max() <= 1
 
 def test_image_file_dataset(test_png_path):
     imfiles = [test_png_path]
