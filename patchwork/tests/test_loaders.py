@@ -69,6 +69,30 @@ def test_image_file_dataset_multi_input(test_png_path):
     assert y.shape == (17, 23, 3)
 
 
+def test_image_file_dataset_multi_input_and_labels(test_png_path):
+    imfiles = [2*[test_png_path], 2*[test_png_path]]
+    ys = np.zeros(2, dtype=np.int64)
+    ds = _image_file_dataset(imfiles, ys=ys,
+                             imshape=[(33,21), (17,23)],
+                             norm=[255,255], 
+                             num_channels=[3,3],
+                             single_channel=[False,False],
+                             shuffle=False)
+    for x0, x1, y in ds:
+        x0 = x0.numpy()
+        x1 = x1.numpy()
+        y = y.numpy()
+        break
+    
+    assert isinstance(ds, tf.data.Dataset)
+    assert isinstance(x0, np.ndarray)
+    assert x0.max() <= 1
+    assert x0.min() >= 0
+    assert x0.shape == (33, 21, 3)
+    assert x1.shape == (17, 23, 3)
+    assert y.size == 1
+
+
 def test_dataset_without_augmentation(test_png_path):
     imfiles = [test_png_path]*10
     
@@ -90,7 +114,7 @@ def test_dataset_with_augmentation(test_png_path):
     
     ds, ns = dataset(imfiles, ys=None, imshape=(11,17),
                      num_channels=3, norm=255,
-                     batch_size=5, augment={})
+                     batch_size=5, augment={"flip_left_right":True})
     
     for x in ds:
         x = x.numpy()
@@ -117,33 +141,91 @@ def test_dataset_with_labels(test_png_path):
     assert (y == np.arange(5)).all()
     
     
+def test_dual_input_dataset_without_augmentation(test_png_path,
+                                                 test_single_channel_png_path):
+    imfiles = [[test_png_path]*10, [test_single_channel_png_path]*10]
+    
+    ds, ns = dataset(imfiles, ys=None, 
+                     imshape=[(11,17), (19,23)],
+                     num_channels=[3,1], norm=[255,255],
+                     single_channel=[False, False],
+                     batch_size=5, augment=False)
+    
+    for x,y in ds:
+        x = x.numpy()
+        y = y.numpy()
+        break
+    
+    assert isinstance(ds, tf.data.Dataset)
+    assert ns == 2
+    assert x.shape == (5, 11, 17, 3)
+    assert y.shape == (5, 19, 23, 1)
+    
+def test_dual_input_dataset_with_labels(test_png_path,
+                                                 test_single_channel_png_path):
+    imfiles = [[test_png_path]*10, [test_single_channel_png_path]*10]
+    ys = np.zeros(10, dtype=np.int64)
+    
+    ds, ns = dataset(imfiles, ys=ys, 
+                     imshape=[(11,17), (19,23)],
+                     num_channels=[3,1], norm=[255,255],
+                     single_channel=[False, False],
+                     batch_size=5, augment=False)
+    
+    for x0,x1,y in ds:
+        x0 = x0.numpy()
+        x1 = x1.numpy()
+        y = y.numpy()
+        break
+    
+    assert isinstance(ds, tf.data.Dataset)
+    assert ns == 2
+    assert x0.shape == (5, 11, 17, 3)
+    assert x1.shape == (5, 19, 23, 1)
+    assert y.shape == (5,)
+    assert y.dtype == np.int64
+    
+def test_dual_input_dataset_with_augmentation(test_png_path,
+                                                 test_single_channel_png_path):
+    imfiles = [[test_png_path]*10, [test_single_channel_png_path]*10]
+    aug = {"flip_left_right":True}
+    
+    ds, ns = dataset(imfiles, ys=None, 
+                     imshape=(11,17),
+                     num_channels=[3,1], norm=255,
+                     #single_channel=[False, False],
+                     single_channel=[False, True],
+                     batch_size=5, augment=aug)
+    
+    for x,y in ds:
+        x = x.numpy()
+        y = y.numpy()
+        break
+    
+    assert isinstance(ds, tf.data.Dataset)
+    assert ns == 2
+    assert x.shape == (5, 11, 17, 3)
+    assert y.shape == (5, 11, 17, 1)
+    
 def test_stratified_training_dataset(test_png_path):
     imfiles = [test_png_path]*10
     labels = np.array([1, 0, 0, 0, 0, 0, 0, 0, 0, 0])
     
-    ds, ns = stratified_training_dataset(imfiles,
+    ds = stratified_training_dataset(imfiles,
                                          labels, imshape=(13,11),
                                          num_channels=3,
                                          batch_size=10,
                                          mult=1,
-                                         augment={})
+                                         augment={"flip_up_down":True})
     
     for x,y in ds:
         x = x.numpy()
         y = y.numpy()
         
-    assert ns == 1
+    #assert ns == 1
     # check to make sure it stratified correctly
     assert y.mean() == 0.5
     
-"""    
-def test_sobelize():
-    inpt = tf.zeros((7,11,4), dtype=tf.float32)
-    outpt = _sobelize(inpt)
-    
-    assert outpt.shape == (7,11,3)
-    assert outpt.numpy()[:,:,2].max() == 0
-"""
     
 
 def test_image_file_dataset_stripping_alpha_channel(test_rgba_png_path, test_png_path):
