@@ -187,11 +187,9 @@ def _mtdataset(filepaths, labels, imshape, num_parallel_calls, norm,
                num_channels, single_channel, aug, batch_size):
     ds = _image_file_dataset(filepaths, imshape, num_parallel_calls,
                                  norm, num_channels,
-                                 single_channel=single_channel)
-    if aug:
-        _aug = augment_function(imshape, aug)
-        ds = ds.map(_aug)
-    
+                                 single_channel=single_channel,
+                                 augment=aug)
+
     if labels is not None:    
         label_ds = [tf.data.Dataset.from_tensor_slices(labels[:,i]) for i in 
                                                     range(labels.shape[1])]
