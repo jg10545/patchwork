@@ -36,19 +36,36 @@ def _build_simclr_dataset(imfiles, imshape=(256,256), batch_size=256,
         return tf.data.experimental.sample_from_datasets(datasets)
     
     assert augment != False, "don't you need to augment your data?"
-    _aug = augment_function(imshape, augment)
+    
     
     ds = _image_file_dataset(imfiles, imshape=imshape, 
                              num_parallel_calls=num_parallel_calls,
                              norm=norm, num_channels=num_channels,
-                             shuffle=True, single_channel=single_channel)  
-    @tf.function
-    def _augment_and_stack(x):
-        y = tf.constant(np.array([1,-1]).astype(np.int32))
-        return tf.stack([_aug(x),_aug(x)]), y
-
-    ds = ds.map(_augment_and_stack, num_parallel_calls=num_parallel_calls)
+                             shuffle=True, single_channel=single_channel,
+                             augment=False)  
     
+    # SINGLE-INPUT CASE (DEFAULT)
+    if isinstance(imfiles[0], str):
+        _aug = augment_function(imshape, augment)
+        @tf.function
+        def _augment_and_stack(x):
+            y = tf.constant(np.array([1,-1]).astype(np.int32))
+            return tf.stack([_aug(x),_aug(x)]), y
+
+        ds = ds.map(_augment_and_stack, num_parallel_calls=num_parallel_calls)
+    # DUAL-INPUT CASE
+    else:
+        if isinstance(imshape[0], int): imshape = (imshape, imshape)
+        print(imshape[0])
+        print(imshape[1])
+        _aug0 = augment_function(imshape[0], augment)
+        _aug1 = augment_function(imshape[1], augment)
+        @tf.function
+        def _augment_and_stack(x0,x1):
+            y = tf.constant(np.array([1,-1]).astype(np.int32))
+            return tf.stack([_aug0(x0),_aug0(x0)]), tf.stack([_aug1(x1),_aug1(x1)]), y
+        ds = ds.map(_augment_and_stack, num_parallel_calls=num_parallel_calls)
+        
     ds = ds.unbatch()
     ds = ds.batch(2*batch_size, drop_remainder=True)
     ds = ds.prefetch(1)
