@@ -12,24 +12,6 @@ from patchwork._util import tiff_to_array
 from patchwork._augment import augment_function
 
 
-@tf.function
-def _sobelize(x):
-    """
-    Input an image [H, W, C] and return
-    a sobel-filtered images [H, W, 3].
-    
-    The first two channels are the sobel filter and
-    the third will be zeros (so that it's compatible with
-    standard network structures)
-    """
-    expanded = tf.expand_dims(x, 0)
-    sobeled = tf.image.sobel_edges(expanded)
-    sobel_mean = 0.5*tf.reduce_mean(sobeled, -2) + 0.5
-    extra_channel = tf.zeros_like(sobel_mean)[:,:,:,:1]
-    return tf.squeeze(tf.concat([sobel_mean, extra_channel], -1), [0])
-
-
-
 def _generate_imtypes(fps):
     """
     Input a list of filepaths and return an array mapping
@@ -51,10 +33,73 @@ def _generate_imtypes(fps):
             imtypes[i] = 3
     return imtypes
 
+
+def _build_load_function(imshape, norm, num_channels, single_channel,
+                         augment=False):
+    """
+    macro to build a function that handles all the loading. the
+    load function takes in two inputs (file path and integer specifying file
+    type) and returns the loaded image
+    
+    Note- this used to return a tf.function, but when used within
+    a tensorflow Dataset I'd occasionally get "InvalidArgumentError: 
+        The graph couldn't be sorted in topological order. 
+        [Op:OptimizeDataset]" errors
+    """
+    # helper function for loading tiffs
+    def _load_tif(f):
+        return tf.image.resize(tiff_to_array(f.numpy().decode("utf-8") , swapaxes=True, 
+                                 norm=norm, num_channels=num_channels),
+                               imshape)
+    load_tif = lambda x: tf.py_function(_load_tif, [x], tf.float32)
+    
+    
+    # main loading map function
+    #@tf.function
+    def _load_img(x, t):
+        loaded = tf.io.read_file(x)
+        # jpg
+        if t == 1:
+            decoded = tf.io.decode_jpeg(loaded)
+            resized = tf.image.resize(decoded, imshape)
+        # gif
+        elif t == 2:
+            decoded = tf.io.decode_gif(loaded)
+            resized = tf.image.resize(decoded, imshape)
+        # tif
+        elif t == 3:
+            resized = load_tif(x)
+        # png
+        else:
+            decoded = tf.io.decode_png(loaded)
+            resized = tf.image.resize(decoded, imshape)
+            
+        if single_channel:
+            resized = tf.concat(num_channels*[resized], -1)
+        normed = tf.cast(resized[:,:,:num_channels], tf.float32)/norm
+        img = tf.reshape(normed, (imshape[0], imshape[1], num_channels))
+        if augment:
+            img = augment_function(imshape, augment)(img)
+        
+        return img
+    
+    return _load_img
+
+
+def _select(x,i):
+    # convenience function to simplify code in the dual-input case.
+    # if the config is a float or int, use it for both inputs
+    if isinstance(x,float)|isinstance(x,int):
+        return x
+    # if the config is a container- return the ith element
+    else:
+        return x[i]
+
+
 def _image_file_dataset(fps, ys=None, imshape=(256,256), 
                  num_parallel_calls=None, norm=255,
                  num_channels=3, shuffle=False,
-                 single_channel=False):
+                 single_channel=False, augment=False):
     """
     Basic tool to load images into a tf.data.Dataset using
     PIL.Image or gdal instead of the tensorflow decode functions
@@ -68,63 +113,67 @@ def _image_file_dataset(fps, ys=None, imshape=(256,256),
     :shuffle: whether to shuffle the dataset
     :single_channel: if True, expect a single-channel input image and 
         stack it num_channels times.
+    :augment: optional, dictionary of augmentation parameters
     
     Returns tf.data.Dataset object with structure (x,y) if labels were passed, 
         and (x) otherwise. images (x) are a 3D float32 tensor and labels
         should be a 0D int64 tensor
-    """
-    if ys is None:
-        no_labels = True
-        ys = np.zeros(len(fps), dtype=np.int64)
-    else:
-        no_labels = False
-    # get an integer index for each filepath
-    imtypes = _generate_imtypes(fps)
-    ds = tf.data.Dataset.from_tensor_slices((fps, imtypes, ys))
-    # do the shuffling before loading so we can have a big queue without
-    # taking up much memory
-    if shuffle:
-        ds = ds.shuffle(len(fps))
-    
-    # helper function for resizing images
-    def _resize(img):
-        return tf.image.resize(img, imshape)
-    # helper function for loading tiffs
-    def _load_tif(f):
-        return _resize(tiff_to_array(f.numpy().decode("utf-8") , swapaxes=True, 
-                                 norm=norm, num_channels=num_channels))
-    load_tif = lambda x: tf.py_function(_load_tif, [x], tf.float32)
-    
-    # main loading map function
-    @tf.function
-    def _load_img(x, t):
-        #print("tracing")
-        loaded = tf.io.read_file(x)
-        # jpg
-        if t == 1:
-            decoded = tf.io.decode_jpeg(loaded)
-            resized = _resize(decoded)
-        # gif
-        elif t == 2:
-            decoded = tf.io.decode_gif(loaded)
-            resized = _resize(decoded)
-        # tif
-        elif t == 3:
-            resized = load_tif(x)
-        # png
+    """    
+    # SINGLE-INPUT CASE (DEFAULT)
+    if isinstance(fps[0], str):
+        if ys is None:
+            no_labels = True
+            ys = np.zeros(len(fps), dtype=np.int64)
         else:
-            decoded = tf.io.decode_png(loaded)
-            resized = _resize(decoded)
-            
-        if single_channel:
-            resized = tf.concat(num_channels*[resized], -1)
-        normed = tf.cast(resized[:,:,:num_channels], tf.float32)/norm
-        return tf.reshape(normed, (imshape[0], imshape[1], num_channels))
-
-    ds = ds.map(lambda x,t,y: (_load_img(x,t),y), num_parallel_calls=num_parallel_calls)
-    # if no labels were passed, strip out the y.
-    if no_labels:
-        ds = ds.map(lambda x,y: x)
+            no_labels = False
+        # get an integer index for each filepath
+        imtypes = _generate_imtypes(fps)
+        ds = tf.data.Dataset.from_tensor_slices((fps, imtypes, ys))
+        # do the shuffling before loading so we can have a big queue without
+        # taking up much memory
+        if shuffle:
+            ds = ds.shuffle(len(fps))
+        _load_img = _build_load_function(imshape, norm, num_channels, 
+                                         single_channel, augment)
+        ds = ds.map(lambda x,t,y: (_load_img(x,t),y), 
+                    num_parallel_calls=num_parallel_calls)
+        # if no labels were passed, strip out the y.
+        if no_labels:
+            ds = ds.map(lambda x,y: x)
+    # DUAL-INPUT CASE
+    else:
+        # let's do some input checking here
+        assert len(fps) == 2, "only single or double input currently supported"
+        if isinstance(imshape[0], int): imshape = (imshape, imshape)
+        
+        if ys is None:
+            no_labels = True
+            ys = np.zeros(len(fps[0]), dtype=np.int64)
+        else:
+            no_labels = False
+        # parse out filetypes
+        imtypes0 = _generate_imtypes(fps[0])
+        imtypes1 = _generate_imtypes(fps[1])
+        ds = tf.data.Dataset.from_tensor_slices((fps[0], imtypes0, 
+                                                 fps[1], imtypes1,
+                                                 ys))
+        if shuffle:
+            ds = ds.shuffle(len(fps))
+        _load_img0 = _build_load_function(imshape[0], _select(norm,0), 
+                                          _select(num_channels,0), 
+                                          _select(single_channel,0),
+                                          augment)
+        _load_img1 = _build_load_function(imshape[1], _select(norm,1), 
+                                          _select(num_channels,1), 
+                                          _select(single_channel,1),
+                                          augment)
+                                          
+        ds = ds.map(lambda x0,t0,x1,t1,y: (
+                    (_load_img0(x0,t0), _load_img1(x1,t1)),y), 
+                    num_parallel_calls=num_parallel_calls)
+        if no_labels:
+            ds = ds.map(lambda x,y: x)
+    
     return ds
 
 
@@ -133,7 +182,7 @@ def _image_file_dataset(fps, ys=None, imshape=(256,256),
 def dataset(fps, ys = None, imshape=(256,256), num_channels=3, 
                  num_parallel_calls=None, norm=255, batch_size=256,
                  augment=False, shuffle=False,
-                 sobel=False, single_channel=False):
+                 single_channel=False):
     """
     return a tf dataset that iterates over a list of images once
     
@@ -144,7 +193,6 @@ def dataset(fps, ys = None, imshape=(256,256), num_channels=3,
     :batch_size: just what you think it is
     :augment: augmentation parameters (or True for defaults, or False to disable)
     :shuffle: whether to shuffle the dataset
-    :sobel: whether to replace the input image with its sobel edges
     :single_channel: if True, expect a single-channel input image and 
         stack it num_channels times.
     
@@ -154,22 +202,22 @@ def dataset(fps, ys = None, imshape=(256,256), num_channels=3,
         will be ((x, x_unlab), y)
     :num_steps: number of steps (for passing to tf.keras.Model.fit())
     """
-    if augment:
-        _aug = augment_function(imshape, augment)
     ds = _image_file_dataset(fps, ys=ys, imshape=imshape, num_channels=num_channels, 
                       num_parallel_calls=num_parallel_calls, norm=norm,
-                      shuffle=shuffle, single_channel=single_channel)
-    if ys is None:
-        if augment: ds = ds.map(_aug, num_parallel_calls=num_parallel_calls)
-        if sobel: ds = ds.map(_sobelize, num_parallel_calls=num_parallel_calls)
+                      shuffle=shuffle, single_channel=single_channel,
+                      augment=augment)
+    # SINGLE-INPUT CASE (DEFAULT)
+    if isinstance(fps[0], str):
+        num_steps = int(np.ceil(len(fps)/batch_size))
+
+    # DUAL-INPUT CASE
     else:
-        if augment: ds = ds.map(lambda x,y: (_aug(x),y), num_parallel_calls=num_parallel_calls)
-        if sobel: ds = ds.map(lambda x,y: (_sobelize(x),y), num_parallel_calls=num_parallel_calls)
+        num_steps = int(np.ceil(len(fps[0])/batch_size))
         
     ds = ds.batch(batch_size)
     ds = ds.prefetch(1)
     
-    num_steps = int(np.ceil(len(fps)/batch_size))
+    
     return ds, num_steps
 
 
@@ -179,7 +227,7 @@ def dataset(fps, ys = None, imshape=(256,256), num_channels=3,
 
 def stratified_training_dataset(fps, y, imshape=(256,256), num_channels=3, 
                  num_parallel_calls=None, batch_size=256, mult=10,
-                    augment=True, norm=255, sobel=False, single_channel=False):
+                    augment=True, norm=255, single_channel=False):
     """
     Training dataset for DeepCluster.
     Build a dataset that provides stratified samples over labels
@@ -192,7 +240,6 @@ def stratified_training_dataset(fps, y, imshape=(256,256), num_channels=3,
     :mult: not in paper; multiplication factor to increase
         number of steps/epoch. set to 1 to get paper algorithm
     :augment: augmentation parameters (or True for defaults, or False to disable)
-    :sobel: whether to replace the input image with its sobel edges
     :single_channel: if True, expect a single-channel input image and 
         stack it num_channels times.
         
@@ -226,24 +273,19 @@ def stratified_training_dataset(fps, y, imshape=(256,256), num_channels=3,
                           size=len(sampled_indices), replace=False)
     sampled_indices = sampled_indices[reorder]
     sampled_labels = sampled_labels[reorder]
-    fps = np.array(fps)[sampled_indices]
+    # SINGLE-INPUT CASE
+    if isinstance(fps[0], str):
+        fps = np.array(fps)[sampled_indices]
+    # DUAL-INPUT CASE
+    else:
+        fps = [np.array(fps[0])[sampled_indices],
+                np.array(fps[1])[sampled_indices]]
     
     # NOW CREATE THE DATASET
-    im_ds = _image_file_dataset(fps, imshape=imshape, num_channels=num_channels, 
+    ds, _ = dataset(fps, ys=sampled_labels,
+                      imshape=imshape, num_channels=num_channels, 
                       num_parallel_calls=num_parallel_calls, norm=norm, 
-                      shuffle=False, single_channel=single_channel)
+                      shuffle=False, single_channel=single_channel,
+                      augment=augment, batch_size=batch_size)
 
-    if augment:
-        #im_ds = im_ds.map(_augment, num_parallel_calls)
-        _aug = augment_function(imshape, augment)
-        im_ds = im_ds.map(_aug, num_parallel_calls=num_parallel_calls)
-    lab_ds = tf.data.Dataset.from_tensor_slices(sampled_labels)
-    ds = tf.data.Dataset.zip((im_ds, lab_ds))
-    #ds = ds.batch(batch_size)
-    if sobel:
-        ds = ds.map(lambda x,y: (_sobelize(x),y), num_parallel_calls=num_parallel_calls)
-    ds = ds.batch(batch_size)
-    ds = ds.prefetch(1)
-    
-    num_steps = int(np.ceil(len(sampled_indices)/batch_size))
-    return ds, num_steps
+    return ds

@@ -53,6 +53,25 @@ def test_stratified_simclr_dataset(test_png_path, test_jpg_path):
     # case is an identical image)
     assert (x[0] == x[2]).all()
     
+
+def test_simclr_dataset_with_dual_inputs(test_png_path):
+    filepaths = [10*[test_png_path],10*[test_png_path]]
+    batch_size = 5
+    augment = {"flip_left_right":True, "zoom_scale":0.3}
+    ds = _build_simclr_dataset(filepaths, imshape=((32,32),(17,29)),
+                              num_channels=3, norm=255,
+                              augment=augment, single_channel=False,
+                              batch_size=batch_size)
+
+    assert isinstance(ds, tf.data.Dataset)
+    for (x0,x1), y in ds:
+        break
+    # since SimCLR makes augmented pairs, the batch size
+    # is doubled
+    assert x0.shape == (2*batch_size, 32, 32, 3)
+    assert x1.shape == (2*batch_size, 17, 29, 3)
+    assert (y.numpy() == np.array([1,-1,1,-1,1,-1,1,-1,1,-1])).all()
+    
     
     
 def test_build_embedding_model():

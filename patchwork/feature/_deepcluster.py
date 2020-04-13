@@ -277,7 +277,7 @@ class DeepClusterTrainer(GenericExtractor):
         self._output_layer.set_weights(new_weights)
         
         # do some training
-        train_ds, num_steps = stratified_training_dataset(self.trainingdata, y_e, 
+        train_ds = stratified_training_dataset(self.trainingdata, y_e, 
                                     imshape=self.input_config["imshape"],
                                     num_channels=self.input_config["num_channels"],
                                     num_parallel_calls=self.input_config["num_parallel_calls"],

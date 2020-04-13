@@ -21,7 +21,7 @@ from patchwork.loaders import dataset
 
 
 INPUT_PARAMS = ["imshape", "num_channels", "norm", "batch_size",
-                "shuffle", "num_parallel_calls", "sobel", "single_channel",
+                "shuffle", "num_parallel_calls", "single_channel",
                 "global_batch_size"]
 
 
@@ -41,16 +41,34 @@ def linear_classification_test(fcn, downstream_labels, **input_config):
     """
     # do a 2:1 train:test split
     split = np.array([(i%3 == 0) for i in range(len(downstream_labels))])
-    X = np.array(list(downstream_labels.keys()))
     Y = np.array(list(downstream_labels.values()))
-    # get average-pooled training features
-    ds, num_steps = dataset(X[~split], shuffle=False,
+    X = np.array(list(downstream_labels.keys()))
+    # multiple input case:
+    if "," in X[0]:
+        X0 = np.array([x.split(",")[0] for x in X])
+        X1 = np.array([x.split(",")[1] for x in X])
+        ds, num_steps = dataset([list(X0[~split]), list(X1[~split])], 
+                                shuffle=False,
+                                **input_config)
+        test_ds, test_num_steps = dataset([list(X0[split]), list(X1[split])], 
+                                           shuffle=False,
                                             **input_config)
-    trainvecs = fcn.predict(ds, steps=num_steps).mean(axis=1).mean(axis=1)
-    # get test features
-    ds, num_steps = dataset(X[split], shuffle=False,
+
+        # this is stupid but there appears to be a bug in the keras.predict
+        # API when using TF Datasets as the input.
+        trainvecs = np.concatenate([fcn(x).numpy() 
+                                    for x in ds], 0).mean(axis=1).mean(axis=1)
+        testvecs = np.concatenate([fcn(x).numpy() 
+                                   for x in test_ds], 0).mean(axis=1).mean(axis=1)
+        
+    else:
+        ds, num_steps = dataset(X[~split], shuffle=False,
                                             **input_config)
-    testvecs = fcn.predict(ds, steps=num_steps).mean(axis=1).mean(axis=1)
+        test_ds, test_num_steps = dataset(X[split], shuffle=False,
+                                            **input_config)
+        trainvecs = fcn.predict(ds, steps=num_steps).mean(axis=1).mean(axis=1)
+        testvecs = fcn.predict(test_ds, steps=test_num_steps).mean(axis=1).mean(axis=1)
+
     # rescale train and test
     scaler = StandardScaler().fit(trainvecs)
     trainvecs = scaler.transform(trainvecs)
