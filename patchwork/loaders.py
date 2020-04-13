@@ -168,15 +168,9 @@ def _image_file_dataset(fps, ys=None, imshape=(256,256),
                                           _select(single_channel,1),
                                           augment)
                                           
-        #ds = ds.map(lambda x0,t0,x1,t1,y: (
-        #            _load_img0(x0,t0), _load_img1(x1,t1),y), 
-        #            num_parallel_calls=num_parallel_calls)
         ds = ds.map(lambda x0,t0,x1,t1,y: (
                     (_load_img0(x0,t0), _load_img1(x1,t1)),y), 
                     num_parallel_calls=num_parallel_calls)
-        # if no labels were passed, strip out the y.
-        #if no_labels:
-        #    ds = ds.map(lambda x0,x1,y: (x0,x1))
         if no_labels:
             ds = ds.map(lambda x,y: x)
     

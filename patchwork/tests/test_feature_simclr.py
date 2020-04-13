@@ -64,7 +64,7 @@ def test_simclr_dataset_with_dual_inputs(test_png_path):
                               batch_size=batch_size)
 
     assert isinstance(ds, tf.data.Dataset)
-    for x0,x1, y in ds:
+    for (x0,x1), y in ds:
         break
     # since SimCLR makes augmented pairs, the batch size
     # is doubled

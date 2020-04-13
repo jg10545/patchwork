@@ -78,7 +78,7 @@ def test_image_file_dataset_multi_input_and_labels(test_png_path):
                              num_channels=[3,3],
                              single_channel=[False,False],
                              shuffle=False)
-    for x0, x1, y in ds:
+    for (x0, x1), y in ds:
         x0 = x0.numpy()
         x1 = x1.numpy()
         y = y.numpy()
@@ -172,7 +172,7 @@ def test_dual_input_dataset_with_labels(test_png_path,
                      single_channel=[False, False],
                      batch_size=5, augment=False)
     
-    for x0,x1,y in ds:
+    for (x0,x1),y in ds:
         x0 = x0.numpy()
         x1 = x1.numpy()
         y = y.numpy()
