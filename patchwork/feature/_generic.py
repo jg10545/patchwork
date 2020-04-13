@@ -47,16 +47,20 @@ def linear_classification_test(fcn, downstream_labels, **input_config):
     if "," in X[0]:
         X0 = np.array([x.split(",")[0] for x in X])
         X1 = np.array([x.split(",")[1] for x in X])
-        ds, num_steps = dataset([X0[~split], X1[~split]], shuffle=False,
+        ds, num_steps = dataset([list(X0[~split]), list(X1[~split])], 
+                                shuffle=False,
+                                **input_config)
+        test_ds, test_num_steps = dataset([list(X0[split]), list(X1[split])], 
+                                           shuffle=False,
                                             **input_config)
-        test_ds, test_num_steps = dataset([X0[split], X1[split]], shuffle=False,
-                                            **input_config)
+
         # this is stupid but there appears to be a bug in the keras.predict
         # API when using TF Datasets as the input.
         trainvecs = np.concatenate([fcn(x).numpy() 
                                     for x in ds], 0).mean(axis=1).mean(axis=1)
         testvecs = np.concatenate([fcn(x).numpy() 
                                    for x in test_ds], 0).mean(axis=1).mean(axis=1)
+        
     else:
         ds, num_steps = dataset(X[~split], shuffle=False,
                                             **input_config)

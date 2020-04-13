@@ -56,14 +56,12 @@ def _build_simclr_dataset(imfiles, imshape=(256,256), batch_size=256,
     # DUAL-INPUT CASE
     else:
         if isinstance(imshape[0], int): imshape = (imshape, imshape)
-        print(imshape[0])
-        print(imshape[1])
         _aug0 = augment_function(imshape[0], augment)
         _aug1 = augment_function(imshape[1], augment)
         @tf.function
         def _augment_and_stack(x0,x1):
             y = tf.constant(np.array([1,-1]).astype(np.int32))
-            return tf.stack([_aug0(x0),_aug0(x0)]), tf.stack([_aug1(x1),_aug1(x1)]), y
+            return (tf.stack([_aug0(x0),_aug0(x0)]), tf.stack([_aug1(x1),_aug1(x1)])), y
         ds = ds.map(_augment_and_stack, num_parallel_calls=num_parallel_calls)
         
     ds = ds.unbatch()
@@ -77,7 +75,18 @@ def _build_embedding_model(fcn, imshape, num_channels, num_hidden, output_dim):
     Create a Keras model that wraps the base encoder and 
     the projection head
     """
-    inpt = tf.keras.layers.Input((imshape[0], imshape[1], num_channels))
+    # SINGLE-INPUT CASE
+    if len(fcn.inputs) == 1:
+        inpt = tf.keras.layers.Input((imshape[0], imshape[1], num_channels))
+    # DUAL-INPUT CASE
+    else:
+        if isinstance(imshape[0], int): imshape = (imshape, imshape)
+        if isinstance(num_channels, int): num_channels=(num_channels, num_channels)
+        inpt0 = tf.keras.layers.Input((imshape[0][0], imshape[0][1], 
+                                       num_channels[0]))
+        inpt1 = tf.keras.layers.Input((imshape[1][0], imshape[1][1], 
+                                       num_channels[1]))
+        inpt = [inpt0, inpt1]
     net = fcn(inpt)
     net = tf.keras.layers.Flatten()(net)
     net = tf.keras.layers.Dense(num_hidden, activation="relu")(net)
@@ -105,8 +114,8 @@ def _build_simclr_training_step(embed_model, optimizer, temperature=0.1):
     """
     @tf.function
     def training_step(x,y):
-        eye = tf.linalg.eye(x.shape[0])
-        index = tf.range(0, x.shape[0])
+        eye = tf.linalg.eye(y.shape[0])
+        index = tf.range(0, y.shape[0])
         # the labels tell which similarity is the "correct" one- the augmented
         # pair from the same image. so index+y should look like [1,0,3,2,5,4...]
         labels = index+y
@@ -235,8 +244,8 @@ class SimCLRTrainer(GenericExtractor):
             
             @tf.function
             def test_loss(x,y):
-                eye = tf.linalg.eye(x.shape[0])
-                index = tf.range(0, x.shape[0])
+                eye = tf.linalg.eye(y.shape[0])
+                index = tf.range(0, y.shape[0])
                 labels = index+y
 
                 embeddings = self._models["full"](x)
@@ -277,7 +286,7 @@ class SimCLRTrainer(GenericExtractor):
     def evaluate(self):
         if self._test:
             test_loss = 0
-            for x, y in self._test_ds:
+            for x,y in self._test_ds:
                 loss, sim = self._test_loss(x,y)
                 test_loss += loss.numpy()
                 

@@ -37,39 +37,42 @@ def _generate_imtypes(fps):
 def _build_load_function(imshape, norm, num_channels, single_channel,
                          augment=False):
     """
-    macro to build a tf.function that handles all the loading. the
+    macro to build a function that handles all the loading. the
     load function takes in two inputs (file path and integer specifying file
     type) and returns the loaded image
+    
+    Note- this used to return a tf.function, but when used within
+    a tensorflow Dataset I'd occasionally get "InvalidArgumentError: 
+        The graph couldn't be sorted in topological order. 
+        [Op:OptimizeDataset]" errors
     """
-    # helper function for resizing images
-    def _resize(img):
-        return tf.image.resize(img, imshape)
     # helper function for loading tiffs
     def _load_tif(f):
-        return _resize(tiff_to_array(f.numpy().decode("utf-8") , swapaxes=True, 
-                                 norm=norm, num_channels=num_channels))
+        return tf.image.resize(tiff_to_array(f.numpy().decode("utf-8") , swapaxes=True, 
+                                 norm=norm, num_channels=num_channels),
+                               imshape)
     load_tif = lambda x: tf.py_function(_load_tif, [x], tf.float32)
     
     
     # main loading map function
-    @tf.function
+    #@tf.function
     def _load_img(x, t):
         loaded = tf.io.read_file(x)
         # jpg
         if t == 1:
             decoded = tf.io.decode_jpeg(loaded)
-            resized = _resize(decoded)
+            resized = tf.image.resize(decoded, imshape)
         # gif
         elif t == 2:
             decoded = tf.io.decode_gif(loaded)
-            resized = _resize(decoded)
+            resized = tf.image.resize(decoded, imshape)
         # tif
         elif t == 3:
             resized = load_tif(x)
         # png
         else:
             decoded = tf.io.decode_png(loaded)
-            resized = _resize(decoded)
+            resized = tf.image.resize(decoded, imshape)
             
         if single_channel:
             resized = tf.concat(num_channels*[resized], -1)
@@ -165,12 +168,17 @@ def _image_file_dataset(fps, ys=None, imshape=(256,256),
                                           _select(single_channel,1),
                                           augment)
                                           
+        #ds = ds.map(lambda x0,t0,x1,t1,y: (
+        #            _load_img0(x0,t0), _load_img1(x1,t1),y), 
+        #            num_parallel_calls=num_parallel_calls)
         ds = ds.map(lambda x0,t0,x1,t1,y: (
-                    _load_img0(x0,t0), _load_img1(x1,t1),y), 
+                    (_load_img0(x0,t0), _load_img1(x1,t1)),y), 
                     num_parallel_calls=num_parallel_calls)
         # if no labels were passed, strip out the y.
+        #if no_labels:
+        #    ds = ds.map(lambda x0,x1,y: (x0,x1))
         if no_labels:
-            ds = ds.map(lambda x0,x1,y: (x0,x1))
+            ds = ds.map(lambda x,y: x)
     
     return ds
 
