@@ -21,10 +21,18 @@ def _build_simclr_dataset(imfiles, imshape=(256,256), batch_size=256,
     
     if stratify is not None:
         categories = list(set(stratify))
-        file_lists = [[imfiles[i] for i in range(len(imfiles)) 
+        # SINGLE-INPUT CASE
+        if isinstance(imfiles[0], str):
+            file_lists = [[imfiles[i] for i in range(len(imfiles)) 
                         if stratify[i] == c]
                 for c in categories
-        ]
+                ]
+        # DUAL-INPUT
+        else:
+            file_lists = [([imfiles[0][i] for i in range(len(imfiles[0])) 
+                        if stratify[i] == c],
+                            [imfiles[1][i] for i in range(len(imfiles[1])) 
+                        if stratify[i] == c] ) for c in categories ]
         datasets = [_build_simclr_dataset(f, imshape=imshape, 
                                           batch_size=batch_size, 
                                           num_parallel_calls=num_parallel_calls, 
