@@ -14,7 +14,6 @@ def _build_distributed_training_step(strategy, embed_model, optimizer,
     
     The training step returns:
     :loss: value of the loss function for training
-    :rms_grads: total root mean square value of gradients through trainable variables
     :avg_cosine_sim: average value of the batch's matrix of dot products
     """
     #replicas = strategy.num_replicas_in_sync
@@ -47,7 +46,7 @@ def _build_distributed_training_step(strategy, embed_model, optimizer,
                                       embed_model.trainable_variables))
                 
                 avg_cosine_sim = tf.reduce_mean(sim)
-                return crossent, rms_grads, avg_cosine_sim
+                return crossent, avg_cosine_sim
         
         per_example_losses, avg_cos = strategy.experimental_run_v2(
                                         step_fn, args=(x,y))

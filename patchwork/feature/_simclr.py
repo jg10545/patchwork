@@ -117,7 +117,6 @@ def _build_simclr_training_step(embed_model, optimizer, temperature=0.1):
     
     The training function returns:
     :loss: value of the loss function for training
-    :rms_grads: total root mean square value of gradients through trainable variables
     :avg_cosine_sim: average value of the batch's matrix of dot products
     """
     @tf.function
