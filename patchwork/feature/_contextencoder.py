@@ -185,6 +185,7 @@ def build_inpainter_training_step():
         :total_loss: weighted sum of previous two
         """
         print("tracing inpainter training step")
+        lossdict = {}
         # inpainter update
         masked_img = (1-mask)*img
         with tf.GradientTape() as tape:
@@ -200,13 +201,17 @@ def build_inpainter_training_step():
             disc_loss_on_inpainted = -1*K.mean(K.log(_stabilize(disc_output_on_inpainted)))
             # total loss
             total_loss = recon_weight*reconstructed_loss + adv_weight*disc_loss_on_inpainted
+            lossdict["inpainter_recon_loss"] = reconstructed_loss
+            lossdict["inpainter_disc_loss"] = disc_loss_on_inpainted
+            lossdict["inpainter_total_loss"] = total_loss
+
     
         variables = inpainter.trainable_variables
         gradients = tape.gradient(total_loss, variables)
     
         opt.apply_gradients(zip(gradients, variables))
     
-        return reconstructed_loss, disc_loss_on_inpainted, total_loss
+        return lossdict
     return inpainter_training_step
 
 def build_discriminator_training_step():
@@ -240,7 +245,7 @@ def build_discriminator_training_step():
         gradients = tape.gradient(disc_loss, variables)
         opt.apply_gradients(zip(gradients, variables))
     
-        return disc_loss
+        return {"disc_loss":disc_loss}
     return discriminator_training_step
     
 
@@ -314,7 +319,8 @@ class ContextEncoderTrainer(GenericExtractor):
                                 num_parallel_calls=num_parallel_calls,
                                 batch_size=batch_size, prefetch=True,
                                 augment=augment, 
-                                single_channel=single_channel)
+                                single_channel=single_channel,
+                                trainer="contextencoder")
         else:
             assert isinstance(trainingdata, tf.data.Dataset), "i don't know what to do with this"
             self._train_ds = trainingdata
@@ -355,7 +361,7 @@ class ContextEncoderTrainer(GenericExtractor):
         for img, mask in self._train_ds:
             # alternatve between inpainter and discriminator training
             if self.step % 2 == 0:
-                losses = self._inpainter_training_step(
+                lossdict = self._inpainter_training_step(
                         self._optimizer["inpaint"], 
                         self._models["inpainter"],
                         self._models["discriminator"],
@@ -363,8 +369,6 @@ class ContextEncoderTrainer(GenericExtractor):
                         recon_weight=self.config["recon_weight"],
                         adv_weight=self.config["adv_weight"],
                         imshape=self.input_config["imshape"])
-                lossdict = dict(zip(["inpainter_recon_loss", "inpainter_disc_loss",
-                                   "inpainter_total_loss"], losses))
                 self._record_scalars(**lossdict)
             else:
                 disc_loss = self._discriminator_training_step(
@@ -372,7 +376,7 @@ class ContextEncoderTrainer(GenericExtractor):
                                 self._models["inpainter"], 
                                 self._models["discriminator"],
                                 img, mask)
-                self._record_scalars(disc_loss=disc_loss)
+                self._record_scalars(**disc_loss)
             self.step += 1
 
            

@@ -107,18 +107,20 @@ def build_deepcluster_training_step():
         Basic training function for DeepCluster model.
         """
         print("tracing deepcluster_training_step")
+        lossdict = {}
         with tf.GradientTape() as tape:
             y_pred = model(x, training=True)
             loss = tf.reduce_mean(
                     tf.keras.losses.sparse_categorical_crossentropy(y, y_pred,
                                                                     from_logits=True)
                 )
+            lossdict["training_crossentropy"] = loss
         
         variables = model.trainable_variables
         gradients = tape.gradient(loss, variables)
         opt.apply_gradients(zip(gradients, variables))
     
-        return loss
+        return lossdict
     return deepcluster_training_step
 
 
@@ -189,13 +191,6 @@ class DeepClusterTrainer(GenericExtractor):
         self._output_layer = output_layer
         
         # create optimizer
-        #if lr_decay > 0:
-        #    learnrate = tf.keras.optimizers.schedules.ExponentialDecay(lr, 
-        #                                    decay_steps=lr_decay, decay_rate=0.5,
-        #                                    staircase=False)
-        #else:
-        #    learnrate = lr
-        #self._optimizer = tf.keras.optimizers.SGD(learnrate, momentum=0.9)
         self._optimizer = self._build_optimizer(lr, lr_decay, "momentum")
         
         # build evaluation dataset
@@ -238,7 +233,8 @@ class DeepClusterTrainer(GenericExtractor):
                             imshape=imshape, num_channels=num_channels,
                             norm=norm, batch_size=batch_size,
                             num_parallel_calls=num_parallel_calls, sobel=sobel,
-                            single_channel=single_channel, notes=notes)
+                            single_channel=single_channel, notes=notes,
+                            trainer="deepcluster")
         
         
     def _run_training_epoch(self, **kwargs):
@@ -289,9 +285,9 @@ class DeepClusterTrainer(GenericExtractor):
                                     single_channel=self.input_config["single_channel"])
         
         for x, y in train_ds:
-            loss = self._training_step(x, y, self._models["full"], 
+            lossdict = self._training_step(x, y, self._models["full"], 
                                       self._optimizer)
-            self._record_scalars(training_crossentropy=loss)
+            self._record_scalars(**lossdict)
             self.step += 1
  
     def evaluate(self):

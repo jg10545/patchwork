@@ -121,6 +121,7 @@ def _build_simclr_training_step(embed_model, optimizer, temperature=0.1):
     """
     @tf.function
     def training_step(x,y):
+        lossdict = {}
         eye = tf.linalg.eye(y.shape[0])
         index = tf.range(0, y.shape[0])
         # the labels tell which similarity is the "correct" one- the augmented
@@ -141,13 +142,14 @@ def _build_simclr_training_step(embed_model, optimizer, temperature=0.1):
             
             loss = tf.reduce_mean(
                     tf.nn.sparse_softmax_cross_entropy_with_logits(labels, logits))
+            lossdict["loss"] = loss
 
         gradients = tape.gradient(loss, embed_model.trainable_variables)
         optimizer.apply_gradients(zip(gradients,
                                       embed_model.trainable_variables))
 
-        avg_cosine_sim = tf.reduce_mean(sim)
-        return loss, avg_cosine_sim
+        lossdict["avg_cosine_sim"] = tf.reduce_mean(sim)
+        return lossdict
     return training_step
 
 
@@ -226,13 +228,6 @@ class SimCLRTrainer(GenericExtractor):
                                         stratify=stratify)
         
         # create optimizer
-        #if lr_decay > 0:
-        #    learnrate = tf.keras.optimizers.schedules.ExponentialDecay(lr, 
-        #                                    decay_steps=lr_decay, decay_rate=0.5,
-        #                                    staircase=False)
-        #else:
-        #    learnrate = lr
-        #self._optimizer = tf.keras.optimizers.Adam(learnrate)
         self._optimizer = self._build_optimizer(lr, lr_decay)
         
         
@@ -278,17 +273,16 @@ class SimCLRTrainer(GenericExtractor):
                             imshape=imshape, num_channels=num_channels,
                             norm=norm, batch_size=batch_size,
                             num_parallel_calls=num_parallel_calls,
-                            single_channel=single_channel, notes=notes)
+                            single_channel=single_channel, notes=notes,
+                            trainer="simclr")
 
     def _run_training_epoch(self, **kwargs):
         """
         
         """
         for x, y in self._ds:
-            loss, avg_cosine_sim = self._training_step(x,y)
-            
-            self._record_scalars(loss=loss,
-                                 avg_cosine_sim=avg_cosine_sim)
+            lossdict = self._training_step(x,y)
+            self._record_scalars(**lossdict)
             self.step += 1
              
     def evaluate(self):

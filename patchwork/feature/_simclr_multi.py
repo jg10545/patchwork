@@ -145,12 +145,6 @@ class DistributedSimCLRTrainer(SimCLRTrainer):
                                       stratify=stratify))
         
         # create optimizer
-        #if lr_decay > 0:
-        #    learnrate = tf.keras.optimizers.schedules.ExponentialDecay(lr, 
-        #                                    decay_steps=lr_decay, decay_rate=0.5,
-        #                                    staircase=False)
-        #else:
-        #    learnrate = lr
         with strategy.scope():
             #self._optimizer = tf.keras.optimizers.Adam(learnrate)
             self._optimizer = self._build_optimizer(lr, lr_decay)
@@ -201,4 +195,5 @@ class DistributedSimCLRTrainer(SimCLRTrainer):
                             imshape=imshape, num_channels=num_channels,
                             norm=norm, batch_size=batch_size,
                             num_parallel_calls=num_parallel_calls, 
-                            single_channel=single_channel, notes=notes)
+                            single_channel=single_channel, notes=notes,
+                            trainer="simclr_distributed")

@@ -86,7 +86,7 @@ def test_context_encoder_inpainter_training_step(test_png_path):
                                      mock_inpainter, 
                                      mock_discriminator, x, y)
     assert len(losses) == 3
-    for i in range(3):
+    for i in ["inpainter_recon_loss", "inpainter_disc_loss", "inpainter_total_loss"]:
         assert losses[i].numpy().size == 1
         assert losses[i].dtype == tf.float32
 
@@ -97,8 +97,8 @@ def test_context_encoder_discriminator_training_step(test_png_path):
     loss = discriminator_training_step(opt,
                                        mock_inpainter, 
                                        mock_discriminator, x, y)
-    assert loss.numpy().size == 1
-    assert loss.dtype == tf.float32
+    assert loss["disc_loss"].numpy().size == 1
+    assert loss["disc_loss"].dtype == tf.float32
     
     
     

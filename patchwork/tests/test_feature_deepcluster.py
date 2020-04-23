@@ -55,5 +55,5 @@ def test_deepcluster_training_step():
     x = np.zeros((5,7,11,3))
     y = np.arange(5)
     
-    loss = deepcluster_training_step(x, y, model, opt).numpy()
-    assert loss.dtype == np.float32
+    lossdict = deepcluster_training_step(x, y, model, opt)
+    assert lossdict["training_crossentropy"].numpy().dtype == np.float32

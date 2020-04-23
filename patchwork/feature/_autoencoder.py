@@ -55,7 +55,7 @@ def _build_training_step(model, opt):
             )
         gradient = tape.gradient(loss, variables)
         opt.apply_gradients(zip(gradient, variables))
-        return loss        
+        return {"reconstruction_loss":loss}        
     return training_step
 
 
@@ -112,13 +112,6 @@ class AutoEncoderTrainer(GenericExtractor):
         self._models = {"fcn":fcn, "full":full_model}    
         
         # create optimizer
-        #if lr_decay > 0:
-        #    learnrate = tf.keras.optimizers.schedules.ExponentialDecay(lr, 
-        #                                    decay_steps=lr_decay, decay_rate=0.5,
-        #                                    staircase=False)
-        #else:
-        #    learnrate = lr
-        #self._optimizer = tf.keras.optimizers.Adam(learnrate)
         self._optimizer = self._build_optimizer(lr, lr_decay)
         
         # training dataset
@@ -132,7 +125,8 @@ class AutoEncoderTrainer(GenericExtractor):
                                      imshape=imshape,norm=norm,
                                      sobel=False, num_channels=num_channels,
                                      single_channel=single_channel,
-                                     batch_size=batch_size, shuffle=False)
+                                     batch_size=batch_size, shuffle=False,
+                                     trainer="autoencoder")
             self._test = True
         else:
             self._test = False
@@ -160,8 +154,8 @@ class AutoEncoderTrainer(GenericExtractor):
         
         """
         for x in self._train_ds:
-            loss = self._training_step(x)
-            self._record_scalars(reconstruction_loss=loss)
+            lossdict = self._training_step(x)
+            self._record_scalars(**lossdict)
             self.step += 1
  
     def evaluate(self):

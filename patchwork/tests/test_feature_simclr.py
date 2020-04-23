@@ -88,7 +88,8 @@ def test_build_simclr_training_step():
     
     x = tf.zeros((4,32,32,3), dtype=tf.float32)
     y = np.array([1,-1,1,-1]).astype(np.int32)
-    loss, avg_cosine_sim = step(x,y)
+    #loss, avg_cosine_sim = step(x,y)
+    lossdict = step(x,y)
     
-    assert isinstance(loss.numpy(), np.float32)
+    assert isinstance(lossdict["loss"].numpy(), np.float32)
     
