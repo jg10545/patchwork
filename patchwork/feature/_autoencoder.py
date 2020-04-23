@@ -112,13 +112,14 @@ class AutoEncoderTrainer(GenericExtractor):
         self._models = {"fcn":fcn, "full":full_model}    
         
         # create optimizer
-        if lr_decay > 0:
-            learnrate = tf.keras.optimizers.schedules.ExponentialDecay(lr, 
-                                            decay_steps=lr_decay, decay_rate=0.5,
-                                            staircase=False)
-        else:
-            learnrate = lr
-        self._optimizer = tf.keras.optimizers.Adam(learnrate)
+        #if lr_decay > 0:
+        #    learnrate = tf.keras.optimizers.schedules.ExponentialDecay(lr, 
+        #                                    decay_steps=lr_decay, decay_rate=0.5,
+        #                                    staircase=False)
+        #else:
+        #    learnrate = lr
+        #self._optimizer = tf.keras.optimizers.Adam(learnrate)
+        self._optimizer = self._build_optimizer(lr, lr_decay)
         
         # training dataset
         self._train_ds, _ = dataset(trainingdata, imshape=imshape,norm=norm,

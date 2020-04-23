@@ -189,13 +189,14 @@ class DeepClusterTrainer(GenericExtractor):
         self._output_layer = output_layer
         
         # create optimizer
-        if lr_decay > 0:
-            learnrate = tf.keras.optimizers.schedules.ExponentialDecay(lr, 
-                                            decay_steps=lr_decay, decay_rate=0.5,
-                                            staircase=False)
-        else:
-            learnrate = lr
-        self._optimizer = tf.keras.optimizers.SGD(learnrate, momentum=0.9)
+        #if lr_decay > 0:
+        #    learnrate = tf.keras.optimizers.schedules.ExponentialDecay(lr, 
+        #                                    decay_steps=lr_decay, decay_rate=0.5,
+        #                                    staircase=False)
+        #else:
+        #    learnrate = lr
+        #self._optimizer = tf.keras.optimizers.SGD(learnrate, momentum=0.9)
+        self._optimizer = self._build_optimizer(lr, lr_decay, "momentum")
         
         # build evaluation dataset
         if testdata is not None:

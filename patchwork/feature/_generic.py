@@ -85,6 +85,22 @@ def linear_classification_test(fcn, downstream_labels, **input_config):
     return acc, cm
 
 
+def build_optimizer(lr, lr_decay=0, opttype="adam"):
+    """
+    Macro to reduce some duplicative code for building optimizers
+    for trainers
+    """
+    if lr_decay > 0:
+        lr = tf.keras.optimizers.schedules.ExponentialDecay(lr, 
+                                        decay_steps=lr_decay, decay_rate=0.5,
+                                        staircase=False)
+    if opttype == "adam":
+        return tf.keras.optimizers.Adam(lr)
+    elif opttype == "momentum":
+        return tf.keras.optimizers.SGD(lr, momentum=0.9)
+    else:
+        assert False, "dont know what to do with {}".format(opttype)
+
 
 
 
@@ -238,6 +254,10 @@ class GenericExtractor(object):
                 
                 # record hyperparamters
                 hp.hparams(params)
+                
+    def _build_optimizer(lr, lr_decay=0, opttype="adam"):
+        # macro for creating the Keras optimizer
+        return build_optimizer(lr, lr_decay,opttype)
         
             
     
