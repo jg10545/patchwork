@@ -11,8 +11,8 @@ import yaml
 
 from patchwork._losses import masked_sparse_categorical_crossentropy
 from patchwork.loaders import _image_file_dataset
-from patchwork._augment import augment_function
 from patchwork._layers import _next_layer
+from patchwork.feature._generic import GenericExtractor
 
 INPUT_PARAMS = ["imshape", "num_channels", "norm", "batch_size",
                 "shuffle", "num_parallel_calls", "sobel", "single_channel"]
@@ -200,7 +200,7 @@ def _mtdataset(filepaths, labels, imshape, num_parallel_calls, norm,
 
 
 
-class MultiTaskTrainer(object):
+class MultiTaskTrainer(GenericExtractor):
     """
     Class for managing training of a multitask convnet.
     
@@ -288,13 +288,7 @@ class MultiTaskTrainer(object):
         self._models = models
         
         # create optimizer
-        if lr_decay > 0:
-            learnrate = tf.keras.optimizers.schedules.ExponentialDecay(lr, 
-                                            decay_steps=lr_decay, decay_rate=0.5,
-                                            staircase=False)
-        else:
-            learnrate = lr
-        self._optimizer = tf.keras.optimizers.Adam(learnrate)
+        self._optimizer = self._build_optimizer(lr, lr_decay)
         
         if task_weights is None:
             task_weights = [1 for _ in tasks]
@@ -325,7 +319,8 @@ class MultiTaskTrainer(object):
                             num_channels=num_channels,
                             norm=norm, batch_size=batch_size, shuffle=shuffle,
                             num_parallel_calls=num_parallel_calls,
-                            single_channel=single_channel, notes=notes)
+                            single_channel=single_channel, notes=notes,
+                            trainer="multitask")
         
         
         
@@ -351,21 +346,13 @@ class MultiTaskTrainer(object):
                        "augment":self.augment_config}
         yaml.dump(config_dict, open(config_path, "w"), default_flow_style=False)
 
-    
-    def fit(self, epochs=1, save=True, evaluate=True):
-        """
-        Train the feature extractor
-        
-        :epochs: number of epochs to train for
-        :save: if True, save after each epoch
-        :evaluate: if True, run eval metrics after each epoch
-        """
+
+    def _run_training_epoch(self, **kwargs):
         N = len(self._labels["train_files"])
-        for e in tqdm(range(epochs)):
-            # resample labels each epoch
-            indices = np.random.choice(np.arange(N), p=self._labels["probs"],
+        # resample labels each epoch
+        indices = np.random.choice(np.arange(N), p=self._labels["probs"],
                                        size=N, replace=True)
-            ds = _mtdataset(self._labels["train_files"][indices], 
+        ds = _mtdataset(self._labels["train_files"][indices], 
                             self._labels["train_indices"][indices],
                             self.input_config["imshape"],
                             self.input_config["num_parallel_calls"],
@@ -375,32 +362,15 @@ class MultiTaskTrainer(object):
                             self.augment_config,
                             self.input_config["batch_size"])
             
-            for x, *y in ds:
-                loss, task_losses = self._training_step(x,y)
+        for x, *y in ds:
+            loss, task_losses = self._training_step(x,y)
 
-                self._record_scalars(total_loss=loss)
-                self._record_scalars(**{"loss_"+x:t for x,t in 
+            self._record_scalars(total_loss=loss)
+            self._record_scalars(**{"loss_"+x:t for x,t in 
                                         zip(self._tasks, task_losses)})
                 
-                self.step += 1
-            
-            if save:
-                self.save()
-            if evaluate:
-                self.evaluate()
-    
-    def save(self):
-        """
-        Write model(s) to disk
+            self.step += 1
         
-        Note: tried to use SavedModel format for this and got a memory leak;
-        think it's related to https://github.com/tensorflow/tensorflow/issues/32234
-        
-        For now sticking with HDF5
-        """
-        for m in self._models:
-            path = os.path.join(self.logdir, m+".h5")
-            self._models[m].save(path, overwrite=True, save_format="h5")
             
     def evaluate(self):
         predictions = self._models["full"].predict(self._val_ds)
@@ -420,19 +390,7 @@ class MultiTaskTrainer(object):
                                     zip(self._tasks, self._task_weights)})
             
                 
-            
-    def _record_scalars(self, **scalars):
-        for s in scalars:
-            tf.summary.scalar(s, scalars[s], step=self.step)
-            
-    def _record_images(self, **images):
-        for i in images:
-            tf.summary.image(i, images[i], step=self.step)
-            
-    def _record_hists(self, **hists):
-        for h in hists:
-            tf.summary.histogram(h, hists[h], step=self.step)
-                      
+  
             
             
             
