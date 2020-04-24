@@ -284,5 +284,6 @@ class GenericExtractor(object):
                 for s,t in zip(student_outputs, teacher_outputs):
                     loss += tf.reduce_mean(tf.keras.losses.KLD(t,s))
                 return loss
+            return _ban_loss
         else:
             return None
