@@ -150,6 +150,8 @@ def _build_multitask_training_step(model, trainvars, optimizer, tasks,
             lossdict = {}
             task_losses = []
             outputs = model(x, training=True)
+            # hack to make this work with a single task
+            if len(tasks) == 1: outputs = [outputs]
             
             for pred, y_true, weight, task in zip(outputs, y, 
                                             task_loss_weights, tasks):
@@ -393,6 +395,10 @@ class MultiTaskTrainer(GenericExtractor):
             
     def evaluate(self):
         predictions = self._models["full"].predict(self._val_ds)
+        
+        # stupid hack- haven't figured out a better way to do
+        # this with keras API
+        if len(self._tasks) == 1: predictions = [predictions]
         
         for i in range(len(self._tasks)):
             task = self._tasks[i]
