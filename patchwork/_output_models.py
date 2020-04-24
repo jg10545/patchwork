@@ -11,6 +11,7 @@ class SigmoidCrossEntropy(param.Parameterized):
     """
     Output network for the basic sigmoid case
     """
+    normalize = param.Boolean(default=False, doc="whether to L2-normalize inputs")
     label_smoothing = param.Number(0, bounds=(0, 0.25), step=0.05, 
                                    doc="epsilon for label smoothing")
     
@@ -21,9 +22,12 @@ class SigmoidCrossEntropy(param.Parameterized):
     
     def build(self, num_classes, inpt_channels):
         # return output model as well as loss function
-        #inpt = tf.keras.layers.Input((None, inpt_channels))
         inpt = tf.keras.layers.Input((inpt_channels))
-        dense = tf.keras.layers.Dense(num_classes, activation="sigmoid")(inpt)
+        net = inpt
+        if self.normalize:
+            norm = tf.keras.layers.Lambda(lambda x: tf.keras.backend.l2_normalize(x,1))
+            net = norm(net)
+        dense = tf.keras.layers.Dense(num_classes, activation="sigmoid")(net)
         def loss(y_true, y_pred):
             return masked_binary_crossentropy(y_true, y_pred, label_smoothing=self.label_smoothing)
         return tf.keras.Model(inpt, dense), loss
