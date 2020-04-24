@@ -193,8 +193,10 @@ def _sampling_probabilities(indices):
          
 def _mtdataset(filepaths, labels, imshape, num_parallel_calls, norm,
                num_channels, single_channel, aug, batch_size):
-    ds = _image_file_dataset(filepaths, imshape, num_parallel_calls,
-                                 norm, num_channels,
+
+    ds = _image_file_dataset(filepaths, imshape=imshape, 
+                             num_parallel_calls=num_parallel_calls,
+                                 norm=norm, num_channels=num_channels,
                                  single_channel=single_channel,
                                  augment=aug)
 
@@ -202,6 +204,7 @@ def _mtdataset(filepaths, labels, imshape, num_parallel_calls, norm,
         label_ds = [tf.data.Dataset.from_tensor_slices(labels[:,i]) for i in 
                                                     range(labels.shape[1])]
         ds = tf.data.Dataset.zip((ds, *label_ds))    
+
     ds = ds.batch(batch_size)
     return ds
 
