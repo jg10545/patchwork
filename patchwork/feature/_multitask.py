@@ -138,35 +138,43 @@ def _assemble_full_network(fcn, task_dimensions, shared_layers=[],
             
             
             
-def _build_multitask_training_step(model, trainvars, optimizer, 
-                                  task_loss_weights, adaptive=False):
+def _build_multitask_training_step(model, trainvars, optimizer, tasks,
+                                  task_loss_weights, adaptive=False,
+                                  distill_func=None, distill_weight=0):
     """
     
     """
     @tf.function
     def train_step(x, y):
         with tf.GradientTape() as tape:
-            loss = 0
+            total_loss = 0
+            lossdict = {}
             task_losses = []
             outputs = model(x, training=True)
             
-            for pred, y_true, weight in zip(outputs, y, 
-                                            task_loss_weights):
+            for pred, y_true, weight, task in zip(outputs, y, 
+                                            task_loss_weights, tasks):
                 task_loss = masked_sparse_categorical_crossentropy(y_true, pred)
+                lossdict["loss_"+task] = task_loss
                 task_losses.append(task_loss)
                 if adaptive:
                     # interpret weight as log(sigma^2). Kendall's paper mentions
                     # that they use this as it's more numerically stable
-                    #sig_sq = tf.math.exp(weight)
                     inv_sig_sq = tf.math.exp(-1*weight)
                     #loss += task_loss/(sig_sq + K.epsilon()) + 0.5*weight
-                    loss += task_loss*inv_sig_sq + 0.5*weight
+                    total_loss += task_loss*inv_sig_sq + 0.5*weight
                 else:
-                    loss += weight*task_loss
+                    total_loss += weight*task_loss
+                    
+            if (distill_func is not None)&(distill_weight > 0):
+                lossdict["distill_loss"] = distill_func(outputs, x)
+                total_loss += distill_weight*lossdict["distill_loss"]
                 
-        gradients = tape.gradient(loss, trainvars)
+            lossdict["total_loss"] = total_loss
+                
+        gradients = tape.gradient(total_loss, trainvars)
         optimizer.apply_gradients(zip(gradients, trainvars))
-        return loss, task_losses
+        return lossdict, task_losses
     return train_step    
             
 def _sampling_probabilities(indices):
@@ -230,7 +238,7 @@ class MultiTaskTrainer(GenericExtractor):
                  lr=1e-3, lr_decay=0, balance_probs=True,
                  augment=False, imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, shuffle=True, num_parallel_calls=None,
-                 single_channel=False, notes=""):
+                 single_channel=False, teacher=None, distill_weight=0, notes=""):
         """
         :logdir: (string) path to log directory
         :trainingdata: pandas dataframe of training data
@@ -263,6 +271,8 @@ class MultiTaskTrainer(GenericExtractor):
         :sobel: whether to replace the input image with its sobel edges
         :single_channel: if True, expect a single-channel input image and 
             stack it num_channels times.
+        :teacher:
+        :distill_weight:
         :notes: any experimental notes you want recorded in the config.yml file
         """
         adaptive = task_weights == "adaptive"
@@ -286,6 +296,7 @@ class MultiTaskTrainer(GenericExtractor):
                                               train_fcn=train_fcn, 
                                               global_pooling="max")
         self._models = models
+        self._models["teacher"] = teacher
         
         # create optimizer
         self._optimizer = self._build_optimizer(lr, lr_decay)
@@ -297,11 +308,15 @@ class MultiTaskTrainer(GenericExtractor):
                                         name="weight_%s"%t) for t in tasks]
             trainvars += task_weights
         self._task_weights = task_weights
+        distill_func = self._born_again_loss_function()
         self._training_step = _build_multitask_training_step(self._models["full"], 
-                                                             trainvars, 
-                                                             self._optimizer,
-                                                             task_weights,
-                                                             adaptive)
+                                            trainvars, 
+                                            self._optimizer,
+                                            tasks,
+                                            task_weights,
+                                            adaptive,
+                                            distill_func=distill_func,
+                                            distill_weight=distill_weight)
         # build validation dataset. 
         self._val_ds = _mtdataset(self._labels["val_files"], None,
                                   imshape, num_parallel_calls, norm, num_channels,
@@ -320,6 +335,7 @@ class MultiTaskTrainer(GenericExtractor):
                             norm=norm, batch_size=batch_size, shuffle=shuffle,
                             num_parallel_calls=num_parallel_calls,
                             single_channel=single_channel, notes=notes,
+                            distill_weight=distill_weight,
                             trainer="multitask")
         
         
@@ -363,11 +379,11 @@ class MultiTaskTrainer(GenericExtractor):
                             self.input_config["batch_size"])
             
         for x, *y in ds:
-            loss, task_losses = self._training_step(x,y)
+            lossdict, task_losses = self._training_step(x,y)
 
-            self._record_scalars(total_loss=loss)
-            self._record_scalars(**{"loss_"+x:t for x,t in 
-                                        zip(self._tasks, task_losses)})
+            self._record_scalars(**lossdict)
+            #self._record_scalars(**{"loss_"+x:t for x,t in 
+            #                            zip(self._tasks, task_losses)})
                 
             self.step += 1
         

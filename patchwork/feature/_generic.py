@@ -260,4 +260,29 @@ class GenericExtractor(object):
         return build_optimizer(lr, lr_decay,opttype)
         
             
-    
+    def _born_again_loss_function(self):
+        """
+        Generate a function that computes the Born-Again Network loss
+        if a "teacher" model is in the model dictionary
+        """
+        if "teacher" in self._models:
+            teacher = self._models["teacher"]
+            student = self._models["full"]
+            assert len(teacher.outputs) == len(student.outputs), "number of outputs don't match"
+            def _ban_loss(student_outputs, x):
+                """
+                Computes Kullback-Leibler divergence between student
+                and teacher model outputs
+                
+                :student_outputs: model outputs from the model being trained 
+                        (since we're probably already computing those elsewhere 
+                        in the training step)
+                :x: current training batch
+                """
+                teacher_outputs = self._models["teacher"](x)
+                loss = 0
+                for s,t in zip(student_outputs, teacher_outputs):
+                    loss += tf.reduce_mean(tf.keras.losses.KLD(t,s))
+                return loss
+        else:
+            return None
