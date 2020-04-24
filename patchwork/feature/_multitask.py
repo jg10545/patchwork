@@ -296,7 +296,8 @@ class MultiTaskTrainer(GenericExtractor):
                                               train_fcn=train_fcn, 
                                               global_pooling="max")
         self._models = models
-        self._models["teacher"] = teacher
+        if teacher is not None:
+            self._models["teacher"] = teacher
         
         # create optimizer
         self._optimizer = self._build_optimizer(lr, lr_decay)
