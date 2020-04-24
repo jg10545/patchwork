@@ -255,7 +255,7 @@ class GenericExtractor(object):
                 # record hyperparamters
                 hp.hparams(params)
                 
-    def _build_optimizer(lr, lr_decay=0, opttype="adam"):
+    def _build_optimizer(self, lr, lr_decay=0, opttype="adam"):
         # macro for creating the Keras optimizer
         return build_optimizer(lr, lr_decay,opttype)
         
