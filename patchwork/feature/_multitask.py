@@ -6,7 +6,6 @@ from tensorflow.keras import backend as K
 from sklearn.preprocessing import LabelEncoder
 import warnings
 import os
-from tqdm import tqdm
 import yaml
 
 from patchwork._losses import masked_sparse_categorical_crossentropy
@@ -161,7 +160,6 @@ def _build_multitask_training_step(model, trainvars, optimizer, tasks,
                     # interpret weight as log(sigma^2). Kendall's paper mentions
                     # that they use this as it's more numerically stable
                     inv_sig_sq = tf.math.exp(-1*weight)
-                    #loss += task_loss/(sig_sq + K.epsilon()) + 0.5*weight
                     total_loss += task_loss*inv_sig_sq + 0.5*weight
                 else:
                     total_loss += weight*task_loss
@@ -274,8 +272,11 @@ class MultiTaskTrainer(GenericExtractor):
         :sobel: whether to replace the input image with its sobel edges
         :single_channel: if True, expect a single-channel input image and 
             stack it num_channels times.
-        :teacher:
-        :distill_weight:
+        :teacher: A Keras model to use for knowledge distillation. needs to
+            have same input and output dimensions as model being trained.
+            See Furlanello et al's "Born Again Neural Networks"
+        :distill_weight: if using a teacher model, weight for Kullback-
+            Leibler loss
         :notes: any experimental notes you want recorded in the config.yml file
         """
         adaptive = task_weights == "adaptive"
@@ -386,8 +387,6 @@ class MultiTaskTrainer(GenericExtractor):
             lossdict, task_losses = self._training_step(x,y)
 
             self._record_scalars(**lossdict)
-            #self._record_scalars(**{"loss_"+x:t for x,t in 
-            #                            zip(self._tasks, task_losses)})
                 
             self.step += 1
         
