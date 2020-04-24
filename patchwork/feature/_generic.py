@@ -274,12 +274,18 @@ class GenericExtractor(object):
                 Computes Kullback-Leibler divergence between student
                 and teacher model outputs
                 
+                Note that right now this function assumes multiple-output
+                models (hence the correction to make a single-output model
+                        a list of length 1). i should make this more robust.
+                
                 :student_outputs: model outputs from the model being trained 
                         (since we're probably already computing those elsewhere 
                         in the training step)
                 :x: current training batch
                 """
                 teacher_outputs = self._models["teacher"](x)
+                if isinstance(teacher_outputs, tf.Tensor):
+                    teacher_outputs = [teacher_outputs]
                 loss = 0
                 for s,t in zip(student_outputs, teacher_outputs):
                     loss += tf.reduce_mean(tf.keras.losses.KLD(t,s))
