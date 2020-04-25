@@ -198,7 +198,7 @@ def _mtdataset(filepaths, labels, imshape, num_parallel_calls, norm,
                              num_parallel_calls=num_parallel_calls,
                                  norm=norm, num_channels=num_channels,
                                  single_channel=single_channel,
-                                 augment=aug)
+                                 augment=aug, shuffle=False)
 
     if labels is not None:    
         label_ds = [tf.data.Dataset.from_tensor_slices(labels[:,i]) for i in 
@@ -206,6 +206,7 @@ def _mtdataset(filepaths, labels, imshape, num_parallel_calls, norm,
         ds = tf.data.Dataset.zip((ds, *label_ds))    
 
     ds = ds.batch(batch_size)
+    ds = ds.prefetch(1)
     return ds
 
 
