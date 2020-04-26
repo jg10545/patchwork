@@ -85,6 +85,22 @@ def linear_classification_test(fcn, downstream_labels, **input_config):
     return acc, cm
 
 
+def build_optimizer(lr, lr_decay=0, opttype="adam"):
+    """
+    Macro to reduce some duplicative code for building optimizers
+    for trainers
+    """
+    if lr_decay > 0:
+        lr = tf.keras.optimizers.schedules.ExponentialDecay(lr, 
+                                        decay_steps=lr_decay, decay_rate=0.5,
+                                        staircase=False)
+    if opttype == "adam":
+        return tf.keras.optimizers.Adam(lr)
+    elif opttype == "momentum":
+        return tf.keras.optimizers.SGD(lr, momentum=0.9)
+    else:
+        assert False, "dont know what to do with {}".format(opttype)
+
 
 
 
@@ -238,6 +254,42 @@ class GenericExtractor(object):
                 
                 # record hyperparamters
                 hp.hparams(params)
+                
+    def _build_optimizer(self, lr, lr_decay=0, opttype="adam"):
+        # macro for creating the Keras optimizer
+        return build_optimizer(lr, lr_decay,opttype)
         
             
-    
+    def _born_again_loss_function(self):
+        """
+        Generate a function that computes the Born-Again Network loss
+        if a "teacher" model is in the model dictionary
+        """
+        if "teacher" in self._models:
+            teacher = self._models["teacher"]
+            student = self._models["full"]
+            assert len(teacher.outputs) == len(student.outputs), "number of outputs don't match"
+            def _ban_loss(student_outputs, x):
+                """
+                Computes Kullback-Leibler divergence between student
+                and teacher model outputs
+                
+                Note that right now this function assumes multiple-output
+                models (hence the correction to make a single-output model
+                        a list of length 1). i should make this more robust.
+                
+                :student_outputs: model outputs from the model being trained 
+                        (since we're probably already computing those elsewhere 
+                        in the training step)
+                :x: current training batch
+                """
+                teacher_outputs = self._models["teacher"](x)
+                if isinstance(teacher_outputs, tf.Tensor):
+                    teacher_outputs = [teacher_outputs]
+                loss = 0
+                for s,t in zip(student_outputs, teacher_outputs):
+                    loss += tf.reduce_mean(tf.keras.losses.KLD(t,s))
+                return loss
+            return _ban_loss
+        else:
+            return None

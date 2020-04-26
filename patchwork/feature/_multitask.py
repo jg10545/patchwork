@@ -6,13 +6,12 @@ from tensorflow.keras import backend as K
 from sklearn.preprocessing import LabelEncoder
 import warnings
 import os
-from tqdm import tqdm
 import yaml
 
 from patchwork._losses import masked_sparse_categorical_crossentropy
 from patchwork.loaders import _image_file_dataset
-from patchwork._augment import augment_function
 from patchwork._layers import _next_layer
+from patchwork.feature._generic import GenericExtractor
 
 INPUT_PARAMS = ["imshape", "num_channels", "norm", "batch_size",
                 "shuffle", "num_parallel_calls", "sobel", "single_channel"]
@@ -138,35 +137,44 @@ def _assemble_full_network(fcn, task_dimensions, shared_layers=[],
             
             
             
-def _build_multitask_training_step(model, trainvars, optimizer, 
-                                  task_loss_weights, adaptive=False):
+def _build_multitask_training_step(model, trainvars, optimizer, tasks,
+                                  task_loss_weights, adaptive=False,
+                                  distill_func=None, distill_weight=0):
     """
     
     """
     @tf.function
     def train_step(x, y):
         with tf.GradientTape() as tape:
-            loss = 0
+            total_loss = 0
+            lossdict = {}
             task_losses = []
             outputs = model(x, training=True)
+            # hack to make this work with a single task
+            if len(tasks) == 1: outputs = [outputs]
             
-            for pred, y_true, weight in zip(outputs, y, 
-                                            task_loss_weights):
+            for pred, y_true, weight, task in zip(outputs, y, 
+                                            task_loss_weights, tasks):
                 task_loss = masked_sparse_categorical_crossentropy(y_true, pred)
+                lossdict["loss_"+task] = task_loss
                 task_losses.append(task_loss)
                 if adaptive:
                     # interpret weight as log(sigma^2). Kendall's paper mentions
                     # that they use this as it's more numerically stable
-                    #sig_sq = tf.math.exp(weight)
                     inv_sig_sq = tf.math.exp(-1*weight)
-                    #loss += task_loss/(sig_sq + K.epsilon()) + 0.5*weight
-                    loss += task_loss*inv_sig_sq + 0.5*weight
+                    total_loss += task_loss*inv_sig_sq + 0.5*weight
                 else:
-                    loss += weight*task_loss
+                    total_loss += weight*task_loss
+                    
+            if (distill_func is not None)&(distill_weight > 0):
+                lossdict["distill_loss"] = distill_func(outputs, x)
+                total_loss += distill_weight*lossdict["distill_loss"]
                 
-        gradients = tape.gradient(loss, trainvars)
+            lossdict["total_loss"] = total_loss
+                
+        gradients = tape.gradient(total_loss, trainvars)
         optimizer.apply_gradients(zip(gradients, trainvars))
-        return loss, task_losses
+        return lossdict, task_losses
     return train_step    
             
 def _sampling_probabilities(indices):
@@ -185,22 +193,26 @@ def _sampling_probabilities(indices):
          
 def _mtdataset(filepaths, labels, imshape, num_parallel_calls, norm,
                num_channels, single_channel, aug, batch_size):
-    ds = _image_file_dataset(filepaths, imshape, num_parallel_calls,
-                                 norm, num_channels,
+
+    ds = _image_file_dataset(filepaths, imshape=imshape, 
+                             num_parallel_calls=num_parallel_calls,
+                                 norm=norm, num_channels=num_channels,
                                  single_channel=single_channel,
-                                 augment=aug)
+                                 augment=aug, shuffle=False)
 
     if labels is not None:    
         label_ds = [tf.data.Dataset.from_tensor_slices(labels[:,i]) for i in 
                                                     range(labels.shape[1])]
         ds = tf.data.Dataset.zip((ds, *label_ds))    
+
     ds = ds.batch(batch_size)
+    ds = ds.prefetch(1)
     return ds
 
 
 
 
-class MultiTaskTrainer(object):
+class MultiTaskTrainer(GenericExtractor):
     """
     Class for managing training of a multitask convnet.
     
@@ -230,7 +242,7 @@ class MultiTaskTrainer(object):
                  lr=1e-3, lr_decay=0, balance_probs=True,
                  augment=False, imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, shuffle=True, num_parallel_calls=None,
-                 single_channel=False, notes=""):
+                 single_channel=False, teacher=None, distill_weight=0, notes=""):
         """
         :logdir: (string) path to log directory
         :trainingdata: pandas dataframe of training data
@@ -263,6 +275,11 @@ class MultiTaskTrainer(object):
         :sobel: whether to replace the input image with its sobel edges
         :single_channel: if True, expect a single-channel input image and 
             stack it num_channels times.
+        :teacher: A Keras model to use for knowledge distillation. needs to
+            have same input and output dimensions as model being trained.
+            See Furlanello et al's "Born Again Neural Networks"
+        :distill_weight: if using a teacher model, weight for Kullback-
+            Leibler loss
         :notes: any experimental notes you want recorded in the config.yml file
         """
         adaptive = task_weights == "adaptive"
@@ -286,15 +303,11 @@ class MultiTaskTrainer(object):
                                               train_fcn=train_fcn, 
                                               global_pooling="max")
         self._models = models
+        if teacher is not None:
+            self._models["teacher"] = teacher
         
         # create optimizer
-        if lr_decay > 0:
-            learnrate = tf.keras.optimizers.schedules.ExponentialDecay(lr, 
-                                            decay_steps=lr_decay, decay_rate=0.5,
-                                            staircase=False)
-        else:
-            learnrate = lr
-        self._optimizer = tf.keras.optimizers.Adam(learnrate)
+        self._optimizer = self._build_optimizer(lr, lr_decay)
         
         if task_weights is None:
             task_weights = [1 for _ in tasks]
@@ -303,11 +316,15 @@ class MultiTaskTrainer(object):
                                         name="weight_%s"%t) for t in tasks]
             trainvars += task_weights
         self._task_weights = task_weights
+        distill_func = self._born_again_loss_function()
         self._training_step = _build_multitask_training_step(self._models["full"], 
-                                                             trainvars, 
-                                                             self._optimizer,
-                                                             task_weights,
-                                                             adaptive)
+                                            trainvars, 
+                                            self._optimizer,
+                                            tasks,
+                                            task_weights,
+                                            adaptive,
+                                            distill_func=distill_func,
+                                            distill_weight=distill_weight)
         # build validation dataset. 
         self._val_ds = _mtdataset(self._labels["val_files"], None,
                                   imshape, num_parallel_calls, norm, num_channels,
@@ -325,7 +342,9 @@ class MultiTaskTrainer(object):
                             num_channels=num_channels,
                             norm=norm, batch_size=batch_size, shuffle=shuffle,
                             num_parallel_calls=num_parallel_calls,
-                            single_channel=single_channel, notes=notes)
+                            single_channel=single_channel, notes=notes,
+                            distill_weight=distill_weight,
+                            trainer="multitask")
         
         
         
@@ -351,21 +370,13 @@ class MultiTaskTrainer(object):
                        "augment":self.augment_config}
         yaml.dump(config_dict, open(config_path, "w"), default_flow_style=False)
 
-    
-    def fit(self, epochs=1, save=True, evaluate=True):
-        """
-        Train the feature extractor
-        
-        :epochs: number of epochs to train for
-        :save: if True, save after each epoch
-        :evaluate: if True, run eval metrics after each epoch
-        """
+
+    def _run_training_epoch(self, **kwargs):
         N = len(self._labels["train_files"])
-        for e in tqdm(range(epochs)):
-            # resample labels each epoch
-            indices = np.random.choice(np.arange(N), p=self._labels["probs"],
+        # resample labels each epoch
+        indices = np.random.choice(np.arange(N), p=self._labels["probs"],
                                        size=N, replace=True)
-            ds = _mtdataset(self._labels["train_files"][indices], 
+        ds = _mtdataset(self._labels["train_files"][indices], 
                             self._labels["train_indices"][indices],
                             self.input_config["imshape"],
                             self.input_config["num_parallel_calls"],
@@ -375,35 +386,20 @@ class MultiTaskTrainer(object):
                             self.augment_config,
                             self.input_config["batch_size"])
             
-            for x, *y in ds:
-                loss, task_losses = self._training_step(x,y)
+        for x, *y in ds:
+            lossdict, task_losses = self._training_step(x,y)
 
-                self._record_scalars(total_loss=loss)
-                self._record_scalars(**{"loss_"+x:t for x,t in 
-                                        zip(self._tasks, task_losses)})
+            self._record_scalars(**lossdict)
                 
-                self.step += 1
-            
-            if save:
-                self.save()
-            if evaluate:
-                self.evaluate()
-    
-    def save(self):
-        """
-        Write model(s) to disk
+            self.step += 1
         
-        Note: tried to use SavedModel format for this and got a memory leak;
-        think it's related to https://github.com/tensorflow/tensorflow/issues/32234
-        
-        For now sticking with HDF5
-        """
-        for m in self._models:
-            path = os.path.join(self.logdir, m+".h5")
-            self._models[m].save(path, overwrite=True, save_format="h5")
             
     def evaluate(self):
         predictions = self._models["full"].predict(self._val_ds)
+        
+        # stupid hack- haven't figured out a better way to do
+        # this with keras API
+        if len(self._tasks) == 1: predictions = [predictions]
         
         for i in range(len(self._tasks)):
             task = self._tasks[i]
@@ -420,19 +416,7 @@ class MultiTaskTrainer(object):
                                     zip(self._tasks, self._task_weights)})
             
                 
-            
-    def _record_scalars(self, **scalars):
-        for s in scalars:
-            tf.summary.scalar(s, scalars[s], step=self.step)
-            
-    def _record_images(self, **images):
-        for i in images:
-            tf.summary.image(i, images[i], step=self.step)
-            
-    def _record_hists(self, **hists):
-        for h in hists:
-            tf.summary.histogram(h, hists[h], step=self.step)
-                      
+  
             
             
             
