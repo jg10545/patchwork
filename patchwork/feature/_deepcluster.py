@@ -132,7 +132,8 @@ class DeepClusterTrainer(GenericExtractor):
 
     def __init__(self, logdir, trainingdata, testdata=None, fcn=None, augment=True, 
                  pca_dim=256, k=1000, dense=[4096], mult=1, 
-                 kmeans_max_iter=100, kmeans_batch_size=100, lr=0.05, lr_decay=100000,
+                 kmeans_max_iter=100, kmeans_batch_size=100, lr=0.05, 
+                 lr_decay=100000, decay_type="exponential",
                   imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, num_parallel_calls=None,
                  sobel=False, single_channel=False, notes="",
@@ -155,6 +156,7 @@ class DeepClusterTrainer(GenericExtractor):
         :kmeans_batch_size: batch size for minibatch k-means
         :lr: (float) initial learning rate
         :lr_decay: (int) steps for learning rate to decay by half (0 to disable)
+        :decay_type: (str) how to decay learning rate; "exponential" or "cosine"
         :imshape: (tuple) image dimensions in H,W
         :num_channels: (int) number of image channels
         :norm: (int or float) normalization constant for images (for rescaling to
@@ -191,7 +193,8 @@ class DeepClusterTrainer(GenericExtractor):
         self._output_layer = output_layer
         
         # create optimizer
-        self._optimizer = self._build_optimizer(lr, lr_decay, "momentum")
+        self._optimizer = self._build_optimizer(lr, lr_decay, opt_type="momentum",
+                                                decay_type=decay_type)
         
         # build evaluation dataset
         if testdata is not None:

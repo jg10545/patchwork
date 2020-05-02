@@ -239,7 +239,8 @@ class MultiTaskTrainer(GenericExtractor):
                  filepaths="filepath", task_weights=None,
                  shared_layers=[], task_layers=[128,"p",128], 
                  train_fcn=False,
-                 lr=1e-3, lr_decay=0, balance_probs=True,
+                 lr=1e-3, lr_decay=0, decay_type="exponential",
+                 balance_probs=True,
                  augment=False, imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, shuffle=True, num_parallel_calls=None,
                  single_channel=False, teacher=None, distill_weight=0, notes=""):
@@ -259,6 +260,7 @@ class MultiTaskTrainer(GenericExtractor):
         :train_fcn: (bool) whether to let the feature extractor train
         :lr: learning rate
         :lr_decay: learning rate decay (set to 0 to disable)
+        :decay_type: (str) how to decay learning rate; "exponential" or "cosine"
         :balance_probs: if True, bias sampling during training to attempt to
             make sure each task is represented. Does not correct for class 
             imbalance within tasks.
@@ -307,7 +309,8 @@ class MultiTaskTrainer(GenericExtractor):
             self._models["teacher"] = teacher
         
         # create optimizer
-        self._optimizer = self._build_optimizer(lr, lr_decay)
+        self._optimizer = self._build_optimizer(lr, lr_decay, 
+                                                decay_type=decay_type)
         
         if task_weights is None:
             task_weights = [1 for _ in tasks]

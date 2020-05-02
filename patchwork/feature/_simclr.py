@@ -168,7 +168,7 @@ class SimCLRTrainer(GenericExtractor):
     def __init__(self, logdir, trainingdata, testdata=None, fcn=None, 
                  augment=True, temperature=1., num_hidden=128,
                  output_dim=64,
-                 lr=0.01, lr_decay=100000,
+                 lr=0.01, lr_decay=100000, decay_type="exponential",
                  imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, num_parallel_calls=None,
                  single_channel=False, notes="",
@@ -184,6 +184,7 @@ class SimCLRTrainer(GenericExtractor):
         :output_dim: dimension of projection head's output space. Figure 8 in Chen et al's paper shows that their results did not depend strongly on this value.
         :lr: (float) initial learning rate
         :lr_decay: (int) steps for learning rate to decay by half (0 to disable)
+        :decay_type: (str) how to decay learning rate; "exponential" or "cosine"
         :imshape: (tuple) image dimensions in H,W
         :num_channels: (int) number of image channels
         :norm: (int or float) normalization constant for images (for rescaling to
@@ -228,7 +229,8 @@ class SimCLRTrainer(GenericExtractor):
                                         stratify=stratify)
         
         # create optimizer
-        self._optimizer = self._build_optimizer(lr, lr_decay)
+        self._optimizer = self._build_optimizer(lr, lr_decay,
+                                                decay_type=decay_type)
         
         
         # build training step
