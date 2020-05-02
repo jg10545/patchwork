@@ -85,21 +85,30 @@ def linear_classification_test(fcn, downstream_labels, **input_config):
     return acc, cm
 
 
-def build_optimizer(lr, lr_decay=0, opttype="adam"):
+def build_optimizer(lr, lr_decay=0, opt_type="adam", decay_type="exponential"):
     """
     Macro to reduce some duplicative code for building optimizers
     for trainers
+    
+    :decay_type: exponential or cosine
     """
     if lr_decay > 0:
-        lr = tf.keras.optimizers.schedules.ExponentialDecay(lr, 
+        if decay_type == "exponential":
+            lr = tf.keras.optimizers.schedules.ExponentialDecay(lr, 
                                         decay_steps=lr_decay, decay_rate=0.5,
                                         staircase=False)
-    if opttype == "adam":
+        elif decay_type == "cosine":
+            lr = tf.keras.experimental.CosineDecayRestarts(lr, lr_decay,
+                                                           t_mul=2., m_mul=1.,
+                                                           alpha=0.)
+        else:
+            assert False, "don't recognize this decay type"
+    if opt_type == "adam":
         return tf.keras.optimizers.Adam(lr)
-    elif opttype == "momentum":
+    elif opt_type == "momentum":
         return tf.keras.optimizers.SGD(lr, momentum=0.9)
     else:
-        assert False, "dont know what to do with {}".format(opttype)
+        assert False, "dont know what to do with {}".format(opt_type)
 
 
 
@@ -255,9 +264,21 @@ class GenericExtractor(object):
                 # record hyperparamters
                 hp.hparams(params)
                 
-    def _build_optimizer(self, lr, lr_decay=0, opttype="adam"):
+    def _build_optimizer(self, lr, lr_decay=0, opt_type="adam", decay_type="exponential"):
         # macro for creating the Keras optimizer
-        return build_optimizer(lr, lr_decay,opttype)
+        return build_optimizer(lr, lr_decay,opt_type, decay_type)
+    
+    def _get_current_learning_rate(self):
+        """
+        return the current step's learning rate
+        """
+        if hasattr(self, "_optimizer"):
+            # NO DECAY SCHEDULE CASE
+            if isinstance(self._optimizer.lr, tf.Tensor):
+                return self._optimizer.lr
+            # DECAY SCHEDULE CASE
+            else:
+                return self._optimizer.lr(self.step)
         
             
     def _born_again_loss_function(self):
