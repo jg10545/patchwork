@@ -293,7 +293,9 @@ class SimCLRTrainer(GenericExtractor):
                 test_loss += loss.numpy()
                 
             self._record_scalars(test_loss=test_loss)
-            self._record_images(scalar_products=tf.expand_dims(tf.expand_dims(sim,-1), 0))
+            # I'm commenting out this tensorboard image- takes up a lot of
+            # space but doesn't seem to add much
+            #self._record_images(scalar_products=tf.expand_dims(tf.expand_dims(sim,-1), 0))
         if self._downstream_labels is not None:
             # choose the hyperparameters to record
             if not hasattr(self, "_hparams_config"):
