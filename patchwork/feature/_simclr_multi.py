@@ -3,12 +3,14 @@ import tensorflow as tf
 
 from patchwork.feature._simclr import _build_simclr_dataset,  _build_embedding_model
 from patchwork.feature._simclr import SimCLRTrainer
+from patchwork._util import compute_l2_loss
 
 
 BIG_NUMBER = 1000.
 
 def _build_distributed_training_step(strategy, embed_model, optimizer, 
-                                     global_batch_size, temperature=0.1):
+                                     global_batch_size, temperature=0.1,
+                                     weight_decay=0):
     """
     Returns a distributed version of the SimCLR training step as a tf.function.
     
@@ -20,6 +22,7 @@ def _build_distributed_training_step(strategy, embed_model, optimizer,
     @tf.function
     def train_step(x, y):
         def step_fn(x,y):
+            lossdict = {}
             eye = tf.linalg.eye(x.shape[0])
             index = tf.range(0, x.shape[0])
             # the labels tell which similarity is the "correct" one- the augmented
@@ -40,23 +43,35 @@ def _build_distributed_training_step(strategy, embed_model, optimizer,
                 
                 crossent = tf.nn.sparse_softmax_cross_entropy_with_logits(labels, logits)
                 loss = tf.reduce_sum(crossent)/global_batch_size
+                
+                # the original SimCLR paper used a weight decay of 1e-6
+                if weight_decay > 0:
+                    lossdict["l2_loss"] = compute_l2_loss(embed_model)
+                    lossdict["nt_xent_loss"] = loss
+                    loss += weight_decay*lossdict["l2_loss"]
+                lossdict["loss"] = loss
 
                 gradients = tape.gradient(loss, embed_model.trainable_variables)
                 optimizer.apply_gradients(zip(gradients,
                                       embed_model.trainable_variables))
                 
                 avg_cosine_sim = tf.reduce_mean(sim)
-                return crossent, avg_cosine_sim
+                #return crossent, avg_cosine_sim
+                return lossdict, avg_cosine_sim
         
         per_example_losses, avg_cos = strategy.experimental_run_v2(
                                         step_fn, args=(x,y))
-        total_loss = strategy.reduce(
-                        tf.distribute.ReduceOp.SUM, 
-                        per_example_losses, axis=0)
+        lossdict = {k:strategy.reduce(
+            tf.distribute.ReduceOp.SUM, 
+            per_example_losses[k], axis=None)
+            for k in per_example_losses}
+        #total_loss = strategy.reduce(
+        #                tf.distribute.ReduceOp.SUM, 
+        #                per_example_losses, axis=0)
         avg_cos = strategy.reduce(
                         tf.distribute.ReduceOp.MEAN, 
                         avg_cos, axis=None)
-        return total_loss,  avg_cos
+        return lossdict,  avg_cos
     return train_step
 
 
@@ -79,7 +94,7 @@ class DistributedSimCLRTrainer(SimCLRTrainer):
 
     def __init__(self, strategy, logdir, trainingdata, testdata=None, fcn=None, 
                  augment=True, temperature=1., num_hidden=128,
-                 output_dim=64,
+                 output_dim=64, weight_decay=0,
                  lr=0.01, lr_decay=100000, decay_type="exponential",
                  imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, num_parallel_calls=None,
@@ -95,6 +110,7 @@ class DistributedSimCLRTrainer(SimCLRTrainer):
         :temperature: the Boltmann temperature parameter- rescale the cosine similarities by this factor before computing softmax loss.
         :num_hidden: number of hidden neurons in the network's projection head
         :output_dim: dimension of projection head's output space. Figure 8 in Chen et al's paper shows that their results did not depend strongly on this value.
+        :weight_decay: coefficient for L2-norm loss. The original SimCLR paper used 1e-6.
         :lr: (float) initial learning rate
         :lr_decay: (int) steps for learning rate to decay by half (0 to disable)
         :decay_type: (str) how to decay learning rate; "exponential" or "cosine"
@@ -157,7 +173,8 @@ class DistributedSimCLRTrainer(SimCLRTrainer):
                                         embed_model, 
                                         self._optimizer, 
                                         batch_size*strategy.num_replicas_in_sync,
-                                        temperature=temperature)
+                                        temperature=temperature,
+                                        weight_decay=weight_decay)
         
         #self._test = False
         if testdata is not None:
