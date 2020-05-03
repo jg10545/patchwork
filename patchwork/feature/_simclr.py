@@ -5,6 +5,7 @@ import tensorflow as tf
 from patchwork.feature._generic import GenericExtractor
 from patchwork._augment import augment_function
 from patchwork.loaders import _image_file_dataset
+from patchwork._util import compute_l2_loss
 
 BIG_NUMBER = 1000.
 
@@ -106,7 +107,8 @@ def _build_embedding_model(fcn, imshape, num_channels, num_hidden, output_dim):
 
 
 
-def _build_simclr_training_step(embed_model, optimizer, temperature=0.1):
+def _build_simclr_training_step(embed_model, optimizer, temperature=0.1,
+                                weight_decay=0):
     """
     Generate a tensorflow function to run the training step for SimCLR.
     
@@ -114,6 +116,7 @@ def _build_simclr_training_step(embed_model, optimizer, temperature=0.1):
         projection head
     :optimizer: Keras optimizer
     :temperature: hyperparameter for scaling cosine similarities
+    :weight_decay: coefficient for L2 loss
     
     The training function returns:
     :loss: value of the loss function for training
@@ -142,6 +145,12 @@ def _build_simclr_training_step(embed_model, optimizer, temperature=0.1):
             
             loss = tf.reduce_mean(
                     tf.nn.sparse_softmax_cross_entropy_with_logits(labels, logits))
+            
+            # the original SimCLR paper used a weight decay of 1e-6
+            if weight_decay > 0:
+                lossdict["l2_loss"] = compute_l2_loss(embed_model)
+                lossdict["nt_xent_loss"] = loss
+                loss += weight_decay*lossdict["l2_loss"]
             lossdict["loss"] = loss
 
         gradients = tape.gradient(loss, embed_model.trainable_variables)
@@ -167,7 +176,7 @@ class SimCLRTrainer(GenericExtractor):
 
     def __init__(self, logdir, trainingdata, testdata=None, fcn=None, 
                  augment=True, temperature=1., num_hidden=128,
-                 output_dim=64,
+                 output_dim=64, weight_decay=0,
                  lr=0.01, lr_decay=100000, decay_type="exponential",
                  imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, num_parallel_calls=None,
@@ -182,6 +191,7 @@ class SimCLRTrainer(GenericExtractor):
         :temperature: the Boltmann temperature parameter- rescale the cosine similarities by this factor before computing softmax loss.
         :num_hidden: number of hidden neurons in the network's projection head
         :output_dim: dimension of projection head's output space. Figure 8 in Chen et al's paper shows that their results did not depend strongly on this value.
+        :weight_decay: coefficient for L2-norm loss. The original SimCLR paper used 1e-6.
         :lr: (float) initial learning rate
         :lr_decay: (int) steps for learning rate to decay by half (0 to disable)
         :decay_type: (str) how to decay learning rate; "exponential" or "cosine"
@@ -235,9 +245,8 @@ class SimCLRTrainer(GenericExtractor):
         
         # build training step
         self._training_step = _build_simclr_training_step(
-                embed_model, 
-                self._optimizer, 
-                temperature)
+                embed_model, self._optimizer, 
+                temperature, weight_decay=weight_decay)
         
         if testdata is not None:
             self._test_ds = _build_simclr_dataset(testdata, 
@@ -271,6 +280,7 @@ class SimCLRTrainer(GenericExtractor):
         # parse and write out config YAML
         self._parse_configs(augment=augment, temperature=temperature,
                             num_hidden=num_hidden, output_dim=output_dim,
+                            weight_decay=weight_decay,
                             lr=lr, lr_decay=lr_decay, 
                             imshape=imshape, num_channels=num_channels,
                             norm=norm, batch_size=batch_size,

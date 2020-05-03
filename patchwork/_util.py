@@ -72,7 +72,7 @@ def _load_img(f, norm=255, num_channels=3, resize=None):
 
 
 
-def l2_loss(*models):
+def compute_l2_loss(*models):
     """
     Compute squared L2-norm for all non-batchnorm trainable
     variables in one or more Keras models

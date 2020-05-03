@@ -3,7 +3,7 @@ import numpy as np
 import tensorflow as tf
 
 from patchwork._util import shannon_entropy, tiff_to_array, _load_img
-from patchwork._util import l2_loss
+from patchwork._util import compute_l2_loss
 
 
 
@@ -84,17 +84,17 @@ def test_l2_loss():
     net = tf.keras.layers.Dense(5)(inpt)
     model = tf.keras.Model(inpt, net)
     # check the L2 loss; should be a scalar bigger than zero
-    assert l2_loss(model).numpy() > 0
+    assert compute_l2_loss(model).numpy() > 0
     # should also work with multiple inputs
-    assert l2_loss(model, model).numpy() > 0
+    assert compute_l2_loss(model, model).numpy() > 0
     # set all trainable weights to zro
     new_weights = [np.zeros(x.shape, dtype=np.float32)
                    for x in model.get_weights()]
     model.set_weights(new_weights)
-    assert l2_loss(model).numpy() == 0.
+    assert compute_l2_loss(model).numpy() == 0.
     # add a batch norm layer- shouldn't change anything
     # because the function should skip that layer
     net = tf.keras.layers.BatchNormalization()(net)
     model = tf.keras.Model(inpt,net)
-    assert l2_loss(model).numpy() == 0.
+    assert compute_l2_loss(model).numpy() == 0.
     
