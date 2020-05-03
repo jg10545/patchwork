@@ -88,8 +88,24 @@ def test_build_simclr_training_step():
     
     x = tf.zeros((4,32,32,3), dtype=tf.float32)
     y = np.array([1,-1,1,-1]).astype(np.int32)
-    #loss, avg_cosine_sim = step(x,y)
     lossdict = step(x,y)
     
     assert isinstance(lossdict["loss"].numpy(), np.float32)
+    # should include loss and average cosine similarity
+    assert len(lossdict) == 2
+    
+    
+def test_build_simclr_training_step_with_weight_decay():
+    model = _build_embedding_model(fcn, (32,32), 3, 5, 7)
+    opt = tf.keras.optimizers.SGD()
+    step = _build_simclr_training_step(model, opt, 0.1,
+                                       weight_decay=1e-6)
+    
+    x = tf.zeros((4,32,32,3), dtype=tf.float32)
+    y = np.array([1,-1,1,-1]).astype(np.int32)
+    lossdict = step(x,y)
+    
+    # should include total loss, crossent loss, average cosine
+    # similarity and L2 norm squared
+    assert len(lossdict) == 4
     

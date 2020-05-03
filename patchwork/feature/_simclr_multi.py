@@ -56,25 +56,17 @@ def _build_distributed_training_step(strategy, embed_model, optimizer,
                                       embed_model.trainable_variables))
                 
                 lossdict["avg_cosine_sim"] = tf.reduce_mean(sim)
-                #return crossent, avg_cosine_sim
-                return lossdict#, avg_cosine_sim
+                return lossdict
         
-        #per_example_losses, avg_cos = strategy.experimental_run_v2(
-        #                                step_fn, args=(x,y))
         per_example_losses = strategy.experimental_run_v2(
                                         step_fn, args=(x,y))
 
         lossdict = {k:strategy.reduce(
-            tf.distribute.ReduceOp.SUM, 
+            tf.distribute.ReduceOp.MEAN, 
             per_example_losses[k], axis=None)
             for k in per_example_losses}
-        #total_loss = strategy.reduce(
-        #                tf.distribute.ReduceOp.SUM, 
-        #                per_example_losses, axis=0)
-        #avg_cos = strategy.reduce(
-        #                tf.distribute.ReduceOp.MEAN, 
-        #                avg_cos, axis=None)
-        return lossdict#,  avg_cos
+
+        return lossdict
     return train_step
 
 
