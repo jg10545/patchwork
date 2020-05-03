@@ -1,6 +1,7 @@
 import numpy as np
 from PIL import Image
 from osgeo import gdal
+import tensorflow as tf
 
 def shannon_entropy(x):
     """
@@ -68,3 +69,18 @@ def _load_img(f, norm=255, num_channels=3, resize=None):
     if len(img_arr.shape) == 2:
         img_arr = np.stack(num_channels*[img_arr], -1)
     return img_arr.astype(np.float32)  # if norm is large, python recasts the array as float64
+
+
+
+def l2_loss(*models):
+    """
+    Compute squared L2-norm for all non-batchnorm trainable
+    variables in one or more Keras models
+    """
+    loss = 0
+    for m in models:
+        for v in m.trainable_variables:
+            if "batch_normalization" not in v.name:
+                loss += tf.nn.l2_loss(v)
+                
+    return loss
