@@ -148,7 +148,6 @@ def _build_multitask_training_step(model, trainvars, optimizer, tasks,
         with tf.GradientTape() as tape:
             total_loss = 0
             lossdict = {}
-            task_losses = []
             outputs = model(x, training=True)
             # hack to make this work with a single task
             if len(tasks) == 1: outputs = [outputs]
@@ -157,7 +156,7 @@ def _build_multitask_training_step(model, trainvars, optimizer, tasks,
                                             task_loss_weights, tasks):
                 task_loss = masked_sparse_categorical_crossentropy(y_true, pred)
                 lossdict["loss_"+task] = task_loss
-                task_losses.append(task_loss)
+                
                 if adaptive:
                     # interpret weight as log(sigma^2). Kendall's paper mentions
                     # that they use this as it's more numerically stable
@@ -174,7 +173,7 @@ def _build_multitask_training_step(model, trainvars, optimizer, tasks,
                 
         gradients = tape.gradient(total_loss, trainvars)
         optimizer.apply_gradients(zip(gradients, trainvars))
-        return lossdict, task_losses
+        return lossdict
     return train_step    
             
 def _sampling_probabilities(indices):
@@ -243,7 +242,8 @@ class MultiTaskTrainer(GenericExtractor):
                  balance_probs=True,
                  augment=False, imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, shuffle=True, num_parallel_calls=None,
-                 single_channel=False, teacher=None, distill_weight=0, notes=""):
+                 single_channel=False, teacher=None, distill_weight=0, notes="",
+                 strategy=None):
         """
         :logdir: (string) path to log directory
         :trainingdata: pandas dataframe of training data
@@ -283,11 +283,14 @@ class MultiTaskTrainer(GenericExtractor):
         :distill_weight: if using a teacher model, weight for Kullback-
             Leibler loss
         :notes: any experimental notes you want recorded in the config.yml file
+        :strategy: if distributing across multiple GPUs, pass a tf.distribute
+            Strategy object here
         """
         adaptive = task_weights == "adaptive"
         self.logdir = logdir
         self._aug = augment
         self._tasks = tasks
+        self.strategy = strategy
         labels, class_dict = _dataframe_to_classes(trainingdata, valdata,
                                                    tasks, filepath=filepaths)
         self._labels = labels
@@ -300,27 +303,31 @@ class MultiTaskTrainer(GenericExtractor):
         self._class_dict = class_dict
         task_dimensions = [len(class_dict[t]) for t in tasks]
         
-        models, trainvars = _assemble_full_network(fcn, task_dimensions, shared_layers,
+        # create all the network components
+        with self.scope():
+            models, trainvars = _assemble_full_network(fcn, task_dimensions, shared_layers,
                                               task_layers=task_layers, 
                                               train_fcn=train_fcn, 
                                               global_pooling="max")
-        self._models = models
-        if teacher is not None:
-            self._models["teacher"] = teacher
+            self._models = models
+            if teacher is not None:
+                self._models["teacher"] = teacher
+                
+            if task_weights is None:
+                task_weights = [1 for _ in tasks]
+            elif adaptive:
+                task_weights = [tf.Variable(1., dtype=tf.float32, 
+                                        name="weight_%s"%t) for t in tasks]    
+        trainvars += task_weights
         
         # create optimizer
         self._optimizer = self._build_optimizer(lr, lr_decay, 
                                                 decay_type=decay_type)
         
-        if task_weights is None:
-            task_weights = [1 for _ in tasks]
-        elif adaptive:
-            task_weights = [tf.Variable(1., dtype=tf.float32, 
-                                        name="weight_%s"%t) for t in tasks]
-            trainvars += task_weights
+        
         self._task_weights = task_weights
         distill_func = self._born_again_loss_function()
-        self._training_step = _build_multitask_training_step(self._models["full"], 
+        step_fn = _build_multitask_training_step(self._models["full"], 
                                             trainvars, 
                                             self._optimizer,
                                             tasks,
@@ -328,6 +335,7 @@ class MultiTaskTrainer(GenericExtractor):
                                             adaptive,
                                             distill_func=distill_func,
                                             distill_weight=distill_weight)
+        self._training_step = self._distribute_training_function(step_fn)
         # build validation dataset. 
         self._val_ds = _mtdataset(self._labels["val_files"], None,
                                   imshape, num_parallel_calls, norm, num_channels,
@@ -388,9 +396,11 @@ class MultiTaskTrainer(GenericExtractor):
                             self.input_config["single_channel"],
                             self.augment_config,
                             self.input_config["batch_size"])
+        
+        ds = self._distribute_dataset(ds)
             
         for x, *y in ds:
-            lossdict, task_losses = self._training_step(x,y)
+            lossdict = self._training_step(x,y)
 
             self._record_scalars(**lossdict)
                 
