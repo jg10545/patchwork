@@ -403,6 +403,7 @@ class MultiTaskTrainer(GenericExtractor):
             lossdict = self._training_step(x,y)
 
             self._record_scalars(**lossdict)
+            self._record_scalars(learning_rate=self._get_current_learning_rate())
                 
             self.step += 1
         

@@ -266,7 +266,7 @@ class GenericExtractor(object):
                         metrics=[hp.Metric("linear_classification_accuracy")])
                 
                 # record hyperparamters
-                hp.hparams(params)
+                hp.hparams(params, trial_id=self.logdir)
                 
     def _build_optimizer(self, lr, lr_decay=0, opt_type="adam", decay_type="exponential"):
         # macro for creating the Keras optimizer
@@ -274,17 +274,7 @@ class GenericExtractor(object):
             opt = build_optimizer(lr, lr_decay,opt_type, decay_type)
         return opt
     
-    def _get_current_learning_rate(self):
-        """
-        return the current step's learning rate
-        """
-        if hasattr(self, "_optimizer"):
-            # NO DECAY SCHEDULE CASE
-            if isinstance(self._optimizer.lr, tf.Tensor):
-                return self._optimizer.lr
-            # DECAY SCHEDULE CASE
-            else:
-                return self._optimizer.lr(self.step)
+
         
             
     def _born_again_loss_function(self):
@@ -358,4 +348,13 @@ class GenericExtractor(object):
             return ds
         else:
             return self.strategy.experimental_distribute_dataset(ds)
+        
+    def _get_current_learning_rate(self):
+        # return the current value of the learning rate
+        # CONSTANT LR CASE
+        if isinstance(self._optimizer.lr, tf.Variable) or isinstance(self._optimizer.lr, tf.Tensor):
+            return self._optimizer.lr
+        # LR SCHEDULE CASE
+        else:
+            return self._optimizer.lr(self.step)
                 

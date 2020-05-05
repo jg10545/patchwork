@@ -292,7 +292,8 @@ class SimCLRTrainer(GenericExtractor):
                             norm=norm, batch_size=batch_size,
                             num_parallel_calls=num_parallel_calls,
                             single_channel=single_channel, notes=notes,
-                            trainer="simclr", strategy=str(strategy))
+                            trainer="simclr", strategy=str(strategy),
+                            decay_type=decay_type)
 
     def _run_training_epoch(self, **kwargs):
         """
@@ -301,6 +302,7 @@ class SimCLRTrainer(GenericExtractor):
         for x, y in self._ds:
             lossdict = self._training_step(x,y)
             self._record_scalars(**lossdict)
+            self._record_scalars(learning_rate=self._get_current_learning_rate())
             self.step += 1
              
     def evaluate(self):
@@ -321,7 +323,11 @@ class SimCLRTrainer(GenericExtractor):
                 hparams = {
                     hp.HParam("temperature", hp.RealInterval(0., 10000.)):self.config["temperature"],
                     hp.HParam("num_hidden", hp.IntInterval(1, 1000000)):self.config["num_hidden"],
-                    hp.HParam("output_dim", hp.IntInterval(1, 1000000)):self.config["output_dim"]
+                    hp.HParam("output_dim", hp.IntInterval(1, 1000000)):self.config["output_dim"],
+                    hp.HParam("lr", hp.RealInterval(0., 10000.)):self.config["lr"],
+                    hp.HParam("lr_decay", hp.RealInterval(0., 10000.)):self.config["lr_decay"],
+                    hp.HParam("decay_type", hp.Discrete(["cosine", "exponential"])):self.config["decay_type"],
+                    hp.HParam("weight_decay", hp.RealInterval(0., 10000.)):self.config["weight_decay"]
                     }
             else:
                 hparams=None
