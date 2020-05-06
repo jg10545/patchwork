@@ -409,7 +409,7 @@ class MultiTaskTrainer(GenericExtractor):
                             self.input_config["batch_size"])
         
         ds = self._distribute_dataset(ds)
-            
+        
         for x, *y in ds:
             lossdict = self._training_step(x,y)
 
@@ -446,6 +446,7 @@ class MultiTaskTrainer(GenericExtractor):
                 from tensorboard.plugins.hparams import api as hp
                 hparams = {
                     hp.HParam("train_fcn", hp.Discrete([False, True])):self.config["train_fcn"],
+                    hp.HParam("adaptve", hp.Discrete([False, True])):self.config["adaptive"],
                     hp.HParam("lr", hp.RealInterval(0., 10000.)):self.config["lr"],
                     hp.HParam("lr_decay", hp.RealInterval(0., 10000.)):self.config["lr_decay"],
                     hp.HParam("decay_type", hp.Discrete(["cosine", "exponential"])):self.config["decay_type"],
