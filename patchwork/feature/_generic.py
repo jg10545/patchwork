@@ -111,6 +111,14 @@ def build_optimizer(lr, lr_decay=0, opt_type="adam", decay_type="exponential"):
         assert False, "dont know what to do with {}".format(opt_type)
 
 
+class EmptyContextManager():
+    def __init__(self):
+        pass
+    def __enter__(self):
+        pass
+    def __exit__(self, *args):
+        pass
+
 
 
 class GenericExtractor(object):
@@ -126,10 +134,10 @@ class GenericExtractor(object):
     """
     
     
-    def __init__(self, logdir, trainingdata, fcn=None, augment=False, 
+    def __init__(self, logdir=None, trainingdata=[], fcn=None, augment=False, 
                  extractor_param=None, imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, shuffle=True, num_parallel_calls=None,
-                 sobel=False, single_channel=False):
+                 sobel=False, single_channel=False, strategy=None):
         """
         :logdir: (string) path to log directory
         :trainingdata: (list or tf Dataset) list of paths to training images, or
@@ -150,21 +158,17 @@ class GenericExtractor(object):
             stack it num_channels times.
         """
         self.logdir = logdir
+        self.strategy = strategy
         
         if fcn is None:
             fcn = self._build_default_model()
         self.fcn = fcn
         self._models = {"fcn":fcn}
         
-        self._file_writer = tf.summary.create_file_writer(logdir, flush_millis=10000)
-        self._file_writer.set_as_default()
+        if logdir is not None:
+            self._file_writer = tf.summary.create_file_writer(logdir, flush_millis=10000)
+            self._file_writer.set_as_default()
         self.step = 0
-        
-        self._parse_configs(augment=augment, extractor_param=extractor_param,
-                            imshape=imshape, num_channels=num_channels,
-                            norm=norm, batch_size=batch_size, shuffle=shuffle,
-                            num_parallel_calls=num_parallel_calls, sobel=sobel,
-                            single_channel=single_channel)
         
         
         
@@ -262,23 +266,15 @@ class GenericExtractor(object):
                         metrics=[hp.Metric("linear_classification_accuracy")])
                 
                 # record hyperparamters
-                hp.hparams(params)
+                hp.hparams(params, trial_id=self.logdir)
                 
     def _build_optimizer(self, lr, lr_decay=0, opt_type="adam", decay_type="exponential"):
         # macro for creating the Keras optimizer
-        return build_optimizer(lr, lr_decay,opt_type, decay_type)
+        with self.scope():
+            opt = build_optimizer(lr, lr_decay,opt_type, decay_type)
+        return opt
     
-    def _get_current_learning_rate(self):
-        """
-        return the current step's learning rate
-        """
-        if hasattr(self, "_optimizer"):
-            # NO DECAY SCHEDULE CASE
-            if isinstance(self._optimizer.lr, tf.Tensor):
-                return self._optimizer.lr
-            # DECAY SCHEDULE CASE
-            else:
-                return self._optimizer.lr(self.step)
+
         
             
     def _born_again_loss_function(self):
@@ -314,3 +310,51 @@ class GenericExtractor(object):
             return _ban_loss
         else:
             return None
+        
+    def scope(self):
+        """
+        
+        """
+        if hasattr(self, "strategy") and (self.strategy is not None):
+            return self.strategy.scope()
+        else:
+            return EmptyContextManager()
+        
+    def _distribute_training_function(self, step_fn):
+        """
+        Pass a tensorflow function and distribute if necessary
+        """
+        if self.strategy is None:
+            return step_fn
+        else:
+            @tf.function
+            def training_step(x,y):#(**args):
+                per_example_losses = self.strategy.experimental_run_v2(
+                                        step_fn, args=(x,y))
+
+                lossdict = {k:self.strategy.reduce(
+                    tf.distribute.ReduceOp.MEAN, 
+                    per_example_losses[k], axis=None)
+                    for k in per_example_losses}
+
+                return lossdict
+            return training_step
+        
+    def _distribute_dataset(self, ds):
+        """
+        Pass a tensorflow dataset and distribute if necessary
+        """
+        if self.strategy is None:
+            return ds
+        else:
+            return self.strategy.experimental_distribute_dataset(ds)
+        
+    def _get_current_learning_rate(self):
+        # return the current value of the learning rate
+        # CONSTANT LR CASE
+        if isinstance(self._optimizer.lr, tf.Variable) or isinstance(self._optimizer.lr, tf.Tensor):
+            return self._optimizer.lr
+        # LR SCHEDULE CASE
+        else:
+            return self._optimizer.lr(self.step)
+                

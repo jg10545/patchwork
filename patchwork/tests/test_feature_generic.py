@@ -4,6 +4,7 @@ import tensorflow as tf
 
 from patchwork.feature._generic import linear_classification_test
 from patchwork.feature._generic import build_optimizer
+from patchwork.feature._generic import GenericExtractor
 
 
 class MockLabelDict():
@@ -101,3 +102,50 @@ def test_build_optimizer_cosine_decay():
     assert hasattr(opt, "lr")
     assert opt.lr(lr_decay-1).numpy() < 1e-3
     assert opt.lr(lr_decay).numpy() == opt.lr(0).numpy()
+    
+    
+
+ds = tf.data.Dataset.from_tensor_slices(np.zeros((10,1), dtype=np.float32))
+
+strat = tf.distribute.OneDeviceStrategy("/cpu:0")
+extractor = GenericExtractor()
+extractor_with_strat = GenericExtractor(strategy=strat)
+
+
+def _mock_train_step(x,y):
+    return {"foo":x}
+
+def test_genericextractor_without_distribution():
+    
+    with extractor.scope():
+        inpt = tf.keras.layers.Input((1,))
+        outpt = tf.keras.layers.Dense(1)(inpt)
+        model = tf.keras.Model(inpt, outpt)
+        
+    dataset = extractor._distribute_dataset(ds)
+    step = extractor._distribute_training_function(_mock_train_step)
+    
+    for x in dataset:
+        output = step(x,x)
+        
+    assert isinstance(output, dict)
+    assert "foo" in output
+    assert output["foo"].numpy() == 0.
+
+
+def test_genericextractor_with_distribution():
+    
+    with extractor_with_strat.scope():
+        inpt = tf.keras.layers.Input((1,))
+        outpt = tf.keras.layers.Dense(1)(inpt)
+        model = tf.keras.Model(inpt, outpt)
+        
+    dataset = extractor_with_strat._distribute_dataset(ds)
+    step = extractor_with_strat._distribute_training_function(_mock_train_step)
+    
+    for x in dataset:
+        output = step(x,x)
+        
+    assert isinstance(output, dict)
+    assert "foo" in output
+    assert output["foo"].numpy() == 0.

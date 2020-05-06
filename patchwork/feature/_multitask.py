@@ -12,6 +12,7 @@ from patchwork._losses import masked_sparse_categorical_crossentropy
 from patchwork.loaders import _image_file_dataset
 from patchwork._layers import _next_layer
 from patchwork.feature._generic import GenericExtractor
+from patchwork._util import compute_l2_loss
 
 INPUT_PARAMS = ["imshape", "num_channels", "norm", "batch_size",
                 "shuffle", "num_parallel_calls", "sobel", "single_channel"]
@@ -139,7 +140,8 @@ def _assemble_full_network(fcn, task_dimensions, shared_layers=[],
             
 def _build_multitask_training_step(model, trainvars, optimizer, tasks,
                                   task_loss_weights, adaptive=False,
-                                  distill_func=None, distill_weight=0):
+                                  distill_func=None, distill_weight=0,
+                                  weight_decay=0):
     """
     
     """
@@ -148,7 +150,6 @@ def _build_multitask_training_step(model, trainvars, optimizer, tasks,
         with tf.GradientTape() as tape:
             total_loss = 0
             lossdict = {}
-            task_losses = []
             outputs = model(x, training=True)
             # hack to make this work with a single task
             if len(tasks) == 1: outputs = [outputs]
@@ -157,7 +158,7 @@ def _build_multitask_training_step(model, trainvars, optimizer, tasks,
                                             task_loss_weights, tasks):
                 task_loss = masked_sparse_categorical_crossentropy(y_true, pred)
                 lossdict["loss_"+task] = task_loss
-                task_losses.append(task_loss)
+                
                 if adaptive:
                     # interpret weight as log(sigma^2). Kendall's paper mentions
                     # that they use this as it's more numerically stable
@@ -166,15 +167,19 @@ def _build_multitask_training_step(model, trainvars, optimizer, tasks,
                 else:
                     total_loss += weight*task_loss
                     
+            if weight_decay > 0:
+                lossdict["l2_loss"] = compute_l2_loss(model)
+                total_loss += weight_decay*lossdict["l2_loss"]
+                    
             if (distill_func is not None)&(distill_weight > 0):
                 lossdict["distill_loss"] = distill_func(outputs, x)
                 total_loss += distill_weight*lossdict["distill_loss"]
                 
             lossdict["total_loss"] = total_loss
-                
+
         gradients = tape.gradient(total_loss, trainvars)
         optimizer.apply_gradients(zip(gradients, trainvars))
-        return lossdict, task_losses
+        return lossdict
     return train_step    
             
 def _sampling_probabilities(indices):
@@ -238,12 +243,13 @@ class MultiTaskTrainer(GenericExtractor):
     def __init__(self, logdir, trainingdata, valdata, tasks, fcn,
                  filepaths="filepath", task_weights=None,
                  shared_layers=[], task_layers=[128,"p",128], 
-                 train_fcn=False,
+                 train_fcn=False, weight_decay=0,
                  lr=1e-3, lr_decay=0, decay_type="exponential",
                  balance_probs=True,
                  augment=False, imshape=(256,256), num_channels=3,
-                 norm=255, batch_size=64, shuffle=True, num_parallel_calls=None,
-                 single_channel=False, teacher=None, distill_weight=0, notes=""):
+                 norm=255, batch_size=64, num_parallel_calls=None,
+                 single_channel=False, teacher=None, distill_weight=0, notes="",
+                 downstream_labels=None, strategy=None):
         """
         :logdir: (string) path to log directory
         :trainingdata: pandas dataframe of training data
@@ -258,6 +264,7 @@ class MultiTaskTrainer(GenericExtractor):
         :task_layers: specify layer structure for each task head, downstream
             of the shared layers
         :train_fcn: (bool) whether to let the feature extractor train
+        :weight_decay: (float) coefficient for L2-norm loss.
         :lr: learning rate
         :lr_decay: learning rate decay (set to 0 to disable)
         :decay_type: (str) how to decay learning rate; "exponential" or "cosine"
@@ -272,7 +279,6 @@ class MultiTaskTrainer(GenericExtractor):
         :norm: (int or float) normalization constant for images (for rescaling to
                unit interval)
         :batch_size: (int) batch size for training
-        :shuffle: (bool) whether to shuffle training set
         :num_parallel_calls: (int) number of threads for loader mapping
         :sobel: whether to replace the input image with its sobel edges
         :single_channel: if True, expect a single-channel input image and 
@@ -283,11 +289,17 @@ class MultiTaskTrainer(GenericExtractor):
         :distill_weight: if using a teacher model, weight for Kullback-
             Leibler loss
         :notes: any experimental notes you want recorded in the config.yml file
+        :downstream_labels: dictionary mapping image file paths to labels
+        :strategy: if distributing across multiple GPUs, pass a tf.distribute
+            Strategy object here
         """
         adaptive = task_weights == "adaptive"
         self.logdir = logdir
         self._aug = augment
         self._tasks = tasks
+        self.strategy = strategy
+        self._downstream_labels = downstream_labels
+        self.fcn = fcn
         labels, class_dict = _dataframe_to_classes(trainingdata, valdata,
                                                    tasks, filepath=filepaths)
         self._labels = labels
@@ -300,34 +312,40 @@ class MultiTaskTrainer(GenericExtractor):
         self._class_dict = class_dict
         task_dimensions = [len(class_dict[t]) for t in tasks]
         
-        models, trainvars = _assemble_full_network(fcn, task_dimensions, shared_layers,
+        # create all the network components
+        with self.scope():
+            models, trainvars = _assemble_full_network(fcn, task_dimensions, shared_layers,
                                               task_layers=task_layers, 
                                               train_fcn=train_fcn, 
                                               global_pooling="max")
-        self._models = models
-        if teacher is not None:
-            self._models["teacher"] = teacher
+            self._models = models
+            if teacher is not None:
+                self._models["teacher"] = teacher
+                
+            if task_weights is None:
+                task_weights = [1 for _ in tasks]
+            elif adaptive:
+                task_weights = [tf.Variable(1., dtype=tf.float32, 
+                                        name="weight_%s"%t) for t in tasks]    
+                trainvars += task_weights
         
         # create optimizer
         self._optimizer = self._build_optimizer(lr, lr_decay, 
                                                 decay_type=decay_type)
         
-        if task_weights is None:
-            task_weights = [1 for _ in tasks]
-        elif adaptive:
-            task_weights = [tf.Variable(1., dtype=tf.float32, 
-                                        name="weight_%s"%t) for t in tasks]
-            trainvars += task_weights
+        
         self._task_weights = task_weights
         distill_func = self._born_again_loss_function()
-        self._training_step = _build_multitask_training_step(self._models["full"], 
+        step_fn = _build_multitask_training_step(self._models["full"], 
                                             trainvars, 
                                             self._optimizer,
                                             tasks,
                                             task_weights,
                                             adaptive,
                                             distill_func=distill_func,
-                                            distill_weight=distill_weight)
+                                            distill_weight=distill_weight,
+                                            weight_decay=weight_decay)
+        self._training_step = self._distribute_training_function(step_fn)
         # build validation dataset. 
         self._val_ds = _mtdataset(self._labels["val_files"], None,
                                   imshape, num_parallel_calls, norm, num_channels,
@@ -340,10 +358,11 @@ class MultiTaskTrainer(GenericExtractor):
         self._parse_configs(augment=augment, filepaths=filepaths, 
                             adaptive=adaptive, shared_layers=shared_layers,
                             task_layers=task_layers, train_fcn=train_fcn,
-                            lr=lr, 
+                            weight_decay=weight_decay,
+                            lr=lr, decay_type=decay_type, 
                             lr_decay=lr_decay, imshape=imshape, 
                             num_channels=num_channels,
-                            norm=norm, batch_size=batch_size, shuffle=shuffle,
+                            norm=norm, batch_size=batch_size, 
                             num_parallel_calls=num_parallel_calls,
                             single_channel=single_channel, notes=notes,
                             distill_weight=distill_weight,
@@ -388,11 +407,14 @@ class MultiTaskTrainer(GenericExtractor):
                             self.input_config["single_channel"],
                             self.augment_config,
                             self.input_config["batch_size"])
-            
+        
+        ds = self._distribute_dataset(ds)
+        
         for x, *y in ds:
-            lossdict, task_losses = self._training_step(x,y)
+            lossdict = self._training_step(x,y)
 
             self._record_scalars(**lossdict)
+            self._record_scalars(learning_rate=self._get_current_learning_rate())
                 
             self.step += 1
         
@@ -417,6 +439,22 @@ class MultiTaskTrainer(GenericExtractor):
             
             self._record_scalars(**{"weight_%s"%t:w for t,w in
                                     zip(self._tasks, self._task_weights)})
+            
+        if self._downstream_labels is not None:
+            # choose the hyperparameters to record
+            if not hasattr(self, "_hparams_config"):
+                from tensorboard.plugins.hparams import api as hp
+                hparams = {
+                    hp.HParam("train_fcn", hp.Discrete([False, True])):self.config["train_fcn"],
+                    hp.HParam("adaptve", hp.Discrete([False, True])):self.config["adaptive"],
+                    hp.HParam("lr", hp.RealInterval(0., 10000.)):self.config["lr"],
+                    hp.HParam("lr_decay", hp.RealInterval(0., 10000.)):self.config["lr_decay"],
+                    hp.HParam("decay_type", hp.Discrete(["cosine", "exponential"])):self.config["decay_type"],
+                    hp.HParam("weight_decay", hp.RealInterval(0., 10000.)):self.config["weight_decay"]
+                    }
+            else:
+                hparams=None
+            self._linear_classification_test(hparams)
             
                 
   

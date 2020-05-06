@@ -102,7 +102,7 @@ class DistributedSimCLRTrainer(SimCLRTrainer):
         :testdata: (list) filepaths of a batch of images to use for eval
         :fcn: (keras Model) fully-convolutional network to train as feature extractor
         :augment: (dict) dictionary of augmentation parameters, True for defaults
-        :temperature: the Boltmann temperature parameter- rescale the cosine similarities by this factor before computing softmax loss.
+        :temperature: the Boltzmann temperature parameter- rescale the cosine similarities by this factor before computing softmax loss.
         :num_hidden: number of hidden neurons in the network's projection head
         :output_dim: dimension of projection head's output space. Figure 8 in Chen et al's paper shows that their results did not depend strongly on this value.
         :weight_decay: coefficient for L2-norm loss. The original SimCLR paper used 1e-6.
@@ -158,7 +158,6 @@ class DistributedSimCLRTrainer(SimCLRTrainer):
         
         # create optimizer
         with strategy.scope():
-            #self._optimizer = tf.keras.optimizers.Adam(learnrate)
             self._optimizer = self._build_optimizer(lr, lr_decay,
                                                     decay_type=decay_type)
         
