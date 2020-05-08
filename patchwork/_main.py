@@ -79,7 +79,7 @@ class GUI(object):
         # BUILD THE GUI
         # initialize Labeler object
         self.labeler = Labeler(self.classes, self.df, self.pred_df, self._load_img,
-                               dim=dim, logdir=logdir)
+                               self, dim=dim, logdir=logdir)
         # initialize model picker
         if self.feature_vecs is not None:
             inpt_channels = self.feature_vecs.shape[-1]
