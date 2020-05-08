@@ -5,6 +5,7 @@ import tensorflow as tf
 from patchwork.feature._generic import GenericExtractor
 from patchwork._augment import augment_function
 from patchwork.loaders import _image_file_dataset
+from patchwork._util import compute_l2_loss
 
 BIG_NUMBER = 1000.
 
@@ -106,7 +107,8 @@ def _build_embedding_model(fcn, imshape, num_channels, num_hidden, output_dim):
 
 
 
-def _build_simclr_training_step(embed_model, optimizer, temperature=0.1):
+def _build_simclr_training_step(embed_model, optimizer, temperature=0.1,
+                                weight_decay=0):
     """
     Generate a tensorflow function to run the training step for SimCLR.
     
@@ -114,6 +116,7 @@ def _build_simclr_training_step(embed_model, optimizer, temperature=0.1):
         projection head
     :optimizer: Keras optimizer
     :temperature: hyperparameter for scaling cosine similarities
+    :weight_decay: coefficient for L2 loss
     
     The training function returns:
     :loss: value of the loss function for training
@@ -142,6 +145,12 @@ def _build_simclr_training_step(embed_model, optimizer, temperature=0.1):
             
             loss = tf.reduce_mean(
                     tf.nn.sparse_softmax_cross_entropy_with_logits(labels, logits))
+            
+            # the original SimCLR paper used a weight decay of 1e-6
+            if weight_decay > 0:
+                lossdict["l2_loss"] = compute_l2_loss(embed_model)
+                lossdict["nt_xent_loss"] = loss
+                loss += weight_decay*lossdict["l2_loss"]
             lossdict["loss"] = loss
 
         gradients = tape.gradient(loss, embed_model.trainable_variables)
@@ -167,23 +176,25 @@ class SimCLRTrainer(GenericExtractor):
 
     def __init__(self, logdir, trainingdata, testdata=None, fcn=None, 
                  augment=True, temperature=1., num_hidden=128,
-                 output_dim=64,
-                 lr=0.01, lr_decay=100000,
+                 output_dim=64, weight_decay=0,
+                 lr=0.01, lr_decay=100000, decay_type="exponential",
                  imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, num_parallel_calls=None,
                  single_channel=False, notes="",
-                 downstream_labels=None, stratify=None):
+                 downstream_labels=None, stratify=None, strategy=None):
         """
         :logdir: (string) path to log directory
         :trainingdata: (list) list of paths to training images
         :testdata: (list) filepaths of a batch of images to use for eval
         :fcn: (keras Model) fully-convolutional network to train as feature extractor
         :augment: (dict) dictionary of augmentation parameters, True for defaults
-        :temperature: the Boltmann temperature parameter- rescale the cosine similarities by this factor before computing softmax loss.
+        :temperature: the Boltzmann temperature parameter- rescale the cosine similarities by this factor before computing softmax loss.
         :num_hidden: number of hidden neurons in the network's projection head
         :output_dim: dimension of projection head's output space. Figure 8 in Chen et al's paper shows that their results did not depend strongly on this value.
+        :weight_decay: coefficient for L2-norm loss. The original SimCLR paper used 1e-6.
         :lr: (float) initial learning rate
         :lr_decay: (int) steps for learning rate to decay by half (0 to disable)
+        :decay_type: (str) how to decay learning rate; "exponential" or "cosine"
         :imshape: (tuple) image dimensions in H,W
         :num_channels: (int) number of image channels
         :norm: (int or float) normalization constant for images (for rescaling to
@@ -197,45 +208,51 @@ class SimCLRTrainer(GenericExtractor):
         :downstream_labels: dictionary mapping image file paths to labels
         :stratify: pass a list of image labels here to stratify by batch
             during training
+        :strategy: if distributing across multiple GPUs, pass a tf.distribute
+            Strategy object here
         """
         assert augment is not False, "this method needs an augmentation scheme"
         self.logdir = logdir
         self.trainingdata = trainingdata
         self._downstream_labels = downstream_labels
+        self.strategy = strategy
         
         self._file_writer = tf.summary.create_file_writer(logdir, flush_millis=10000)
         self._file_writer.set_as_default()
         
         # if no FCN is passed- build one
-        if fcn is None:
-            fcn = tf.keras.applications.ResNet50V2(weights=None, include_top=False)
-        self.fcn = fcn
-        # Create a Keras model that wraps the base encoder and 
-        # the projection head
-        embed_model = _build_embedding_model(fcn, imshape, num_channels,
+        with self.scope():
+            if fcn is None:
+                fcn = tf.keras.applications.ResNet50V2(weights=None, include_top=False)
+            self.fcn = fcn
+            # Create a Keras model that wraps the base encoder and 
+            # the projection head
+            embed_model = _build_embedding_model(fcn, imshape, num_channels,
                                              num_hidden, output_dim)
         
         self._models = {"fcn":fcn, 
                         "full":embed_model}
         
         # build training dataset
-        self._ds = _build_simclr_dataset(trainingdata, 
-                                        imshape=imshape, batch_size=batch_size,
-                                        num_parallel_calls=num_parallel_calls, 
-                                        norm=norm, num_channels=num_channels, 
-                                        augment=augment,
-                                        single_channel=single_channel,
-                                        stratify=stratify)
+        ds = _build_simclr_dataset(trainingdata, 
+                                   imshape=imshape, batch_size=batch_size,
+                                   num_parallel_calls=num_parallel_calls, 
+                                   norm=norm, num_channels=num_channels, 
+                                   augment=augment,
+                                   single_channel=single_channel,
+                                   stratify=stratify)
+        self._ds = self._distribute_dataset(ds)
         
         # create optimizer
-        self._optimizer = self._build_optimizer(lr, lr_decay)
+        self._optimizer = self._build_optimizer(lr, lr_decay,
+                                                decay_type=decay_type)
         
         
         # build training step
-        self._training_step = _build_simclr_training_step(
-                embed_model, 
-                self._optimizer, 
-                temperature)
+        step_fn = _build_simclr_training_step(
+                embed_model, self._optimizer, 
+                temperature, weight_decay=weight_decay)
+        self._training_step = self._distribute_training_function(step_fn)
         
         if testdata is not None:
             self._test_ds = _build_simclr_dataset(testdata, 
@@ -269,12 +286,14 @@ class SimCLRTrainer(GenericExtractor):
         # parse and write out config YAML
         self._parse_configs(augment=augment, temperature=temperature,
                             num_hidden=num_hidden, output_dim=output_dim,
+                            weight_decay=weight_decay,
                             lr=lr, lr_decay=lr_decay, 
                             imshape=imshape, num_channels=num_channels,
                             norm=norm, batch_size=batch_size,
                             num_parallel_calls=num_parallel_calls,
                             single_channel=single_channel, notes=notes,
-                            trainer="simclr")
+                            trainer="simclr", strategy=str(strategy),
+                            decay_type=decay_type)
 
     def _run_training_epoch(self, **kwargs):
         """
@@ -283,6 +302,7 @@ class SimCLRTrainer(GenericExtractor):
         for x, y in self._ds:
             lossdict = self._training_step(x,y)
             self._record_scalars(**lossdict)
+            self._record_scalars(learning_rate=self._get_current_learning_rate())
             self.step += 1
              
     def evaluate(self):
@@ -293,7 +313,9 @@ class SimCLRTrainer(GenericExtractor):
                 test_loss += loss.numpy()
                 
             self._record_scalars(test_loss=test_loss)
-            self._record_images(scalar_products=tf.expand_dims(tf.expand_dims(sim,-1), 0))
+            # I'm commenting out this tensorboard image- takes up a lot of
+            # space but doesn't seem to add much
+            #self._record_images(scalar_products=tf.expand_dims(tf.expand_dims(sim,-1), 0))
         if self._downstream_labels is not None:
             # choose the hyperparameters to record
             if not hasattr(self, "_hparams_config"):
@@ -301,7 +323,11 @@ class SimCLRTrainer(GenericExtractor):
                 hparams = {
                     hp.HParam("temperature", hp.RealInterval(0., 10000.)):self.config["temperature"],
                     hp.HParam("num_hidden", hp.IntInterval(1, 1000000)):self.config["num_hidden"],
-                    hp.HParam("output_dim", hp.IntInterval(1, 1000000)):self.config["output_dim"]
+                    hp.HParam("output_dim", hp.IntInterval(1, 1000000)):self.config["output_dim"],
+                    hp.HParam("lr", hp.RealInterval(0., 10000.)):self.config["lr"],
+                    hp.HParam("lr_decay", hp.RealInterval(0., 10000.)):self.config["lr_decay"],
+                    hp.HParam("decay_type", hp.Discrete(["cosine", "exponential"])):self.config["decay_type"],
+                    hp.HParam("weight_decay", hp.RealInterval(0., 10000.)):self.config["weight_decay"]
                     }
             else:
                 hparams=None

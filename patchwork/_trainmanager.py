@@ -116,6 +116,7 @@ class TrainManager():
         self._epochs = pn.widgets.LiteralInput(name='Epochs', value=10, type=int)
         
         self._eval_after_training = pn.widgets.Checkbox(name="Update predictions after training?", value=True)
+        self._compute_badge_gradients = pn.widgets.Checkbox(name="Update BADGE gradients?", value=False)
         self._train_button = pn.widgets.Button(name="Make it so")
         self._train_button.on_click(self._train_callback)
         
@@ -138,6 +139,7 @@ class TrainManager():
                          self._samples_per_epoch,
                          self._epochs,
                         self._eval_after_training,
+                        self._compute_badge_gradients,
                         self._train_button,
                         self._footer)
         
@@ -164,6 +166,10 @@ class TrainManager():
             self._footer.object = "### EVALUATING"
             self.pw.predict_on_all(self._batch_size.value)
             
+        if self._compute_badge_gradients.value:
+            self._footer.object = "### COMPUTING BADGE GRADIENTS"
+            self.pw.compute_badge_embeddings()
+        
         self._loss_fig.object = _loss_fig(self.loss)
         self._hist_callback()
         self._footer.object = "### DONE"

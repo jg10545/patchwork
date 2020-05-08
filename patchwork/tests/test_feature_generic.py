@@ -3,6 +3,8 @@ import numpy as np
 import tensorflow as tf
 
 from patchwork.feature._generic import linear_classification_test
+from patchwork.feature._generic import build_optimizer
+from patchwork.feature._generic import GenericExtractor
 
 
 class MockLabelDict():
@@ -71,3 +73,79 @@ def test_linear_classification_test_dual_input(test_png_path, test_jpg_path,
     assert acc <= 1
     assert acc >= 0
     assert isinstance(cm, np.ndarray)
+    
+    
+def test_build_optimizer_constant_rate():
+    lr = 0.01
+    opt = build_optimizer(lr, lr_decay=0)
+    assert hasattr(opt, "lr")
+    # floating point rounding issues
+    assert abs(opt.lr.numpy() - lr) < 1e-8
+    
+    
+def test_build_optimizer_exponential_decay():
+    lr = 0.01
+    lr_decay = 100
+    decay_type = "exponential"
+    opt = build_optimizer(lr, lr_decay=lr_decay,
+                          decay_type=decay_type)
+    assert hasattr(opt, "lr")
+    # floating point rounding issues
+    assert abs(opt.lr(lr_decay).numpy() - lr/2) < 1e-8
+    
+def test_build_optimizer_cosine_decay():
+    lr = 0.01
+    lr_decay = 1000
+    decay_type = "cosine"
+    opt = build_optimizer(lr, lr_decay=lr_decay,
+                          decay_type=decay_type)
+    assert hasattr(opt, "lr")
+    assert opt.lr(lr_decay-1).numpy() < 1e-3
+    assert opt.lr(lr_decay).numpy() == opt.lr(0).numpy()
+    
+    
+
+ds = tf.data.Dataset.from_tensor_slices(np.zeros((10,1), dtype=np.float32))
+
+strat = tf.distribute.OneDeviceStrategy("/cpu:0")
+extractor = GenericExtractor()
+extractor_with_strat = GenericExtractor(strategy=strat)
+
+
+def _mock_train_step(x,y):
+    return {"foo":x}
+
+def test_genericextractor_without_distribution():
+    
+    with extractor.scope():
+        inpt = tf.keras.layers.Input((1,))
+        outpt = tf.keras.layers.Dense(1)(inpt)
+        model = tf.keras.Model(inpt, outpt)
+        
+    dataset = extractor._distribute_dataset(ds)
+    step = extractor._distribute_training_function(_mock_train_step)
+    
+    for x in dataset:
+        output = step(x,x)
+        
+    assert isinstance(output, dict)
+    assert "foo" in output
+    assert output["foo"].numpy() == 0.
+
+
+def test_genericextractor_with_distribution():
+    
+    with extractor_with_strat.scope():
+        inpt = tf.keras.layers.Input((1,))
+        outpt = tf.keras.layers.Dense(1)(inpt)
+        model = tf.keras.Model(inpt, outpt)
+        
+    dataset = extractor_with_strat._distribute_dataset(ds)
+    step = extractor_with_strat._distribute_training_function(_mock_train_step)
+    
+    for x in dataset:
+        output = step(x,x)
+        
+    assert isinstance(output, dict)
+    assert "foo" in output
+    assert output["foo"].numpy() == 0.

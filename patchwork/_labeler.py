@@ -6,7 +6,7 @@
 GUI code for training a model
 
 """
-#import numpy as np
+import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 import panel as pn
@@ -204,7 +204,7 @@ def _generate_label_summary(df, classes):
 
 
 
-def pick_indices(df, pred_df, M, sort_by, subset_by):
+def pick_indices(df, pred_df, M, sort_by, subset_by, sampler=None):
     """
     Function to handle selecting indices of images to label
     
@@ -213,7 +213,7 @@ def pick_indices(df, pred_df, M, sort_by, subset_by):
     :M: number of indices to retrieve
     :sort_by: method for ordering results
     :subset_by: method for subsetting df before ordering
-        
+    :sampler: optional; custom sampling object for BADGE
     """
     # take a subset of the data to sort through
     subset = find_subset(df, subset_by)
@@ -241,6 +241,9 @@ def pick_indices(df, pred_df, M, sort_by, subset_by):
     elif "low:" in sort_by:
         col = sort_by.replace("low: ", "")
         sample = pred_df[col].nsmallest(M)
+    elif ("BADGE" in sort_by)&(sampler is not None):
+        indices = np.array(sampler(M))
+        return indices
     indices = sample.index.to_numpy()
     return indices
 
@@ -251,13 +254,14 @@ class Labeler():
     Class to manage displaying images and gathering user feedback
     """
     
-    def __init__(self, classes, df, pred_df, load_func, dim=3, 
+    def __init__(self, classes, df, pred_df, load_func, pw, dim=3, 
                  logdir=None):
         """
         :classes: list of strings; class labels
         :df: DataFrame containing filepaths and class labels
         :pred_df: dataframe of current model predictions
         :load_func:
+        :pw: patchwork.GUI object that calls the labeler
         :dim: dimension of the image grid to display
         :logdir: path to save labels to
         """
@@ -268,6 +272,7 @@ class Labeler():
         self._logdir = logdir
         self._buttonpanel = ButtonPanel(classes, df, load_func, dim)
         self._load_func = load_func
+        self._pw = pw
              
         self._build_select_controls()
 
@@ -284,7 +289,7 @@ class Labeler():
         Generate all the widgets to sample images and output results
         """
         # generate all sorting options
-        sort_opts= ["random", "max entropy"]
+        sort_opts= ["random", "max entropy", "BADGE"]
         for e in ["high: ", "low: ", "maxent: "]:
             for c in self._classes:
                 sort_opts.append(e+c)
@@ -323,7 +328,7 @@ class Labeler():
         sort_by = self._sort_by.value
         subset_by = self._subset_by.value
         indices = pick_indices(self._df, self._pred_df, self._dim**2, 
-                               sort_by, subset_by)
+                               sort_by, subset_by, self._pw._badge_sampler)
         if len(indices) > 0:
             self._buttonpanel.load(indices)
             self._buttonpanel.label_counts.object = _generate_label_summary(self._df, self._classes)

@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 import numpy as np
-from patchwork._util import shannon_entropy, tiff_to_array, _load_img
+import tensorflow as tf
 
+from patchwork._util import shannon_entropy, tiff_to_array, _load_img
+from patchwork._util import compute_l2_loss
 
 
 
@@ -74,3 +76,25 @@ def test_load_and_stack_single_channel_img(test_single_channel_png_path):
     assert isinstance(img_arr, np.ndarray)
     assert len(img_arr.shape) == 3
     assert img_arr.shape[2] == 3
+    
+    
+def test_l2_loss():
+    # build a simple model
+    inpt = tf.keras.layers.Input(3)
+    net = tf.keras.layers.Dense(5)(inpt)
+    model = tf.keras.Model(inpt, net)
+    # check the L2 loss; should be a scalar bigger than zero
+    assert compute_l2_loss(model).numpy() > 0
+    # should also work with multiple inputs
+    assert compute_l2_loss(model, model).numpy() > 0
+    # set all trainable weights to zro
+    new_weights = [np.zeros(x.shape, dtype=np.float32)
+                   for x in model.get_weights()]
+    model.set_weights(new_weights)
+    assert compute_l2_loss(model).numpy() == 0.
+    # add a batch norm layer- shouldn't change anything
+    # because the function should skip that layer
+    net = tf.keras.layers.BatchNormalization()(net)
+    model = tf.keras.Model(inpt,net)
+    assert compute_l2_loss(model).numpy() == 0.
+    

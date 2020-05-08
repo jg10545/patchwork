@@ -172,29 +172,34 @@ trainer.fit(10)
 Note that SimCLR is much more critically dependent on image augmentation for its learning than Context Encoders or DeepCluster, so it's worth the time to experiment to find a good set of augmentation parameters. My experience so far is that SimCLR benefits from more aggressive augmentation than you'd use for supervised learning.
      
     
-## Distributed SimCLR
+## Distributed Training
 
-Multi-GPU support for custom training loops in TensorFlow is still experimental, so 
-I'm keeping this code separate for now. The main difference from the normal `SimCLRTrainer`
-is that you need to define a `tf.distribute` strategy, and **use it when you initialize
-or load your feature extractor.**
+I've started adding multi-GPU support; this part of TensorFlow is still evolving so the details may change. The changes to your workflow are pretty minimal:
+
+1. Initialize a "strategy" object from `tf.distribute`
+* Define or load your base feature extractor within `strategy.scope()`
+* Pass the strategy object to the Trainer object
+
+Everything else should work the same. The batch size specified is the **global** batch size. I've only tested with the `MirroredStrategy()` so far.
+
+This functionality is currently only implemented for `SimCLRTrainer` and
+`MultiTaskTrainer`.
 
 ```
 # same basic setup as before, but....
 
-strategy = tf.distribute.MirroredStrategy()
+strat = tf.distribute.MirroredStrategy()
 
 # check this- it should return the number of GPUs if it's working correctly
-assert strategy.num_replicas_in_sync == number_of_gpus_i_was_expecting
+assert strat.num_replicas_in_sync == number_of_gpus_i_was_expecting
 
-with strategy.scope():
+with strat.scope():
     # initialize a new model
     fcn = tf.keras.applications.ResNet50V2(weights=None, include_top=False)
     # and/or transfer learn from your last one
     fcn.load_weights("my_previous_model.h5")
 
-trainer = pw.feature.DistributedSimCLRTrainer(
-    strategy,
+trainer = pw.feature.SimCLRTrainer(
     logdir,
     trainfiles,
     testdata=testfiles,
@@ -208,7 +213,8 @@ trainer = pw.feature.DistributedSimCLRTrainer(
     output_dim=64,
     batch_size=32,
     imshape=(256,256),
-    downstream_labels=downstream_labels
+    downstream_labels=downstream_labels,
+    strategy=strat
 )  
 trainer.fit(10) 
 ```
