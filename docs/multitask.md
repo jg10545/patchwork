@@ -97,3 +97,8 @@ trainer = pw.feature.MultiTaskTrainer(logdir,
 
 trainer.fit(10)
 ```
+
+## Advanced features
+
+* To train across multiple GPUs- initialize or load your feature extractor under a `tf.distribute` strategy object's scope, then pass the object to `MultiTaskTrainer`'s `strategy` kwarg.
+* To do head-to-head comparisons of representation quality against self-supervised trainers, you can use the `downstream_labels` kwarg in the `MultiTaskTrainer` as well.

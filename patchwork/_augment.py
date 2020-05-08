@@ -27,6 +27,20 @@ DEFAULT_AUGMENT_PARAMS = {
 }
 
 
+# my attempt at a set of parameters close to what Chen et al
+# used in the SimCLR paper
+DEFAULT_SIMCLR_PARAMS = {
+    "brightness_delta":0.8,
+    "contrast_delta":0.8,
+    "saturation_delta":0.8,
+    "hue_delta":0.2,
+    "flip_left_right":True,
+    "zoom_scale":0.4,
+    "gaussian_blur":0.5
+}
+
+
+
 def _poisson(lam):
     return tf.random.poisson(shape=[], lam=lam, 
                                dtype=tf.int32)

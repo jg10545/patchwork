@@ -17,6 +17,8 @@ Here's the intended workflow:
   * Lather, rinse, and repeat: use active learning to prioritize which images to label, and add capacity to your fine-tuning model as needed.
 * When you've built a useful prototype, access the labels in `GUI.df` or the models in `GUI.models` to connect to the next step in whatever problem you're solving!
 
+     
+For a sober perspective on the pragmatic issues making active learning difficult, I recommend checking out Lowell *et al*'s [Practical Obstacles to Deploying Active Learning](https://arxiv.org/abs/1807.04801).
                                         
 ## Getting started
 
@@ -58,8 +60,17 @@ Choose how to sample the next set of images- choose which subset of images to sa
 * For active learning by uncertainty sampling- sort by `max entropy`
 * For uncertainty sampling with respect to a particular class- sort by `maxent <class name>`
 * For hard negative mining- sort by `high <class name>`
+* For [BADGE sampling](https://arxiv.org/abs/1906.03671), sort by `BADGE`. For this to work, you need to select the "Update BADGE gradients?" option while training.
 
 ![](gui_label_sample.png)
+
+
+#### Notes on BADGE
+
+* This is new so I'm still experimenting with it! The paper is a really clever approach to the difficult problem of Active Learning.
+* The gradient embeddings are computed after training and stored in memory- so be careful with the model you use for it. If you have `N` images in your dataset, a feature space with dimension `d` and `C` multihot categories, the gradient vectors will be computed as a  `(N,dC)` matrix.
+  * If memory is a constraint, use a lower-dimension feature extractor or a fine-tuning model with a lower output dimension
+
 
 ### Labeling tool
 
