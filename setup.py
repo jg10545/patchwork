@@ -21,7 +21,8 @@ requirements = [
         "gdal",
         "matplotlib",
         "tqdm",
-        "sklearn"
+        "sklearn",
+        "scipy"
         ]
 
 setup_requirements = [ ]

@@ -101,7 +101,7 @@ def _build_model(feature_extractor, imshape=(256,256), num_channels=3,
 
 
 def build_deepcluster_training_step():
-    @tf.function
+    #@tf.function
     def deepcluster_training_step(x, y, model, opt):
         """
         Basic training function for DeepCluster model.

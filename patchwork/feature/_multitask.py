@@ -145,7 +145,7 @@ def _build_multitask_training_step(model, trainvars, optimizer, tasks,
     """
     
     """
-    @tf.function
+    #@tf.function
     def train_step(x, y):
         with tf.GradientTape() as tape:
             total_loss = 0

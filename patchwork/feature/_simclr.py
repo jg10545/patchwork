@@ -122,7 +122,9 @@ def _build_simclr_training_step(embed_model, optimizer, temperature=0.1,
     :loss: value of the loss function for training
     :avg_cosine_sim: average value of the batch's matrix of dot products
     """
-    @tf.function
+    # adding the tf.function decorator here causes errors when we
+    # distribute across multiple GPUs
+    #@tf.function 
     def training_step(x,y):
         lossdict = {}
         eye = tf.linalg.eye(y.shape[0])

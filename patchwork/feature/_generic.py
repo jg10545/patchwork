@@ -325,10 +325,12 @@ class GenericExtractor(object):
         Pass a tensorflow function and distribute if necessary
         """
         if self.strategy is None:
-            return step_fn
+            @tf.function
+            def training_step(x,y):
+                return step_fn(x,y)
         else:
             @tf.function
-            def training_step(x,y):#(**args):
+            def training_step(x,y):
                 per_example_losses = self.strategy.experimental_run_v2(
                                         step_fn, args=(x,y))
 
@@ -338,7 +340,7 @@ class GenericExtractor(object):
                     for k in per_example_losses}
 
                 return lossdict
-            return training_step
+        return training_step
         
     def _distribute_dataset(self, ds):
         """
