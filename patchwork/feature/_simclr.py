@@ -371,6 +371,9 @@ class SimCLRTrainer(GenericExtractor):
                     hp.HParam("decay_type", hp.Discrete(["cosine", "exponential"])):self.config["decay_type"],
                     hp.HParam("weight_decay", hp.RealInterval(0., 10000.)):self.config["weight_decay"]
                     }
+                for k in self.augment_config:
+                    if isinstance(self.augment_config[k], float):
+                        hparams[hp.HParam(k, hp.RealInterval(0., 10000.))] = self.augment_config[k]
             else:
                 hparams=None
             self._linear_classification_test(hparams)
