@@ -266,7 +266,10 @@ class GenericExtractor(object):
                         metrics=[hp.Metric("linear_classification_accuracy")])
                 
                 # record hyperparamters
-                hp.hparams(params, trial_id=self.logdir)
+                base_dir, run_name = os.path.split(self.logdir)
+                if len(run_name) == 0:
+                    base_dir, run_name = os.path.split(base_dir)
+                hp.hparams(params, trial_id=run_name)
                 
     def _build_optimizer(self, lr, lr_decay=0, opt_type="adam", decay_type="exponential"):
         # macro for creating the Keras optimizer

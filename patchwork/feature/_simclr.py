@@ -169,7 +169,12 @@ def random_adjust_aug_params(a, sigma=0.05):
     new_aug = {}
     for k in a:
         if isinstance(a[k], float):
-            new_aug[k] = round(min(max(a[k]+np.random.normal(0,sigma),0),1), 2)
+            if k == "hue_delta":
+                maxval = 0.5
+            else:
+                maxval = 1.
+            new_aug[k] = round(min(max(a[k]+np.random.normal(0,sigma),0),
+                                   maxval), 2)
         else:
             new_aug[k] = a[k]
     return new_aug
