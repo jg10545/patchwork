@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 import tensorflow as tf
+from tqdm import tqdm
 
 from patchwork.feature._generic import GenericExtractor
 from patchwork._augment import augment_function
@@ -164,8 +165,62 @@ def _build_simclr_training_step(embed_model, optimizer, temperature=0.1,
     return training_step
 
 
+def random_adjust_aug_params(a, sigma=0.05):
+    new_aug = {}
+    for k in a:
+        if isinstance(a[k], float):
+            if k == "hue_delta":
+                maxval = 0.5
+            else:
+                maxval = 1.
+            new_aug[k] = round(min(max(a[k]+np.random.normal(0,sigma),0),
+                                   maxval), 2)
+        else:
+            new_aug[k] = a[k]
+    return new_aug
 
 
+def find_new_aug_params(trainer, testfiles, num_trials=25, sigma=0.05):
+    """
+    EXPERIMENTAL
+    
+    Pass a trained SimCLRTrainer object and a list of test files, 
+    and try to guess at a better set of augmentation parameters.
+    
+    The method will randomly jitter the existing parameters [num_trials]
+    times with a standard deviation of [sigma], and return whichever
+    set of params has the highest NCE loss on the test files.
+    """
+    aug_params = trainer.augment_config
+    
+    @tf.function
+    def test_loss(x,y):
+        eye = tf.linalg.eye(y.shape[0])
+        index = tf.range(0, y.shape[0])
+        labels = index+y
+
+        embeddings = trainer._models["full"](x)
+        embeds_norm = tf.nn.l2_normalize(embeddings, axis=1)
+        sim = tf.matmul(embeds_norm, embeds_norm, transpose_b=True)
+        logits = (sim - BIG_NUMBER*eye)/trainer.config["temperature"]
+            
+        loss = tf.reduce_mean(
+            tf.nn.sparse_softmax_cross_entropy_with_logits(labels, logits))
+        return loss
+    
+    results = []
+
+    for i in tqdm(range(num_trials)):
+        loss = 0
+        aug = random_adjust_aug_params(aug_params, sigma)
+        ds = _build_simclr_dataset(testfiles, augment=aug,
+                                   **trainer.input_config)
+        for x, y in ds:
+            loss += test_loss(x,y).numpy()
+        
+        results.append((aug, loss))
+    argmax = np.argmax([x[1] for x in results])
+    return results[argmax][0], results
 
 
 class SimCLRTrainer(GenericExtractor):
@@ -331,6 +386,9 @@ class SimCLRTrainer(GenericExtractor):
                     hp.HParam("decay_type", hp.Discrete(["cosine", "exponential"])):self.config["decay_type"],
                     hp.HParam("weight_decay", hp.RealInterval(0., 10000.)):self.config["weight_decay"]
                     }
+                for k in self.augment_config:
+                    if isinstance(self.augment_config[k], float):
+                        hparams[hp.HParam(k, hp.RealInterval(0., 10000.))] = self.augment_config[k]
             else:
                 hparams=None
             self._linear_classification_test(hparams)

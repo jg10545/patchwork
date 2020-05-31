@@ -8,7 +8,7 @@ import numpy as np
 import tensorflow as tf
 import tensorflow.keras.backend as K
 
-
+from tensorflow.python.ops.image_ops_impl import sample_distorted_bounding_box_v2
 
 DEFAULT_AUGMENT_PARAMS = {
     "gaussian_blur":0.2,
@@ -87,37 +87,40 @@ def _sobelize(x, prob=0.1, **kwargs):
         x = tf.stack(num_channels*[x], -1)
     return x
 
+
 def _random_zoom(x, scale=0.1, imshape=(256,256), **kwargs):
     """
-    Randomly pad and then randomly crop an image
+    Randomly zoom in on the image- augmented image will be between
+    [scale] and 100% of original area.
+    
+    Based on the random crop function in the SimCLR repo:
+    
+    https://github.com/google-research/simclr/blob/7fd0c80092a650c5318ce08fd32f0931747ab966/data_util.py#L274
     """
-    x = tf.expand_dims(x, 0)
+    shape = tf.shape(x)
+    bbox = tf.constant([0.0, 0.0, 1.0, 1.0], 
+                           dtype=tf.float32, shape=[1, 1, 4])
+    aspect_ratio = imshape[1]/imshape[0] #width / height
+    ar_range = (3. / 4 * aspect_ratio, 4. / 3. * aspect_ratio)
+    # sample a box around a random subset of the image
+    sampled_box = sample_distorted_bounding_box_v2(
+                    shape,
+                    bounding_boxes=bbox,
+                    min_object_covered=scale,
+                    aspect_ratio_range=ar_range,
+                    area_range=(scale, 1.0),
+                    max_attempts=100,
+                    use_image_if_no_bounding_boxes=True)
+    bbox_begin, bbox_size, _ = sampled_box
+    # Crop the image to the specified bounding box.
+    offset_y, offset_x, _ = tf.unstack(bbox_begin)
+    target_height, target_width, _ = tf.unstack(bbox_size)
+    cropped_image = tf.image.crop_to_bounding_box(
+            x, offset_y, offset_x, target_height, target_width)
     
-    # first, pad the image
-    toppad = _poisson(imshape[0]*scale/2)
-    leftpad = _poisson(imshape[1]*scale/2)
-    bottompad = _poisson(imshape[0]*scale/2)
-    rightpad = _poisson(imshape[1]*scale/2)
-    padded = tf.image.pad_to_bounding_box(
-        x,
-        toppad,
-        leftpad,
-        toppad+imshape[0]+bottompad,
-        leftpad+imshape[1]+rightpad
-    )
-    
-    # second, crop the image
-    xmin = tf.random.uniform(shape=[], minval=0, maxval=scale)
-    xmax = tf.random.uniform(shape=[], minval=1-scale, maxval=1)
-    ymin = tf.random.uniform(shape=[], minval=0, maxval=scale)
-    ymax = tf.random.uniform(shape=[], minval=1-scale, maxval=1)
-    box = tf.stack([[ymin, xmin, ymax, xmax]])
+    x = tf.image.resize([cropped_image], imshape, method="bicubic")[0]
+    return x
 
-    resized = tf.image.crop_and_resize(padded, 
-                                       box, 
-                                       [0],
-                                       imshape)
-    return tf.squeeze(resized, axis=0)
 
 def _random_mask(x, prob=0.25,  **kwargs):
     """
