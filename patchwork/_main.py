@@ -7,7 +7,7 @@ import os
 from patchwork._labeler import Labeler
 from patchwork._modelpicker import ModelPicker
 from patchwork._trainmanager import TrainManager
-from patchwork._sample import stratified_sample, find_unlabeled
+from patchwork._sample import stratified_sample, find_unlabeled, find_excluded_indices
 from patchwork._sample import _build_in_memory_dataset, find_labeled_indices
 from patchwork._training_functions import build_training_function
 from patchwork.loaders import dataset
@@ -322,7 +322,8 @@ class GUI(object):
              for x in self._pred_dataset()[0]], axis=0)
         # find the indices that have already been fully or partially
         # labeled, so we can avoid sampling nearby
-        indices = list(find_labeled_indices(self.df))
+        indices = list(find_labeled_indices(self.df)) + \
+                    list(find_excluded_indices(self.df))
         
         # initialize sampler
         self._badge_sampler = KPlusPlusSampler(output_gradients, indices=indices)

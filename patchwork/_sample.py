@@ -29,10 +29,14 @@ def find_partially_labeled(df):
     return (~find_unlabeled(df))&(~find_fully_labeled(df))
 
 def find_labeled_indices(df):
-    # macro to return indices of fully/partially labeled records
+    # return indices of fully/partially labeled records
     unlabeled = find_unlabeled(df)
     return np.arange(len(unlabeled))[~unlabeled]
 
+def find_excluded_indices(df):
+    # return indices of excluded records
+    excluded = df["exclude"] == True
+    return np.arange(len(df))[excluded]
 
 def find_subset(df, s):
     """
