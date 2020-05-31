@@ -8,9 +8,15 @@ from patchwork._util import compute_l2_loss
 
 
 
-def test_shannon_entropy():
-    maxent = np.array([[0.5,0.5]])
-    assert shannon_entropy(maxent)[0] == 1.0
+def test_shannon_entropy_agg_sum():
+    maxent = np.array([[0.5,0.5],[0.5,0.5]])
+    assert shannon_entropy(maxent, how="sum")[0] == 2.#1.0
+    
+def test_shannon_entropy_agg_max():
+    maxent = np.array([[0.5,0.5],[0.5,0.5]])
+    assert shannon_entropy(maxent, how="max")[0] == 1.#1.0
+    
+
     
     
 def test_tiff_to_array(test_tif_path):
