@@ -181,6 +181,16 @@ def random_adjust_aug_params(a, sigma=0.05):
 
 
 def find_new_aug_params(trainer, testfiles, num_trials=25, sigma=0.05):
+    """
+    EXPERIMENTAL
+    
+    Pass a trained SimCLRTrainer object and a list of test files, 
+    and try to guess at a better set of augmentation parameters.
+    
+    The method will randomly jitter the existing parameters [num_trials]
+    times with a standard deviation of [sigma], and return whichever
+    set of params has the highest NCE loss on the test files.
+    """
     aug_params = trainer.augment_config
     
     @tf.function
