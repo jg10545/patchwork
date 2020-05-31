@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 
-from patchwork._sample import stratified_sample, find_labeled_indices
+from patchwork._sample import stratified_sample, find_labeled_indices, find_excluded_indices
 from patchwork._badge import KPlusPlusSampler, _build_output_gradient_function
 from patchwork._losses import masked_binary_crossentropy
 from patchwork._labeler import pick_indices
@@ -96,9 +96,10 @@ class ActiveLearner():
         # then run that function across all the iamges.
         output_gradients = tf.map_fn(compute_output_gradients, self.features).numpy()
         # find the indices that have already been fully or partially
-        # labeled, so we can avoid sampling nearby
+        # labeled, so we can avoid sampling nearby. Also don't let it sample
+        # anything we explicitly excluded.
         df = pd.DataFrame(self._label_dicts, columns=["filepath", "exclude", "validation"]+self.classes)
-        indices = list(find_labeled_indices(df))
+        indices = list(find_labeled_indices(df)) + list(find_excluded_indices(df))
         
         # initialize sampler
         self._badge_sampler = KPlusPlusSampler(output_gradients, indices=indices)
@@ -151,7 +152,10 @@ class ActiveLearner():
         :tags: key-value pairs of categories to update.
         """
         for t in tags:
-            assert tags[t] in [0,1, None], "tags should be 0, 1, or None"
+            if t in ["exclude", "validation"]:
+                assert tags[t] in [True, False], "exclude and validtion tags should be Boolean"
+            else:
+                assert tags[t] in [0,1, None], "tags should be 0, 1, or None"
             assert t in self.classes+["exclude", "validation"], "unknown category %s"%t
             self._label_dicts[index][t] = tags[t]
             
@@ -177,6 +181,7 @@ class ActiveLearner():
         :subset_by: string; which subset of the data to sample from: "unlabeled",
             "fully labeled", or "partially labeled"
         """
+        assert len(self.loss) > 0, "train a model first"
         df = pd.DataFrame(self._label_dicts)
         return pick_indices(df, self.pred_df, num_samples,
                                        sort_by="max entropy", subset_by=subset_by)
@@ -192,6 +197,7 @@ class ActiveLearner():
         
         :num_samples: how many to return
         """
+        assert hasattr(self,"_badge_sampler"), "train a model with use_badge=True first"
         return self._badge_sampler.choose(num_samples)
     
     def highest_predicted(self, category, num_samples=5, subset_by="unlabeled"):
@@ -204,6 +210,7 @@ class ActiveLearner():
         :subset_by: string; which subset of the data to sample from: "unlabeled",
             "fully labeled", or "partially labeled"
         """
+        assert len(self.loss) > 0, "train a model first"
         assert category in self.classes, "category %s not found"%category
         df = pd.DataFrame(self._label_dicts)
         return pick_indices(df, self.pred_df, num_samples,
@@ -219,6 +226,7 @@ class ActiveLearner():
         :subset_by: string; which subset of the data to sample from: "unlabeled",
             "fully labeled", or "partially labeled"
         """
+        assert len(self.loss) > 0, "train a model first"
         assert category in self.classes, "category %s not found"%category
         df = pd.DataFrame(self._label_dicts)
         return pick_indices(df, self.pred_df, num_samples,
