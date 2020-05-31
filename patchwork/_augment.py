@@ -8,7 +8,7 @@ import numpy as np
 import tensorflow as tf
 import tensorflow.keras.backend as K
 
-
+from tensorflow.python.ops.image_ops_impl import sample_distorted_bounding_box_v2
 
 DEFAULT_AUGMENT_PARAMS = {
     "gaussian_blur":0.2,
@@ -87,113 +87,39 @@ def _sobelize(x, prob=0.1, **kwargs):
         x = tf.stack(num_channels*[x], -1)
     return x
 
-def _random_zoom_original(x, scale=0.1, imshape=(256,256), **kwargs):
-    """
-    Randomly pad and then randomly crop an image
-    """
-    x = tf.expand_dims(x, 0)
-    
-    # first, pad the image
-    toppad = _poisson(imshape[0]*scale/2)
-    leftpad = _poisson(imshape[1]*scale/2)
-    bottompad = _poisson(imshape[0]*scale/2)
-    rightpad = _poisson(imshape[1]*scale/2)
-    padded = tf.image.pad_to_bounding_box(
-        x,
-        toppad,
-        leftpad,
-        toppad+imshape[0]+bottompad,
-        leftpad+imshape[1]+rightpad
-    )
-    
-    # second, crop the image
-    xmin = tf.random.uniform(shape=[], minval=0, maxval=scale)
-    xmax = tf.random.uniform(shape=[], minval=1-scale, maxval=1)
-    ymin = tf.random.uniform(shape=[], minval=0, maxval=scale)
-    ymax = tf.random.uniform(shape=[], minval=1-scale, maxval=1)
-    box = tf.stack([[ymin, xmin, ymax, xmax]])
-
-    resized = tf.image.crop_and_resize(padded, 
-                                       box, 
-                                       [0],
-                                       imshape)
-    return tf.squeeze(resized, axis=0)
-
-
-
-
-def distorted_bounding_box_crop(image,
-                                bbox,
-                                min_object_covered=0.1,
-                                aspect_ratio_range=(0.75, 1.33),
-                                area_range=(0.05, 1.0),
-                                max_attempts=100,
-                                scope=None):
-    """Generates cropped_image using one of the bboxes randomly distorted.
-  See `tf.image.sample_distorted_bounding_box` for more documentation.
-  Args:
-    image: `Tensor` of image data
-    bbox: `Tensor` of bounding boxes arranged `[1, num_boxes, coords]`
-        where each coordinate is [0, 1) and the coordinates are arranged
-        as `[ymin, xmin, ymax, xmax]`. If num_boxes is 0 then use the whole
-        image.
-    min_object_covered: An optional `float`. Defaults to `0.1`. The cropped
-        area of the image must contain at least this fraction of any bounding
-        box supplied.
-    aspect_ratio_range: An optional list of `float`s. The cropped area of the
-        image must have an aspect ratio = width / height within this range.
-    area_range: An optional list of `float`s. The cropped area of the image
-        must contain a fraction of the supplied image within in this range.
-    max_attempts: An optional `int`. Number of attempts at generating a cropped
-        region of the image of the specified constraints. After `max_attempts`
-        failures, return the entire image.
-    scope: Optional `str` for name scope.
-  Returns:
-    (cropped image `Tensor`, distorted bbox `Tensor`).
-    """
-    #with tf.name_scope(scope, 'distorted_bounding_box_crop', [image, bbox]):
-    shape = tf.shape(image)
-    sample_distorted_bounding_box = tf.image.sample_distorted_bounding_box(
-            shape,
-            bounding_boxes=bbox,
-            min_object_covered=min_object_covered,
-            aspect_ratio_range=aspect_ratio_range,
-            area_range=area_range,
-            max_attempts=max_attempts,
-            use_image_if_no_bounding_boxes=True)
-    bbox_begin, bbox_size, _ = sample_distorted_bounding_box
-
-    # Crop the image to the specified bounding box.
-    offset_y, offset_x, _ = tf.unstack(bbox_begin)
-    target_height, target_width, _ = tf.unstack(bbox_size)
-    image = tf.image.crop_to_bounding_box(
-            image, offset_y, offset_x, target_height, target_width)
-
-    return image
-
 
 def _random_zoom(x, scale=0.1, imshape=(256,256), **kwargs):
     """
-    Experimenting with the random crop function from the SimCLR rep
+    Randomly zoom in on the image- augmented image will be between
+    [scale] and 100% of original area.
+    
+    Based on the random crop function in the SimCLR repo:
     
     https://github.com/google-research/simclr/blob/7fd0c80092a650c5318ce08fd32f0931747ab966/data_util.py#L274
     """
-    if _choose(scale):
-        bbox = tf.constant([0.0, 0.0, 1.0, 1.0], 
+    shape = tf.shape(x)
+    bbox = tf.constant([0.0, 0.0, 1.0, 1.0], 
                            dtype=tf.float32, shape=[1, 1, 4])
-        aspect_ratio = imshape[1]/imshape[0] #width / height
-        image = distorted_bounding_box_crop(
-                  x,
-                     bbox,
-                     min_object_covered=0.1,
-                     aspect_ratio_range=(3. / 4 * aspect_ratio, 4. / 3. * aspect_ratio),
-                     area_range=(0.08, 1.0),
-                     max_attempts=100,
-                     scope=None)
-        #x = tf.image.resize_bicubic([image], imshape)[0]
-        x = tf.image.resize([image], imshape, method="bicubic")[0]
+    aspect_ratio = imshape[1]/imshape[0] #width / height
+    ar_range = (3. / 4 * aspect_ratio, 4. / 3. * aspect_ratio)
+    # sample a box around a random subset of the image
+    sampled_box = sample_distorted_bounding_box_v2(
+                    shape,
+                    bounding_boxes=bbox,
+                    min_object_covered=scale,
+                    aspect_ratio_range=ar_range,
+                    area_range=(scale, 1.0),
+                    max_attempts=100,
+                    use_image_if_no_bounding_boxes=True)
+    bbox_begin, bbox_size, _ = sampled_box
+    # Crop the image to the specified bounding box.
+    offset_y, offset_x, _ = tf.unstack(bbox_begin)
+    target_height, target_width, _ = tf.unstack(bbox_size)
+    cropped_image = tf.image.crop_to_bounding_box(
+            x, offset_y, offset_x, target_height, target_width)
+    
+    x = tf.image.resize([cropped_image], imshape, method="bicubic")[0]
     return x
-
 
 
 def _random_mask(x, prob=0.25,  **kwargs):
