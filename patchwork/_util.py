@@ -1,6 +1,6 @@
 import numpy as np
 from PIL import Image
-from osgeo import gdal
+
 import tensorflow as tf
 
 def shannon_entropy(x, how="max"):
@@ -32,6 +32,8 @@ def tiff_to_array(f, swapaxes=True, norm=255, num_channels=-1):
     :num_channels: if -1, loadall channels; otherwise load the specified number 
         (e.g. 1 or 3 for display)
     """
+    from osgeo import gdal
+    import foobar
     infile = gdal.Open(f)
     im_arr = infile.ReadAsArray()
     if swapaxes:
