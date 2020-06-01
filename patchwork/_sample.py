@@ -60,24 +60,24 @@ def find_subset(df, s):
         
         
         if s == "unlabeled":
-            return not_excluded*find_unlabeled(df)
+            return not_excluded&find_unlabeled(df)
         elif s == "fully labeled":
-            return not_excluded*find_fully_labeled(df)
+            return not_excluded&find_fully_labeled(df)
         elif s == "partially labeled":
-            return not_excluded*find_partially_labeled(df)
+            return not_excluded&find_partially_labeled(df)
         elif s == "not excluded":
             return not_excluded
         elif "unlabeled:" in s:
             s = s.replace("unlabeled:", "").strip()
-            return not_excluded*pd.isnull(df[s])
+            return not_excluded&pd.isnull(df[s])
         elif "contains" in s:
             s = s.replace("contains:", "").strip()
-            return not_excluded*(df[s] == 1)
+            return not_excluded&(df[s] == 1)
         elif "doesn't contain" in s:
             s = s.replace("doesn't contain:", "").strip()
-            return not_excluded*(df[s] == 0)
+            return not_excluded&(df[s] == 0)
         elif s == "validation":
-            return not_excluded*(df["validation"] == True)
+            return not_excluded&(df["validation"] == True)
         else:
             assert False, "sorry can't help you"
 

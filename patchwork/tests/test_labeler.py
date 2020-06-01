@@ -37,16 +37,6 @@ def test_buttonpanel():
     bp.record_values()
     
     
-#def test_generate_label_summary():
-#    classes = ["foo", "bar"]
-#    filepaths = ["foo.jpg", "bar.jpg"]
-#    df = prep_label_dataframe(filepaths, classes)
-#    df["foo"] = 1
-    
-#    summary = _generate_label_summary(df, classes)
-#    assert isinstance(summary, str)
-#    assert "0/0" in summary
-#    assert "0/2" in summary
     
     
 def test_pick_indices():
@@ -54,11 +44,12 @@ def test_pick_indices():
     classes = ["foo", "bar"]
     filepaths = [str(x) for x in range(N)]
     df = prep_label_dataframe(filepaths, classes)
-    df["foo"].iloc[:int(N/2)] = 1
+    foo = np.concatenate([np.ones(int(N/2)), np.nan*np.zeros(int(N/2))])
+    df = df.assign(foo=foo)
     
     pred_df = df.copy().drop(["exclude", "filepath", "validation"], 1)
-    pred_df["foo"] = np.linspace(0,1,N)
-    pred_df["bar"] = np.ones(N)
+    pred_df = pred_df.assign(foo=np.linspace(0,1,N))
+    pred_df = pred_df.assign(bar = np.ones(N))
     
     assert len(pick_indices(df, pred_df, 10, "random", "unlabeled")) == 10
     assert len(pick_indices(df, pred_df, 10, "max entropy", "unlabeled")) == 10
