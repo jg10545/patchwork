@@ -29,10 +29,14 @@ def find_partially_labeled(df):
     return (~find_unlabeled(df))&(~find_fully_labeled(df))
 
 def find_labeled_indices(df):
-    # macro to return indices of fully/partially labeled records
+    # return indices of fully/partially labeled records
     unlabeled = find_unlabeled(df)
     return np.arange(len(unlabeled))[~unlabeled]
 
+def find_excluded_indices(df):
+    # return indices of excluded records
+    excluded = df["exclude"] == True
+    return np.arange(len(df))[excluded]
 
 def find_subset(df, s):
     """
@@ -49,29 +53,33 @@ def find_subset(df, s):
         -contains X (for class X)
         -doesn't contain X (for class X)
     """
-    if s == "unlabeled":
-        return find_unlabeled(df)
-    elif s == "fully labeled":
-        return find_fully_labeled(df)
-    elif s == "partially labeled":
-        return find_partially_labeled(df)
-    elif s == "excluded":
+    if s == "excluded":
         return df["exclude"] == True
-    elif s == "not excluded":
-        return df["exclude"] == False
-    elif "unlabeled:" in s:
-        s = s.replace("unlabeled:", "").strip()
-        return pd.isnull(df[s])
-    elif "contains" in s:
-        s = s.replace("contains:", "").strip()
-        return df[s] == 1
-    elif "doesn't contain" in s:
-        s = s.replace("doesn't contain:", "").strip()
-        return df[s] == 0
-    elif s == "validation":
-        return df["validation"] == True
     else:
-        assert False, "sorry can't help you"
+        not_excluded = df["exclude"] != True
+        
+        
+        if s == "unlabeled":
+            return not_excluded&find_unlabeled(df)
+        elif s == "fully labeled":
+            return not_excluded&find_fully_labeled(df)
+        elif s == "partially labeled":
+            return not_excluded&find_partially_labeled(df)
+        elif s == "not excluded":
+            return not_excluded
+        elif "unlabeled:" in s:
+            s = s.replace("unlabeled:", "").strip()
+            return not_excluded&pd.isnull(df[s])
+        elif "contains" in s:
+            s = s.replace("contains:", "").strip()
+            return not_excluded&(df[s] == 1)
+        elif "doesn't contain" in s:
+            s = s.replace("doesn't contain:", "").strip()
+            return not_excluded&(df[s] == 0)
+        elif s == "validation":
+            return not_excluded&(df["validation"] == True)
+        else:
+            assert False, "sorry can't help you"
 
 
 
@@ -89,7 +97,9 @@ def stratified_sample(df, N=1000, return_indices=False):
     (filepaths or indices), label vectors
     """
     index = df.index.values
-    not_excluded = (df["exclude"] == False)&(df["validation"] == False)
+    # figure out which records aren't excluded, either by being tagged
+    # "exclude" or tagged "validation"
+    not_excluded = (df["exclude"] != True)&(df["validation"] != True)
     filepaths = df["filepath"].values
     label_types = [x for x in df.columns if x not in PROTECTED_COLUMN_NAMES]
     

@@ -1,14 +1,22 @@
 import numpy as np
 from PIL import Image
-from osgeo import gdal
+
 import tensorflow as tf
 
-def shannon_entropy(x):
+def shannon_entropy(x, how="max"):
     """
     Shannon entropy of a 2D array
+    
+    :how: str; aggregate across columns by "max" or "sum"
     """
     xprime = np.maximum(np.minimum(x, 1-1e-8), 1e-8)
-    return -np.sum(xprime*np.log2(xprime), axis=1)
+    elemwise_ent = -1*(xprime*np.log2(xprime)+(1-xprime)*np.log2(1-xprime))
+    if how == "sum":
+        return np.sum(elemwise_ent, axis=1)
+    elif how == "max":
+        return np.max(elemwise_ent, axis=1)
+    else:
+        assert False, "argument %s not recognized"%how
 
 
 
@@ -24,6 +32,8 @@ def tiff_to_array(f, swapaxes=True, norm=255, num_channels=-1):
     :num_channels: if -1, loadall channels; otherwise load the specified number 
         (e.g. 1 or 3 for display)
     """
+    from osgeo import gdal
+    import foobar
     infile = gdal.Open(f)
     im_arr = infile.ReadAsArray()
     if swapaxes:

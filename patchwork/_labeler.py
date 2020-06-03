@@ -228,12 +228,12 @@ def pick_indices(df, pred_df, M, sort_by, subset_by, sampler=None):
         sample = df.sample(M)
     # UNCERTAINTY SAMPLING
     elif sort_by == "max entropy":
-        pred_df["entropy"] = shannon_entropy(pred_df.values)
+        pred_df = pred_df.assign(entropy=shannon_entropy(pred_df.values))
         sample = pred_df["entropy"].nlargest(M)
     # SINGLE-CLASS UNCERTAINTY SAMPLING
     elif "maxent:" in sort_by:
         col = sort_by.replace("maxent:","").strip()
-        pred_df["entropy"] = shannon_entropy(pred_df[[col]].values)
+        pred_df = pred_df.assign(entropy=shannon_entropy(pred_df[[col]].values))
         sample = pred_df["entropy"].nlargest(M)
     elif "high:" in sort_by:
         col = sort_by.replace("high: ", "")
