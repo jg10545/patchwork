@@ -72,8 +72,10 @@ class KPlusPlusSampler():
         
 
 
-def _build_output_gradient_function(fine_tuning_model, output_model, feature_extractor=None):
+def _build_output_gradient_function_v1(fine_tuning_model, output_model, feature_extractor=None):
     """
+    THIS FUNCTION WILL GET DEPRECATED
+    
     Generate a tensorflow function for computing, for a given example, the gradient of
     the loss function with respect to the weights in the final layer. This is useful
     for active learning- see "DEEP BATCH ACTIVE LEARNING BY DIVERSE, UNCERTAIN GRADIENT 
@@ -100,6 +102,55 @@ def _build_output_gradient_function(fine_tuning_model, output_model, feature_ext
         # pseudolabels with respect to the output model weights
         with tf.GradientTape() as tape:
             pred = output_model(x)
+            loss = tf.keras.losses.binary_crossentropy(label, pred)
+
+        grad = tape.gradient(loss, output_weights)
+        # finally flatten the gradient tensor back to a vector
+        return tf.reshape(grad, [-1])
+    return compute_output_gradients
+
+
+
+
+def _build_output_gradient_function(*models):
+    """
+    Generate a tensorflow function for computing, for a given example, the gradient of
+    the loss function with respect to the weights in the final layer. This is useful
+    for active learning- see "DEEP BATCH ACTIVE LEARNING BY DIVERSE, UNCERTAIN GRADIENT 
+    LOWER BOUNDS" by Ash et al.
+    
+    """
+    # find the output layer of the final network
+    final_layer = models[-1].layers[-1]
+    # in the event that some clown defined this model with nested models,
+    # drill down until we get to an actual model
+    while isinstance(final_layer, tf.keras.Model):
+        final_layer = final_layer.layers[-1]
+    
+    # THERE SHOULD ONLY BE ONE TENSOR IN THIS LIST
+    final_layer_weights = [x for x in final_layer.trainable_variables 
+                           if "kernel" in x.name]
+    assert len(final_layer_weights) == 1, "not sure which weights to use"
+    output_weights = final_layer_weights[0]
+    
+    @tf.function
+    def compute_output_gradients(x):
+        # since we're working one record at a time- add a
+        # batch dimension
+        x = tf.expand_dims(x,0)
+        y = x
+        # push feature vector through each model
+        for m in models:
+            y = m(y)
+        # push vectors through output model and round predictions 
+        # to make pseudolabels ("hypothetical labels" in the paper)
+        label = tf.cast(y >= 0.5, tf.float32)
+        # now compute a gradient of the loss function against
+        # pseudolabels with respect to the output model weights
+        pred = x
+        with tf.GradientTape() as tape:
+            for m in models:
+                pred = m(pred)
             loss = tf.keras.losses.binary_crossentropy(label, pred)
 
         grad = tape.gradient(loss, output_weights)

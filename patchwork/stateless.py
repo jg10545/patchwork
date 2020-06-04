@@ -15,10 +15,12 @@ import tensorflow as tf
 import tensorflow.keras.backend as K
 import pickle
 
-from patchwork._sample import stratified_sample, find_labeled_indices, find_excluded_indices
+from patchwork._sample import stratified_sample, find_labeled_indices, find_unlabeled
+from patchwork._sample import find_excluded_indices, PROTECTED_COLUMN_NAMES
 from patchwork._badge import KPlusPlusSampler, _build_output_gradient_function
 from patchwork._losses import masked_binary_crossentropy
 from patchwork._labeler import pick_indices
+from patchwork._util import shannon_entropy
 
 
 def pickle_keras_model(model, file):
@@ -85,15 +87,41 @@ def _build_training_dataset(features, df, num_classes, num_samples,
     ds = ds.prefetch(1)
     return ds
 
-def train(features, classes, labels, training_steps=1000, 
+
+
+def _labels_to_dataframe(labels, classes=None):
+    """
+    Input labels as a list of dictionaries; return same information as
+    a pandas dataframe.
+    
+    :classes: if a list of strings is passed here, will prune the columns
+        to just these categories
+    """
+    # convert to dataframe
+    df = pd.DataFrame(labels)
+    # prune if necessary
+    if classes is not None:
+        for c in df.columns:
+            if c not in classes+PROTECTED_COLUMN_NAMES:
+                df = df.drop(c, axis=1)
+                
+    # if exclude and validation not present, add them
+    for c in ["exclude", "validation"]:
+        if c not in df.columns:
+            df[c] = False
+    return c
+
+        
+
+def train(features, labels, classes, training_steps=1000, 
           batch_size=16, learning_rate=1e-3, **model_kwargs):
     """
     Hey now, you're an all-star. Get your train on.
     
     
     :features: (num_samples, input_dim) array of feature vectors
-    :classes: list of strings; names of categories to include in model
     :training_steps: how many steps to train for
+    :classes: list of strings; names of categories to include in model
     :batch_size: number of examples per batch
     :learning_rate: learning rate for Adam optimizer
     :model_kwargs: keyword arguments for model construction
@@ -106,8 +134,7 @@ def train(features, classes, labels, training_steps=1000,
         IMPLEMENTED
     """
     # convert labels to a dataframe
-    df = pd.DataFrame(labels)
-    print("incorporate classes arg")
+    df = _labels_to_dataframe(labels, classes)
     
     num_classes = len(classes)
     input_dim = features.shape[1]
@@ -152,15 +179,98 @@ def predict(features, model):
 
 
 
+def get_indices_of_tiles_in_predicted_class(features, model, category_index, 
+                                            threshold=0.5):
+    """
+    :features: (num_samples, input_dim) array of feature vectors
+    :model: trained Keras classifier model
+    :category_index: integer index of category to query
+    :threshold: float between 0 and 1; minimum probability assessed by
+        classifier
+    """
+    predictions = model.predict(features)
+    category_predictions = predictions[:,category_index]
+    return np.arange(features.shape[0])[category_predictions >= threshold]
 
 
 
 
+def sample_random(labels, N, num_to_return=None):
+    """
+    Generate a random sample of indices
+    
+    :N: number of patches
+    :num_to_return: if not None; number of indices to return
+    """
+    if num_to_return is None:
+        num_to_return = N
+    # create a list of unlabeled indices    
+    df = _labels_to_dataframe(labels)
+    labeled = list(find_labeled_indices(df))
+    indices_to_sample_from = [n for n in range(N) if n not in labeled]
+    # update num_to_return in case not many unlabeled are left
+    num_to_return = min(num_to_return, len(indices_to_sample_from))
+    
+    return np.random.choice(indices_to_sample_from,size=num_to_return,
+                            replace=False)
+
+def sample_uncertainty(labels, features, model, num_to_return=None):
+    """
+    Return indices sorted by decreasing entropy.
+    
+    :features: (num_samples, input_dim) array of feature vectors
+    :model: trained Keras classifier model
+    :num_to_return: if not None; number of indices to return
+    """  
+    N = features.shape[0]
+    # get model predictions
+    predictions = model.predict(features)
+    # compute entropies for each prediction
+    entropy = shannon_entropy(predictions)
+    
+    # create a list of unlabeled indices    
+    df = _labels_to_dataframe(labels)
+    labeled = list(find_labeled_indices(df))
+    
+    # order by decreasing entropy
+    ordering = entropy.argsort()[::-1]
+    ordered_indices = np.arange(N)[ordering]
+    # prune out labeled indices
+    ordered_indices = [i for i in ordered_indices if i not in labeled]
+    # and clip list if necessary
+    if num_to_return is not None:
+        ordered_indices = ordered_indices[:num_to_return]
+    return ordered_indices
 
 
 
-
-
+def sample_diversity(labels, features, model, num_to_return=None):
+    """
+    Return indices sorted by decreasing entropy.
+    
+    :features: (num_samples, input_dim) array of feature vectors
+    :model: trained Keras classifier model
+    :num_to_return: if not None; max number of indices to return
+    """  
+    N = features.shape[0]
+    if num_to_return is None:
+        num_to_return = N
+        
+    # compute badge embeddings- define a tf.function for it
+    compute_output_gradients = _build_output_gradient_function(model)
+    # then run that function across all the images.
+    output_gradients = tf.map_fn(compute_output_gradients, features).numpy()
+    
+    # figure out which indices are yet labeled
+    df = _labels_to_dataframe(labels)
+    labeled = list(find_labeled_indices(df))
+    # update num_to_return in case there aren't very many 
+    # unlabeled indices left
+    num_to_return = min(num_to_return, N-len(labeled))
+    
+    # initialize a K++ sampler
+    badge_sampler = KPlusPlusSampler(output_gradients, indices=labeled)
+    return badge_sampler(num_to_return)
 
 
 
