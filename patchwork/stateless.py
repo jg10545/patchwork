@@ -99,22 +99,30 @@ def _labels_to_dataframe(labels, classes=None):
     """
     # convert to dataframe
     df = pd.DataFrame(labels)
+    
+    # if exclude and validation not present, add them
+    for c in ["exclude", "validation"]:
+        if c not in df.columns:
+            df[c] = False
+            
+    if "filepath" not in df.columns:
+        df["filepath"] = ""
+            
     # prune if necessary
     if classes is not None:
         for c in df.columns:
             if c not in classes+PROTECTED_COLUMN_NAMES:
                 df = df.drop(c, axis=1)
-                
-    # if exclude and validation not present, add them
-    for c in ["exclude", "validation"]:
-        if c not in df.columns:
-            df[c] = False
-    return c
+    # make sure columns are in the same order
+    if classes is not None:
+        df = df.reindex(columns=["filepath", "exclude", 
+                                 "validation"]+classes)     
+    return df
 
         
 
 def train(features, labels, classes, training_steps=1000, 
-          batch_size=16, learning_rate=1e-3, **model_kwargs):
+          batch_size=32, learning_rate=1e-3, **model_kwargs):
     """
     Hey now, you're an all-star. Get your train on.
     
@@ -166,18 +174,6 @@ def train(features, labels, classes, training_steps=1000,
     return model, np.array(training_loss), {}
 
 
-def predict(features, model):
-    """
-    :features: (num_samples, input_dim) array of feature vectors
-    :model: a trained Keras model
-    
-    Returns a (num_samples, num_classes) array of multiclass sigmoid
-        probabilities
-    """
-    return model.predict(features)
-
-
-
 
 def get_indices_of_tiles_in_predicted_class(features, model, category_index, 
                                             threshold=0.5):
@@ -195,32 +191,33 @@ def get_indices_of_tiles_in_predicted_class(features, model, category_index,
 
 
 
-def sample_random(labels, N, num_to_return=None):
+def sample_random(labels, max_to_return=None):
     """
     Generate a random sample of indices
     
-    :N: number of patches
-    :num_to_return: if not None; number of indices to return
+    :labels: list of dictionaries containing labels
+    :max_to_return: if not None; max number of indices to return
     """
-    if num_to_return is None:
-        num_to_return = N
+    N = len(labels)
+    if max_to_return is None:
+        max_to_return = N
     # create a list of unlabeled indices    
     df = _labels_to_dataframe(labels)
     labeled = list(find_labeled_indices(df))
     indices_to_sample_from = [n for n in range(N) if n not in labeled]
     # update num_to_return in case not many unlabeled are left
-    num_to_return = min(num_to_return, len(indices_to_sample_from))
+    max_to_return = min(max_to_return, len(indices_to_sample_from))
     
-    return np.random.choice(indices_to_sample_from,size=num_to_return,
+    return np.random.choice(indices_to_sample_from,size=max_to_return,
                             replace=False)
 
-def sample_uncertainty(labels, features, model, num_to_return=None):
+def sample_uncertainty(labels, features, model, max_to_return=None):
     """
     Return indices sorted by decreasing entropy.
     
     :features: (num_samples, input_dim) array of feature vectors
     :model: trained Keras classifier model
-    :num_to_return: if not None; number of indices to return
+    :max_to_return: if not None; max number of indices to return
     """  
     N = features.shape[0]
     # get model predictions
@@ -238,23 +235,23 @@ def sample_uncertainty(labels, features, model, num_to_return=None):
     # prune out labeled indices
     ordered_indices = [i for i in ordered_indices if i not in labeled]
     # and clip list if necessary
-    if num_to_return is not None:
-        ordered_indices = ordered_indices[:num_to_return]
+    if max_to_return is not None:
+        ordered_indices = ordered_indices[:max_to_return]
     return ordered_indices
 
 
 
-def sample_diversity(labels, features, model, num_to_return=None):
+def sample_diversity(labels, features, model, max_to_return=None):
     """
     Return indices sorted by decreasing entropy.
     
     :features: (num_samples, input_dim) array of feature vectors
     :model: trained Keras classifier model
-    :num_to_return: if not None; max number of indices to return
+    :max_to_return: if not None; max number of indices to return
     """  
     N = features.shape[0]
-    if num_to_return is None:
-        num_to_return = N
+    if max_to_return is None:
+        max_to_return = N
         
     # compute badge embeddings- define a tf.function for it
     compute_output_gradients = _build_output_gradient_function(model)
@@ -264,13 +261,13 @@ def sample_diversity(labels, features, model, num_to_return=None):
     # figure out which indices are yet labeled
     df = _labels_to_dataframe(labels)
     labeled = list(find_labeled_indices(df))
-    # update num_to_return in case there aren't very many 
+    # update max_to_return in case there aren't very many 
     # unlabeled indices left
-    num_to_return = min(num_to_return, N-len(labeled))
-    
+    max_to_return = min(max_to_return, N-len(labeled))
+
     # initialize a K++ sampler
     badge_sampler = KPlusPlusSampler(output_gradients, indices=labeled)
-    return badge_sampler(num_to_return)
+    return badge_sampler(max_to_return)
 
 
 
