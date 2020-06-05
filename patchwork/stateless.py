@@ -22,6 +22,7 @@ from patchwork._losses import masked_binary_crossentropy
 from patchwork._labeler import pick_indices
 from patchwork._util import shannon_entropy
 
+import sklearn.preprocessing, sklearn.decomposition, sklearn.cluster
 
 def pickle_keras_model(model, file):
     """
@@ -239,11 +240,43 @@ def sample_uncertainty(labels, features, model, max_to_return=None):
         ordered_indices = ordered_indices[:max_to_return]
     return ordered_indices
 
-
-
-def sample_diversity(labels, features, model, max_to_return=None):
+def sample_diversity(labels, features, max_to_return=20):
     """
-    Return indices sorted by decreasing entropy.
+    Attempt to create a diverse, model-independent sample of
+    images to tag. PCA-reduce feature vectors an then use k-means
+    for sampling.
+    
+    :features: (num_samples, input_dim) array of feature vectors
+    :max_to_return: if not None; max number of indices to return
+    """  
+    N = features.shape[0]
+
+    # figure out which indices are yet labeled
+    df = _labels_to_dataframe(labels)
+    labeled = find_labeled_indices(df)
+    
+    # rescale, PCA reduce, and cluster feature vectors
+    scaled = sklearn.preprocessing.StandardScaler().fit_transform(features)
+    reduced = sklearn.decomposition.PCA(16).fit_transform(scaled)
+    kmeans = sklearn.cluster.KMeans(n_clusters=max_to_return).fit(reduced)
+
+    # now use this for sample- pull up to one not-yet-labeled
+    # data point from each cluster.
+    all_indices = np.arange(N)
+    indices = []
+    for i in range(max_to_return):
+        subset = [j for j in all_indices[kmeans.labels_ == i]
+                  if j not in labeled]
+        if len(subset) > 0:
+            indices.append(np.random.choice(subset))
+    return np.array(indices)
+
+
+
+def sample_badge(labels, features, model, max_to_return=None):
+    """
+    Use a trained model to compute output-gradient vectors for the
+    BADGE algorithm for active learning. Return sorted indices.
     
     :features: (num_samples, input_dim) array of feature vectors
     :model: trained Keras classifier model
