@@ -13,43 +13,15 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 import tensorflow.keras.backend as K
-import pickle
+import scipy.stats as st
 
-from patchwork._sample import stratified_sample, find_labeled_indices, find_unlabeled
-from patchwork._sample import find_excluded_indices, PROTECTED_COLUMN_NAMES
+from patchwork._sample import stratified_sample, find_labeled_indices
+from patchwork._sample import PROTECTED_COLUMN_NAMES
 from patchwork._badge import KPlusPlusSampler, _build_output_gradient_function
 from patchwork._losses import masked_binary_crossentropy
-from patchwork._labeler import pick_indices
 from patchwork._util import shannon_entropy
 
 import sklearn.preprocessing, sklearn.decomposition, sklearn.cluster
-
-def pickle_keras_model(model, file):
-    """
-    Dump a pickle object of a Keras model. Directly pickling
-    Keras models returns a "TypeError: can't pickle _thread.RLock
-    objects" error. This function breaks the model into two
-    components:
-        -a JSON definition of the model structure
-        -a list of numpy arrays specifying the weights
-        
-    The (structure, weights) tuple is then pickled.
-    """
-    model_tuple = (model.to_json(), model.get_weights())
-    pickle.dump(model_tuple, file)
-    
-def load_model_from_pickle(file):
-    """
-    Inverse of pickle_keras_model(). Input a file object, 
-    load the pickled tuple, construct model structure from
-    JSON and set the saved weights.
-    
-    Returns an uncompiled Keras model.
-    """
-    model_spec, model_weights = pickle.load(file)
-    model = tf.keras.models.model_from_json(model_spec)
-    model.set_weights(model_weights)
-    return model
 
 
 def _build_model(input_dim, num_classes, num_hidden_layers=0, 
@@ -120,6 +92,89 @@ def _labels_to_dataframe(labels, classes=None):
                                  "validation"]+classes)     
     return df
 
+
+def _estimate_accuracy(tp, fp, tn, fn, alpha=5, beta=5):
+    """
+    Compute a set of estimates around the accuracy, using a
+    beta-binomial model.
+    
+    :tp: count of true positives
+    :fp: count of false positives
+    :tn: count of true negatives
+    :fn: count of false negatives
+    :alpha, beta: parameters of Beta prior
+    
+    Returns dictionary containing
+    :accuracy: point estimate of accuracy
+    :interval_low: low end of 90% credible interval of accuracy
+    :interval_high: high end of 90% credible interval of accuracy
+    :base_rate: frequentist point estimate of the base rate
+    :prob_higher_than_base_rate: estimate of the probability that
+        accuracy is higher than the base rate
+    """
+    # total number
+    N = tp + tn + fp + fn
+    # accuracy point estimate
+    #acc = (tp+tn)/N
+    acc = (alpha+tp+tn)/(alpha + beta + tp + tn + fp + fn)
+    # how many right/wrong
+    num_right = tp+tn
+    num_wrong = fp+fn
+    # estimate base rate
+    frac_pos = (tp+fn)/N
+    base_rate = max(frac_pos, 1-frac_pos)
+    
+    interval_low = st.beta.ppf(0.05, alpha+num_right, beta+num_wrong)
+    interval_high = st.beta.ppf(0.95, alpha+num_right, beta+num_wrong)
+    prob_above_base_rate = 1-st.beta.cdf(base_rate, alpha+num_right, 
+                                         beta+num_wrong)
+    
+    return {"accuracy":acc, "base_rate":base_rate,
+           "interval_low":interval_low, "interval_high":interval_high,
+           "prob_above_base_rate":prob_above_base_rate}
+
+
+def _eval(features, df, classes, model, threshold=0.5, alpha=5,beta=5):
+    """
+    Macro for evaluating a classification model. does the following:
+        
+        1) find the subset of tags marked "validation"
+        2) generate model predictions on the validation features
+        3) round predictions to 1 or 0
+        4) for each category:
+            a) check to see whether the labels include at least one positive
+                and one negative example
+            b) if so, call _estimate_accuracy() to get performance measures
+        5) return everything as a dict
+    """
+    outdict = {}
+    # boolean array
+    val_subset = (df["validation"] == True).values
+    # (num_val, num_classes) array
+    labels = df[classes].values
+    # get model sigmoid predictions
+    predictions = model.predict(features[val_subset,:])
+    # round to 1 or 0
+    predictions = (predictions >= threshold).astype(int)
+    
+    # for each class
+    for i,c in enumerate(classes):
+        # only bother computing if we have at least one positive
+        # and one negative val example in this category
+        if (1 in labels[:,i])&(0 in labels[:,i]):
+            # true positives
+            tp = np.sum((labels[:,i]==1)&(predictions[:,i] == 1))
+            # true negatives
+            tn = np.sum((labels[:,i]==0)&(predictions[:,i] == 0))
+            # false positives
+            fp = np.sum((labels[:,i]==0)&(predictions[:,i] == 1))
+            # false negatives
+            fn = np.sum((labels[:,i]==1)&(predictions[:,i] == 0))
+            outdict[c] = _estimate_accuracy(tp,fp,tn,fn, alpha, beta)
+        else:
+            outdict[c] = {}
+            
+    return outdict
         
 
 def train(features, labels, classes, training_steps=1000, 
@@ -172,7 +227,10 @@ def train(features, labels, classes, training_steps=1000,
     for x, y in ds:
         training_loss.append(training_step(x,y).numpy())
         
-    return model, np.array(training_loss), {}
+    # finally run some performance metrics
+    acc = _eval(features, df, classes, model)
+        
+    return model, np.array(training_loss), acc
 
 
 
