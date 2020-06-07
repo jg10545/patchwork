@@ -150,8 +150,11 @@ def _eval(features, df, classes, model, threshold=0.5, alpha=5,beta=5):
     outdict = {}
     # boolean array
     val_subset = (df["validation"] == True).values
+    # if there aren't any validation points, return empty dictionaries
+    if val_subset.sum() == 0:
+        return {c:{} for c in classes}
     # (num_val, num_classes) array
-    labels = df[classes].values
+    labels = df[classes].values[val_subset,:]
     # get model sigmoid predictions
     predictions = model.predict(features[val_subset,:])
     # round to 1 or 0

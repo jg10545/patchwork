@@ -100,10 +100,73 @@ def test_eval():
     acc = pws._eval(features, df, classes, model)
     assert isinstance(acc, dict)
     assert len(acc) == len(classes)
-    assert len(acc["class0"]) == 5
+    for k in ["accuracy", "base_rate", "interval_low",
+              "interval_high", "prob_above_base_rate"]:
+        assert k in acc["class0"]
+        
+        
+def test_train_without_validation():
+    N = 3
+    d = 7
+    features = np.random.normal(0,1,(N,d))
+    labels = [
+        {"class0":0, "class1":1},
+              {"class0":1, "class1":1},
+              {"class0":0, "class1":0}
+        ]
+    classes = ["class0", "class1"]
+    model, loss, acc = pws.train(features, labels, classes,
+                                 training_steps=1, batch_size=10,
+                                 num_hidden_layers=0)
+    
+    
+    assert isinstance(model, tf.keras.Model)
+    assert isinstance(loss, np.ndarray)
+    assert isinstance(acc, dict)
+    assert len(loss) == 1
+    assert len(acc) == len(classes)
+    # nothing in class accuracy dicts because no validation
+    assert len(acc["class0"]) == 0
         
         
         
-        
-        
-        
+def test_train_with_validation():
+    N = 6
+    d = 7
+    features = np.random.normal(0,1,(N,d))
+    labels = [
+        {"class0":0, "class1":1},
+              {"class0":1, "class1":1},
+              {"class0":0, "class1":0},
+              {"class0":0, "class1":1, "validation":True},
+              {"class0":1, "class1":1, "validation":True},
+              {"class0":0, "class1":0, "validation":True}
+        ]
+    classes = ["class0", "class1"]
+    model, loss, acc = pws.train(features, labels, classes,
+                                 training_steps=1, batch_size=10,
+                                 num_hidden_layers=0)
+    
+    
+    assert isinstance(model, tf.keras.Model)
+    assert isinstance(loss, np.ndarray)
+    assert isinstance(acc, dict)
+    assert len(loss) == 1
+    assert len(acc) == len(classes)
+    assert "base_rate" in acc["class0"]
+          
+def test_get_indices_of_tiles_in_predicted_class():
+    N = 3
+    d = 7
+    features = np.random.normal(0,1,(N,d))
+    
+    inpt = tf.keras.layers.Input((d,))
+    outpt = tf.keras.layers.Dense(2)(inpt)
+    model = tf.keras.Model(inpt, outpt)
+    
+    indices = pws.get_indices_of_tiles_in_predicted_class(features, model, 0, threshold=0)
+    assert isinstance(indices, np.ndarray)
+    assert indices.max() < N
+    
+    
+    
