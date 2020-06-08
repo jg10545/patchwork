@@ -7,13 +7,13 @@ import os
 from patchwork._labeler import Labeler
 from patchwork._modelpicker import ModelPicker
 from patchwork._trainmanager import TrainManager
-from patchwork._sample import stratified_sample, find_unlabeled
+from patchwork._sample import stratified_sample, find_unlabeled, find_excluded_indices
 from patchwork._sample import _build_in_memory_dataset, find_labeled_indices
 from patchwork._training_functions import build_training_function
 from patchwork.loaders import dataset
 from patchwork._losses import entropy_loss, masked_binary_crossentropy
 from patchwork._util import _load_img
-from patchwork._badge import KPlusPlusSampler, _build_output_gradient_function
+from patchwork._badge import KPlusPlusSampler, _build_output_gradient_function_v1
 
 EPSILON = 1e-5
 
@@ -312,7 +312,7 @@ class GUI(object):
         Note that this stores all output gradients IN MEMORY.
         """
         # compute badge embeddings- define a tf.function for it
-        compute_output_gradients = _build_output_gradient_function(
+        compute_output_gradients = _build_output_gradient_function_v1(
                                         self.models["fine_tuning"], 
                                         self.models["output"], 
                                         self.models["feature_extractor"])
@@ -322,7 +322,8 @@ class GUI(object):
              for x in self._pred_dataset()[0]], axis=0)
         # find the indices that have already been fully or partially
         # labeled, so we can avoid sampling nearby
-        indices = list(find_labeled_indices(self.df))
+        indices = list(find_labeled_indices(self.df)) + \
+                    list(find_excluded_indices(self.df))
         
         # initialize sampler
         self._badge_sampler = KPlusPlusSampler(output_gradients, indices=indices)

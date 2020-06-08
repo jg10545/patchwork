@@ -18,7 +18,6 @@ requirements = [
         "panel",
         "param",
         "pillow",
-        "gdal",
         "matplotlib",
         "tqdm",
         "sklearn",
