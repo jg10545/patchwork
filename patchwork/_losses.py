@@ -33,6 +33,31 @@ def masked_binary_crossentropy(y_true, y_pred, label_smoothing=0):
         y_true = y_true*(1-label_smoothing) + 0.5*label_smoothing
     return K.sum(
             K.binary_crossentropy(y_true * mask, y_pred * mask))/norm
+
+
+def masked_binary_focal_loss(y_true, y_pred, gamma=2.):
+    """
+    Focal loss, from "Focal Loss for Dense Object Detection"
+    by Lin et al. Currently only implementing the gamma
+    parameter, not alpha.
+    
+    Masks out any values where y_true = -1
+    """
+    mask = K.cast(K.not_equal(y_true, -1), K.floatx())
+    # count number of nonempty masks so that we can
+    # compute the mean
+    norm = K.sum(mask) + K.epsilon()
+    
+    loss = 0
+    
+    # positive cases
+    pos = K.cast(K.equal(y_true, 1), K.floatx())
+    loss -= K.sum(pos*K.log(y_pred + K.epsilon())*(1-y_pred)**gamma)
+    # negative cases
+    neg = K.cast(K.equal(y_true, 0), K.floatx())
+    loss -= K.sum(neg*K.log(1-y_pred + K.epsilon())*(y_pred)**gamma)
+    
+    return loss/norm
     
     
 def masked_mean_average_error(y_true, y_pred):

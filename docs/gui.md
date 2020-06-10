@@ -94,6 +94,7 @@ Once you've got some images labeled, design a model.
 * **Output-model:**  inputs feature vector and returns class probabilities.
   * Sigmoid: Output a logistic function and train with (masked) cross-entropy loss. Label smoothing is a standard cheap regularization technique- using a value of 0.1 will change a label of 1 to a label of 0.95 for training purposes.
   * Cosine outputs are also available- while they've produced impressive results in low-shot multiclass problems, I don't find that I'm getting impressive results on single-class multilabel problems. Your mileage may vary. Trains with (masked) mean average error loss.
+  * Focal Loss: still using sigmoid outputs, but training under [focal loss](https://arxiv.org/abs/1708.02002) to place more emphasis on hard examples.
 * **Semi-supervised learning:** during training, these techniques will add an additional loss on batches of unlabeled images. **Right now patchwork can only apply one at a time. So your value for the other should be zero.**
   * Entropy regularization: (excellent review paper [here](http://papers.nips.cc/paper/7585-realistic-evaluation-of-de))Bias the decision boundary toward confident predictions by penalizing the output entropy on unlabeled images. 
   * Mean Teacher: ([paper here](https://arxiv.org/abs/1703.01780)) this is *consistency regularization;* it penalizes differing outputs from different runs through a stochastic network (so make sure you're using this with dropout).

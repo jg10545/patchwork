@@ -32,8 +32,10 @@ def tiff_to_array(f, swapaxes=True, norm=255, num_channels=-1):
     :num_channels: if -1, loadall channels; otherwise load the specified number 
         (e.g. 1 or 3 for display)
     """
-    from osgeo import gdal
-    import foobar
+    try:
+        from osgeo import gdal
+    except:
+        print("couldn't load gdal")
     infile = gdal.Open(f)
     im_arr = infile.ReadAsArray()
     if swapaxes:
