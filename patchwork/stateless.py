@@ -18,7 +18,7 @@ import scipy.stats as st
 from patchwork._sample import stratified_sample, find_labeled_indices
 from patchwork._sample import PROTECTED_COLUMN_NAMES
 from patchwork._badge import KPlusPlusSampler, _build_output_gradient_function
-from patchwork._losses import masked_binary_crossentropy
+from patchwork._losses import masked_binary_crossentropy, masked_binary_focal_loss
 from patchwork._util import shannon_entropy
 
 import sklearn.preprocessing, sklearn.decomposition, sklearn.cluster
@@ -181,7 +181,8 @@ def _eval(features, df, classes, model, threshold=0.5, alpha=5,beta=5):
         
 
 def train(features, labels, classes, training_steps=1000, 
-          batch_size=32, learning_rate=1e-3, **model_kwargs):
+          batch_size=32, learning_rate=1e-3, focal_loss=False,
+          **model_kwargs):
     """
     Hey now, you're an all-star. Get your train on.
     
@@ -191,6 +192,8 @@ def train(features, labels, classes, training_steps=1000,
     :classes: list of strings; names of categories to include in model
     :batch_size: number of examples per batch
     :learning_rate: learning rate for Adam optimizer
+    :focal_loss: Boolean; whether to use focal loss (with gamma=2) instead
+        of binary crossentropy loss
     :model_kwargs: keyword arguments for model construction
     
     Returns
@@ -221,7 +224,10 @@ def train(features, labels, classes, training_steps=1000,
     def training_step(x,y):
         with tf.GradientTape() as tape:
             pred = model(x, training=True)
-            loss = masked_binary_crossentropy(y, pred)
+            if focal_loss:
+                loss = masked_binary_focal_loss(y, pred,2)
+            else:
+                loss = masked_binary_crossentropy(y, pred)
         variables = model.trainable_variables
         grads = tape.gradient(loss, variables)
         opt.apply_gradients(zip(grads, variables))

@@ -155,6 +155,30 @@ def test_train_with_validation():
     assert len(acc) == len(classes)
     assert "base_rate" in acc["class0"]
           
+def test_train_with_focal_loss():
+    N = 3
+    d = 7
+    features = np.random.normal(0,1,(N,d))
+    labels = [
+        {"class0":0, "class1":1},
+              {"class0":1, "class1":1},
+              {"class0":0, "class1":0}
+        ]
+    classes = ["class0", "class1"]
+    model, loss, acc = pws.train(features, labels, classes,
+                                 training_steps=1, batch_size=10,
+                                 num_hidden_layers=0,
+                                 focal_loss=True)
+    
+    
+    assert isinstance(model, tf.keras.Model)
+    assert isinstance(loss, np.ndarray)
+    assert isinstance(acc, dict)
+    assert len(loss) == 1
+    assert len(acc) == len(classes)
+    # nothing in class accuracy dicts because no validation
+    assert len(acc["class0"]) == 0
+    
 def test_get_indices_of_tiles_in_predicted_class():
     N = 3
     d = 7
