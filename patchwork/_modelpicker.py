@@ -11,8 +11,8 @@ import panel as pn
 import tensorflow as tf
 #from patchwork._models import model_dict
 from patchwork._fine_tuning_models import GlobalPooling, ConvNet
-from patchwork._output_models import SigmoidCrossEntropy, CosineOutput
-from patchwork._training_functions import build_training_function
+from patchwork._output_models import SigmoidCrossEntropy, CosineOutput, SigmoidFocalLoss
+#from patchwork._training_functions import build_training_function
 
 class ModelPicker(object):
     """
@@ -24,7 +24,7 @@ class ModelPicker(object):
         """
         fine_tuning_model_dict = {"Global Pooling":GlobalPooling(), "Convnet":ConvNet()}
         output_model_dict = {"Sigmoid Cross-entropy":SigmoidCrossEntropy(),
-                    "Cosine":CosineOutput()}
+                    "Cosine":CosineOutput(), "Sigmoid Focal Loss":SigmoidFocalLoss()}
         
         self._current_model = pn.pane.Markdown("**No current model**\n")
         self._num_classes = num_classes

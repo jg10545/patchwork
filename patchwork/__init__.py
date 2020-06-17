@@ -9,7 +9,6 @@ __version__ = '0.1.0'
 
 from patchwork._main import GUI
 from patchwork._prep import prep_label_dataframe
-from patchwork._activelearner import ActiveLearner
 import patchwork.feature
 import patchwork.viz
 import patchwork.loaders
