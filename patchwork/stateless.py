@@ -22,6 +22,7 @@ from patchwork._losses import masked_binary_crossentropy, masked_binary_focal_lo
 from patchwork._util import shannon_entropy
 
 import sklearn.preprocessing, sklearn.decomposition, sklearn.cluster
+from sklearn.metrics import roc_auc_score
 
 
 def _build_model(input_dim, num_classes, num_hidden_layers=0, 
@@ -128,7 +129,7 @@ def _estimate_accuracy(tp, fp, tn, fn, alpha=5, beta=5):
     interval_high = st.beta.ppf(0.95, alpha+num_right, beta+num_wrong)
     prob_above_base_rate = 1-st.beta.cdf(base_rate, alpha+num_right, 
                                          beta+num_wrong)
-    
+        
     return {"accuracy":acc, "base_rate":base_rate,
            "interval_low":interval_low, "interval_high":interval_high,
            "prob_above_base_rate":prob_above_base_rate}
@@ -154,26 +155,43 @@ def _eval(features, df, classes, model, threshold=0.5, alpha=5,beta=5):
     if val_subset.sum() == 0:
         return {c:{} for c in classes}
     # (num_val, num_classes) array
-    labels = df[classes].values[val_subset,:]
+    val_labels = df[classes].values[val_subset,:]
     # get model sigmoid predictions
-    predictions = model.predict(features[val_subset,:])
+    preds = model.predict(features[val_subset,:])
     # round to 1 or 0
-    predictions = (predictions >= threshold).astype(int)
+    predictions = (preds >= threshold).astype(int)
     
     # for each class
     for i,c in enumerate(classes):
         # only bother computing if we have at least one positive
         # and one negative val example in this category
-        if (1 in labels[:,i])&(0 in labels[:,i]):
+        if (1 in val_labels[:,i])&(0 in val_labels[:,i]):
             # true positives
-            tp = np.sum((labels[:,i]==1)&(predictions[:,i] == 1))
+            tp = np.sum((val_labels[:,i]==1)&(predictions[:,i] == 1))
             # true negatives
-            tn = np.sum((labels[:,i]==0)&(predictions[:,i] == 0))
+            tn = np.sum((val_labels[:,i]==0)&(predictions[:,i] == 0))
             # false positives
-            fp = np.sum((labels[:,i]==0)&(predictions[:,i] == 1))
+            fp = np.sum((val_labels[:,i]==0)&(predictions[:,i] == 1))
             # false negatives
-            fn = np.sum((labels[:,i]==1)&(predictions[:,i] == 0))
+            fn = np.sum((val_labels[:,i]==1)&(predictions[:,i] == 0))
             outdict[c] = _estimate_accuracy(tp,fp,tn,fn, alpha, beta)
+            # some people are really into AUC
+            outdict[c]["auc"] = roc_auc_score(val_labels[:,i], preds[:,i])
+
+            # also include raw values of model outputs for positive/negative
+            # ground truth for each class, broken out by train and test
+            raw_preds = {}
+            raw_preds["validation_positive"] = preds[val_labels[:,i] == 1][:,i]
+            raw_preds["validation_negative"] = preds[val_labels[:,i] == 0][:,i]
+        
+            # positive and negative training subsets
+            trainpos = ((df["validation"] != True)&(df[c] == 1)).values
+            trainneg = ((df["validation"] != True)&(df[c] == 0)).values
+            raw_preds["training_positive"] = model.predict(features[trainpos,:])[:,i]
+            raw_preds["training_negative"] = model.predict(features[trainneg,:])[:,i]
+            
+            outdict[c]["predictions"] = raw_preds
+        
         else:
             outdict[c] = {}
             
