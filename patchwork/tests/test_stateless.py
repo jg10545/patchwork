@@ -83,13 +83,16 @@ def test_estimate_accuracy():
     assert acc["interval_low"] < acc["interval_high"]
         
 def test_eval():
-    N = 3
+    N = 6
     d = 7
     features = np.random.normal(0,1,(N,d))
     df = pws._labels_to_dataframe([
         {"class0":0, "class1":1, "validation":True},
               {"class0":1, "class1":1, "validation":True},
-              {"class0":0, "class1":0, "validation":True}
+              {"class0":0, "class1":0, "validation":True},
+              {"class0":0, "class1":1, "validation":False},
+              {"class0":1, "class1":1, "validation":False},
+              {"class0":0, "class1":0, "validation":False}
         ])
     classes = ["class0", "class1"]
     
