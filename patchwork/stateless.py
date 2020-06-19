@@ -175,8 +175,11 @@ def _eval(features, df, classes, model, threshold=0.5, alpha=5,beta=5):
             # false negatives
             fn = np.sum((val_labels[:,i]==1)&(predictions[:,i] == 0))
             outdict[c] = _estimate_accuracy(tp,fp,tn,fn, alpha, beta)
-            # some people are really into AUC
-            outdict[c]["auc"] = roc_auc_score(val_labels[:,i], preds[:,i])
+            # some people are really into AUC. we need to pull out the subset
+            # of validation points that are nonempty for this class (in case
+            # there are partially-labeled val points)
+            nonempty = pd.notnull(df[c]).values[val_subset]
+            outdict[c]["auc"] = roc_auc_score(val_labels[nonempty,i], preds[nonempty,i])
 
             # also include raw values of model outputs for positive/negative
             # ground truth for each class, broken out by train and test
