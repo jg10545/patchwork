@@ -181,14 +181,18 @@ def _eval(features, df, classes, model, threshold=0.5, alpha=5,beta=5):
             # also include raw values of model outputs for positive/negative
             # ground truth for each class, broken out by train and test
             raw_preds = {}
-            raw_preds["validation_positive"] = preds[val_labels[:,i] == 1][:,i]
-            raw_preds["validation_negative"] = preds[val_labels[:,i] == 0][:,i]
+            raw_preds["validation_positive"] = [float(x) for x in
+                                                preds[val_labels[:,i] == 1][:,i]]
+            raw_preds["validation_negative"] = [float(x) for x in 
+                                                preds[val_labels[:,i] == 0][:,i]]
         
             # positive and negative training subsets
             trainpos = ((df["validation"] != True)&(df[c] == 1)).values
             trainneg = ((df["validation"] != True)&(df[c] == 0)).values
-            raw_preds["training_positive"] = model.predict(features[trainpos,:])[:,i]
-            raw_preds["training_negative"] = model.predict(features[trainneg,:])[:,i]
+            raw_preds["training_positive"] = [float(x) for x in 
+                                              model.predict(features[trainpos,:])[:,i]]
+            raw_preds["training_negative"] = [float(x) for x in 
+                                              model.predict(features[trainneg,:])[:,i]]
             
             outdict[c]["predictions"] = raw_preds
         
