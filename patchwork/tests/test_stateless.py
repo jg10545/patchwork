@@ -79,8 +79,8 @@ def test_estimate_accuracy():
     
     acc = pws._estimate_accuracy(tp, fp, tn, fn)
     assert isinstance(acc, dict)
-    assert acc["base_rate"] == 0.5
-    assert acc["interval_low"] < acc["interval_high"]
+    assert acc["base_rate"] == "0.50"
+    #assert acc["interval_low"] < acc["interval_high"]
         
 def test_eval():
     N = 6
@@ -104,8 +104,7 @@ def test_eval():
     assert isinstance(acc, dict)
     assert len(acc) == len(classes)
     # check that all the validation metrics are there
-    for k in ["accuracy", "base_rate", "interval_low",
-              "interval_high", "prob_above_base_rate", "auc"]:
+    for k in ["accuracy", "base_rate", "prob_above_base_rate", "auc"]:
         assert k in acc["class0"]
     # also check to see we've got class predictions
     assert "predictions" in acc["class0"]
@@ -138,8 +137,7 @@ def test_eval_with_partially_missing_val_labels():
     assert isinstance(acc, dict)
     assert len(acc) == len(classes)
     # check that all the validation metrics are there
-    for k in ["accuracy", "base_rate", "interval_low",
-              "interval_high", "prob_above_base_rate", "auc"]:
+    for k in ["accuracy", "base_rate", "prob_above_base_rate", "auc"]:
         assert k in acc["class0"]
     # also check to see we've got class predictions
     assert "predictions" in acc["class0"]
@@ -235,7 +233,7 @@ def test_get_indices_of_tiles_in_predicted_class():
     
     indices = pws.get_indices_of_tiles_in_predicted_class(features, model, 0, threshold=0)
     assert isinstance(indices, np.ndarray)
-    assert indices.max() < N
+    assert (len(indices)==0) or (indices.max() < N)
     
     
     

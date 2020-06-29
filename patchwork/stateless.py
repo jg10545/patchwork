@@ -105,7 +105,7 @@ def _estimate_accuracy(tp, fp, tn, fn, alpha=5, beta=5):
     :fn: count of false negatives
     :alpha, beta: parameters of Beta prior
     
-    Returns dictionary containing
+    Returns dictionary containing STRING-FORMATTED RESULTS
     :accuracy: point estimate of accuracy
     :interval_low: low end of 90% credible interval of accuracy
     :interval_high: high end of 90% credible interval of accuracy
@@ -130,9 +130,13 @@ def _estimate_accuracy(tp, fp, tn, fn, alpha=5, beta=5):
     prob_above_base_rate = 1-st.beta.cdf(base_rate, alpha+num_right, 
                                          beta+num_wrong)
         
-    return {"accuracy":acc, "base_rate":base_rate,
-           "interval_low":interval_low, "interval_high":interval_high,
-           "prob_above_base_rate":prob_above_base_rate}
+    #return {"accuracy":acc, "base_rate":base_rate,
+    #       "interval_low":interval_low, "interval_high":interval_high,
+    #       "prob_above_base_rate":prob_above_base_rate}
+    return {"accuracy":"{:0.2f} ({:0.2f}-{:0.2f})".format(acc, interval_low,
+                                                              interval_high),
+                "base_rate":"{:0.2f}".format(base_rate),
+                "prob_above_base_rate":"{:0.2f}".format(prob_above_base_rate)}
 
 
 def _eval(features, df, classes, model, threshold=0.5, alpha=5,beta=5):
@@ -179,7 +183,8 @@ def _eval(features, df, classes, model, threshold=0.5, alpha=5,beta=5):
             # of validation points that are nonempty for this class (in case
             # there are partially-labeled val points)
             nonempty = pd.notnull(df[c]).values[val_subset]
-            outdict[c]["auc"] = roc_auc_score(val_labels[nonempty,i], preds[nonempty,i])
+            outdict[c]["auc"] = "{:0.2f}".format(roc_auc_score(val_labels[nonempty,i],
+                                                               preds[nonempty,i]))
 
             # also include raw values of model outputs for positive/negative
             # ground truth for each class, broken out by train and test
