@@ -105,7 +105,7 @@ def _estimate_accuracy(tp, fp, tn, fn, alpha=5, beta=5):
     :fn: count of false negatives
     :alpha, beta: parameters of Beta prior
     
-    Returns dictionary containing
+    Returns dictionary containing STRING-FORMATTED RESULTS
     :accuracy: point estimate of accuracy
     :interval_low: low end of 90% credible interval of accuracy
     :interval_high: high end of 90% credible interval of accuracy
@@ -130,9 +130,13 @@ def _estimate_accuracy(tp, fp, tn, fn, alpha=5, beta=5):
     prob_above_base_rate = 1-st.beta.cdf(base_rate, alpha+num_right, 
                                          beta+num_wrong)
         
-    return {"accuracy":acc, "base_rate":base_rate,
-           "interval_low":interval_low, "interval_high":interval_high,
-           "prob_above_base_rate":prob_above_base_rate}
+    #return {"accuracy":acc, "base_rate":base_rate,
+    #       "interval_low":interval_low, "interval_high":interval_high,
+    #       "prob_above_base_rate":prob_above_base_rate}
+    return {"accuracy":"{:0.2f} ({:0.2f}-{:0.2f})".format(acc, interval_low,
+                                                              interval_high),
+                "base_rate":"{:0.2f}".format(base_rate),
+                "prob_above_base_rate":"{:0.2f}".format(prob_above_base_rate)}
 
 
 def _eval(features, df, classes, model, threshold=0.5, alpha=5,beta=5):
@@ -175,20 +179,28 @@ def _eval(features, df, classes, model, threshold=0.5, alpha=5,beta=5):
             # false negatives
             fn = np.sum((val_labels[:,i]==1)&(predictions[:,i] == 0))
             outdict[c] = _estimate_accuracy(tp,fp,tn,fn, alpha, beta)
-            # some people are really into AUC
-            outdict[c]["auc"] = roc_auc_score(val_labels[:,i], preds[:,i])
+            # some people are really into AUC. we need to pull out the subset
+            # of validation points that are nonempty for this class (in case
+            # there are partially-labeled val points)
+            nonempty = pd.notnull(df[c]).values[val_subset]
+            outdict[c]["auc"] = "{:0.2f}".format(roc_auc_score(val_labels[nonempty,i],
+                                                               preds[nonempty,i]))
 
             # also include raw values of model outputs for positive/negative
             # ground truth for each class, broken out by train and test
             raw_preds = {}
-            raw_preds["validation_positive"] = preds[val_labels[:,i] == 1][:,i]
-            raw_preds["validation_negative"] = preds[val_labels[:,i] == 0][:,i]
+            raw_preds["validation_positive"] = [float(x) for x in
+                                                preds[val_labels[:,i] == 1][:,i]]
+            raw_preds["validation_negative"] = [float(x) for x in 
+                                                preds[val_labels[:,i] == 0][:,i]]
         
             # positive and negative training subsets
             trainpos = ((df["validation"] != True)&(df[c] == 1)).values
             trainneg = ((df["validation"] != True)&(df[c] == 0)).values
-            raw_preds["training_positive"] = model.predict(features[trainpos,:])[:,i]
-            raw_preds["training_negative"] = model.predict(features[trainneg,:])[:,i]
+            raw_preds["training_positive"] = [float(x) for x in 
+                                              model.predict(features[trainpos,:])[:,i]]
+            raw_preds["training_negative"] = [float(x) for x in 
+                                              model.predict(features[trainneg,:])[:,i]]
             
             outdict[c]["predictions"] = raw_preds
         
