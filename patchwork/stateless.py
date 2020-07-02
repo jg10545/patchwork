@@ -56,7 +56,12 @@ def _build_training_dataset(features, df, num_classes, num_samples,
                             batch_size):
     indices, labels = stratified_sample(df, num_samples, 
                                             return_indices=True)
-    ds = tf.data.Dataset.from_tensor_slices((features[indices], labels))
+    #ds = tf.data.Dataset.from_tensor_slices((features[indices], labels))
+    ds = tf.data.Dataset.from_tensor_slices((indices, labels))
+    
+    def _load_feature(x,y):
+        return tf.gather(features, x, axis=0), y
+    ds = ds.map(_load_feature)
     ds = ds.batch(batch_size)
     ds = ds.prefetch(1)
     return ds
