@@ -18,7 +18,7 @@ class ModelPicker(object):
     """
     For building fine-tuning models
     """
-    def __init__(self, num_classes, inpt_channels, pw, feature_extractor=None):
+    def __init__(self, num_classes, feature_shape, pw, feature_extractor=None):
         """
         
         """
@@ -27,8 +27,9 @@ class ModelPicker(object):
                     "Cosine":CosineOutput(), "Sigmoid Focal Loss":SigmoidFocalLoss()}
         
         self._current_model = pn.pane.Markdown("**No current model**\n")
+        self._feature_shape = feature_shape
         self._num_classes = num_classes
-        self._inpt_channels = inpt_channels
+        #self._inpt_channels = inpt_channels
         self._pw = pw
         self._feature_extractor = feature_extractor
         # ------- FINE TUNING MODEL SELECTION AND CONFIGURATION -------
@@ -120,8 +121,10 @@ class ModelPicker(object):
             4) if doing mean-teacher semi-supervision, set up teacher model
             5) reset the lists for recording training loss in the GUI object
         """
+        #input_shape = (self._pw._imshape[0], self._pw._imshape[1],
+        #               self._pw._num_channels)
         # 1) BUILD THE FINE-TUNING MODEL
-        fine_tuning_model = self._fine_tuning_chooser.value.build(self._inpt_channels)
+        fine_tuning_model = self._fine_tuning_chooser.value.build(self._feature_shape)
         tuning_output_channels = fine_tuning_model.output_shape[-1]
         # 2) BUILD THE OUTPUT MODEL AND LOSS FUNCTION
         output_model, loss = self._output_chooser.value.build(self._num_classes, 
@@ -140,10 +143,10 @@ class ModelPicker(object):
 
         # 3) GENERATE FULL MODEL (for inference)
         if self._feature_extractor is not None:
-            inputshape = (self._pw._imshape[0], self._pw._imshape[1],
-                       self._pw._num_channels)
-            inpt = tf.keras.layers.Input(inputshape)
-            #inpt = tf.keras.layers.Input(self._feature_extractor.input_shape[1:])
+            #inputshape = (self._pw._imshape[0], self._pw._imshape[1],
+            #           self._pw._num_channels)
+            #inpt = tf.keras.layers.Input(self._feature_shape)
+            inpt = tf.keras.layers.Input(self._feature_extractor.input_shape[1:])
             net = self._feature_extractor(inpt)
         else:
             inpt = tf.keras.layers.Input(fine_tuning_model.input_shape[1:])
