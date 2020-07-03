@@ -140,7 +140,10 @@ class ModelPicker(object):
 
         # 3) GENERATE FULL MODEL (for inference)
         if self._feature_extractor is not None:
-            inpt = tf.keras.layers.Input(self._feature_extractor.input_shape[1:])
+            inputshape = (self._pw._imshape[0], self._pw._imshape[1],
+                       self._pw._num_channels)
+            inpt = tf.keras.layers.Input(inputshape)
+            #inpt = tf.keras.layers.Input(self._feature_extractor.input_shape[1:])
             net = self._feature_extractor(inpt)
         else:
             inpt = tf.keras.layers.Input(fine_tuning_model.input_shape[1:])
