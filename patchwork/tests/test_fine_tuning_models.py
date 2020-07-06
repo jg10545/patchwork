@@ -6,7 +6,7 @@ from patchwork._fine_tuning_models import GlobalPooling, ConvNet
 
 def test_GlobalPooling_with_maxpool():
     pool = GlobalPooling()
-    model = pool.build(2)
+    model = pool.build((None, None, 2))
     
     testarr = np.zeros((1,5,7,2))
     testarr[0,:,:,1] = 1
@@ -22,7 +22,7 @@ def test_GlobalPooling_with_maxpool():
 def test_GlobalPooling_with_avpool():
     pool = GlobalPooling()
     pool.pooling_type = "average pool"
-    model = pool.build(2)
+    model = pool.build((None, None, 2))
     
     testarr = np.zeros((1,5,4,2))
     testarr[0,:,:2,1] = 1
@@ -38,7 +38,7 @@ def test_ConvNet():
     c = ConvNet()
     
     c.layers = "10,p,11"
-    model = c.build(7)
+    model = c.build((None, None, 7))
     
     assert isinstance(model, tf.keras.Model)
     assert len(model.layers) == 5
@@ -50,7 +50,7 @@ def test_ConvNet_with_dropout():
     
     c.dropout_rate = 0.5
     c.layers = "7,p,d,11,p,d,13"
-    model = c.build(7)
+    model = c.build((None, None, 7))
     
     assert isinstance(model, tf.keras.Model)
     assert len(model.layers) == 9
@@ -61,7 +61,7 @@ def test_ConvNet_with_separable_convolutions():
 
     c.layers = "5,13"
     c.separable_convolutions = True
-    model = c.build(7)
+    model = c.build((None, None, 7))
     
     assert isinstance(model, tf.keras.Model)
     assert len(model.layers) == 4
