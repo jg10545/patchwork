@@ -44,7 +44,8 @@ class GUI(object):
         self.fine_tuning_model = None
         # by default, pandas maps empty values to np.nan. in case the user
         # is passing saved labels in, replace those with None
-        self.df = df.replace({np.nan: None})
+        #self.df = df.replace({np.nan: None})
+        self.df = df.copy()
         self.feature_vecs = feature_vecs
         self.feature_extractor = feature_extractor
         self._aug = aug
@@ -82,11 +83,19 @@ class GUI(object):
                                self, dim=dim, logdir=logdir)
         # initialize model picker
         if self.feature_vecs is not None:
-            inpt_channels = self.feature_vecs.shape[-1]
+            #inpt_channels = self.feature_vecs.shape[-1]
+            self._feature_shape = self.feature_vecs.shape[1:]
+            
         else:
-            inpt_channels = self.feature_extractor.output.get_shape().as_list()[-1]
+            #inpt_channels = self.feature_extractor.output.get_shape().as_list()[-1]
+            # find the output tensor shape from the feature extractor
+            test_tensor = tf.zeros((1, imshape[0], imshape[1], num_channels),
+                                   dtype=tf.float32)
+            self._feature_shape = feature_extractor(test_tensor).shape[1:]
+            
 
-        self.modelpicker = ModelPicker(len(self.classes), inpt_channels, self,
+        self.modelpicker = ModelPicker(len(self.classes),
+                                       self._feature_shape, self,
                                        feature_extractor=feature_extractor)
         # make a train manager- pass this object to it
         self.trainmanager = TrainManager(self)

@@ -97,5 +97,25 @@ def masked_sparse_categorical_crossentropy(y_true, y_pred):
     return K.sum(crossent*mask)/norm
             
             
+        
+def multilabel_distillation_loss(teacher, student, temp=1):
+    """
+    Loss function for knowledge distillation. Based on equation
+    (2) from "Big Self-Supervised Models are Strong Semi-Supervised
+    Learners" by Chen et al, and adapted for our multilabel 
+    binary classifier setup.
+    
+    NOTE check to make sure teacher and student shapes are compatible-
+    got some weird results when they weren't.
+    
+    :teacher: output from teacher model
+    :student: output from student model
+    """
+    teacher = tf.nn.sigmoid((2*teacher-1)/temp)
+    student = tf.nn.sigmoid((2*student-1)/temp)
+    
+    return -1*tf.reduce_mean(teacher*tf.math.log(student+K.epsilon()) + \
+            (1-teacher)*tf.math.log(1-student+K.epsilon()))
+
             
             
