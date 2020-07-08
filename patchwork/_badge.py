@@ -133,27 +133,30 @@ def _build_output_gradient_function(*models):
     assert len(final_layer_weights) == 1, "not sure which weights to use"
     output_weights = final_layer_weights[0]
     
-    @tf.function
     def compute_output_gradients(x):
-        # since we're working one record at a time- add a
-        # batch dimension
         x = tf.expand_dims(x,0)
-        y = x
-        # push feature vector through each model
-        for m in models:
-            y = m(y)
-        # push vectors through output model and round predictions 
-        # to make pseudolabels ("hypothetical labels" in the paper)
-        label = tf.cast(y >= 0.5, tf.float32)
-        # now compute a gradient of the loss function against
+        # compute a gradient of the loss function against
         # pseudolabels with respect to the output model weights
         pred = x
         with tf.GradientTape() as tape:
             for m in models:
                 pred = m(pred)
+                
+            y = tf.stop_gradient(pred)
+            label = tf.cast(y >= 0.5, tf.float32)
             loss = tf.keras.losses.binary_crossentropy(label, pred)
 
         grad = tape.gradient(loss, output_weights)
         # finally flatten the gradient tensor back to a vector
         return tf.reshape(grad, [-1])
-    return compute_output_gradients
+    
+    # add a second layer of wrapper function to map the gradients
+    # separately across each example in a batch. In my tests this ran
+    # significantly faster than calling tf.map_fn() outside a tf.function.
+    @tf.function
+    def map_grads(x):
+        return tf.map_fn(compute_output_gradients, x,
+                         parallel_iterations=128)
+    
+    return map_grads
+

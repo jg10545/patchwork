@@ -2,7 +2,7 @@
 import numpy as np
 import tensorflow as tf
 
-from patchwork._badge import KPlusPlusSampler, _build_output_gradient_function_v1
+from patchwork._badge import KPlusPlusSampler, _build_output_gradient_function
 
 def test_KPlusPlusSampler():
     N = 100
@@ -34,13 +34,14 @@ def test_build_output_gradient_function():
     net = tf.keras.layers.Dense(3, activation="sigmoid")(inpt)
     o_model = tf.keras.Model(inpt, net)
     
-    grad_func = _build_output_gradient_function_v1(ft_model, o_model)
+    grad_func = _build_output_gradient_function(ft_model, o_model)
     
     # data shaped like feature tensors. do a batch of 7
-    data = np.random.normal(0, 1, size=(7,2,2,8)).astype(np.float32)
+    data = tf.random.normal((7,2,2,8), 0, 1, dtype=tf.float32)
     
     # run data through the function
-    output_gradients = tf.map_fn(grad_func, data)
+    output_gradients = grad_func(data)
+    
     assert isinstance(output_gradients, tf.Tensor)
     assert output_gradients.shape == (7,3*8)
 

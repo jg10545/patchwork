@@ -391,7 +391,7 @@ def sample_badge(labels, features, model, max_to_return=None):
     # compute badge embeddings- define a tf.function for it
     compute_output_gradients = _build_output_gradient_function(model)
     # then run that function across all the images.
-    output_gradients = tf.map_fn(compute_output_gradients, features).numpy()
+    output_gradients = compute_output_gradients(features).numpy()
     
     # figure out which indices are yet labeled
     df = _labels_to_dataframe(labels)
