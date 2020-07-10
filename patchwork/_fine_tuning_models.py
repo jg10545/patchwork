@@ -48,7 +48,8 @@ class ConvNet(param.Parameterized):
         for l in self.layers.split(","):
             l = l.strip()
             net = _next_layer(net, l, kernel_size=self.kernel_size,
-                              dropout_rate=self.dropout_rate)
+                              dropout_rate=self.dropout_rate,
+                              separable=self.separable_convolutions)
             
         if self.pooling_type == "max pool":
             net = tf.keras.layers.GlobalMaxPool2D()(net)
