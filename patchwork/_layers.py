@@ -101,7 +101,7 @@ class ChannelWiseDense(tf.keras.layers.Layer):
     
     
     
-def _next_layer(old_layer, spec, kernel_size=3, padding="same", dropout_rate=0.5):
+def _next_layer(old_layer, spec, kernel_size=3, padding="same", dropout_rate=0.5, separable=False):
     """
     Convenience function for writing networks. Input the outputs
     from the previous layer and a spec; return the outputs from
@@ -113,6 +113,11 @@ def _next_layer(old_layer, spec, kernel_size=3, padding="same", dropout_rate=0.5
         -"r": add a residual layer
     
     """
+    if separable:
+        conv = tf.keras.layers.SeparableConv2D
+    else:
+        conv = tf.keras.layers.Conv2D
+    
     if spec == "p":
         return tf.keras.layers.MaxPool2D(2,2)(old_layer)
     elif spec == "d":
@@ -120,19 +125,16 @@ def _next_layer(old_layer, spec, kernel_size=3, padding="same", dropout_rate=0.5
     elif spec == "r":
         k = old_layer.shape[-1]
         
-        inside_block = tf.keras.layers.Conv2D(k, kernel_size,
-                                              activation="relu",
-                                              padding="same")(old_layer)
-        second_conv = tf.keras.layers.Conv2D(k, kernel_size,
-                                              padding="same")(inside_block)
+        inside_block = conv(k, kernel_size, activation="relu",
+                            padding="same")(old_layer)
+        second_conv = conv(k, kernel_size, padding="same")(inside_block)
         added = tf.keras.layers.Add()([inside_block, second_conv])
         return tf.keras.layers.Activation("relu")(added)
         
     else:
         spec = int(spec)
-        return tf.keras.layers.Conv2D(spec, kernel_size,
-                                     activation="relu",
-                                     padding=padding)(old_layer)
+        return conv(spec, kernel_size, activation="relu",
+                    padding=padding)(old_layer)
         
         
         

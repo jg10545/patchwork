@@ -101,7 +101,7 @@ def _build_model(feature_extractor, imshape=(256,256), num_channels=3,
 
 
 def build_deepcluster_training_step():
-    #@tf.function
+    @tf.function
     def deepcluster_training_step(x, y, model, opt):
         """
         Basic training function for DeepCluster model.
@@ -136,7 +136,7 @@ class DeepClusterTrainer(GenericExtractor):
                  lr_decay=100000, decay_type="exponential",
                   imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, num_parallel_calls=None,
-                 sobel=False, single_channel=False, notes="",
+                 single_channel=False, notes="",
                  downstream_labels=None):
         """
         :logdir: (string) path to log directory
@@ -163,7 +163,6 @@ class DeepClusterTrainer(GenericExtractor):
                unit interval)
         :batch_size: (int) batch size for training
         :num_parallel_calls: (int) number of threads for loader mapping
-        :sobel: whether to replace the input image with its sobel edges
         :single_channel: if True, expect a single-channel input image and 
                 stack it num_channels times.
         :notes: (string) any notes on the experiment that you want saved in the
@@ -173,7 +172,6 @@ class DeepClusterTrainer(GenericExtractor):
         self.logdir = logdir
         self.trainingdata = trainingdata
         self._downstream_labels = downstream_labels
-        channels = 3 if sobel else num_channels
         
         self._file_writer = tf.summary.create_file_writer(logdir, flush_millis=10000)
         self._file_writer.set_as_default()
@@ -186,7 +184,7 @@ class DeepClusterTrainer(GenericExtractor):
         
         # build model for training    
         prediction_model, training_model, output_layer = _build_model(fcn, 
-                                imshape=imshape, num_channels=channels, 
+                                imshape=imshape, num_channels=num_channels, 
                                 dense=dense, k=k)
         self._models["full"] = training_model
         self._pred_model = prediction_model
@@ -200,7 +198,7 @@ class DeepClusterTrainer(GenericExtractor):
         if testdata is not None:
             self._test_ds, self._test_steps = dataset(testdata,
                                      imshape=imshape,norm=norm,
-                                     sobel=sobel, num_channels=num_channels,
+                                     num_channels=num_channels,
                                      single_channel=single_channel)
             self._test = True
         else:
@@ -211,7 +209,7 @@ class DeepClusterTrainer(GenericExtractor):
         # build prediction dataset for clustering
         ds, num_steps = dataset(trainingdata, imshape=imshape, num_channels=num_channels, 
                  num_parallel_calls=num_parallel_calls, batch_size=batch_size, 
-                 augment=False, sobel=sobel, single_channel=single_channel)
+                 augment=False, single_channel=single_channel)
         self._pred_ds = ds
         self._pred_steps = num_steps
         
@@ -235,7 +233,7 @@ class DeepClusterTrainer(GenericExtractor):
                             kmeans_batch_size=kmeans_batch_size,
                             imshape=imshape, num_channels=num_channels,
                             norm=norm, batch_size=batch_size,
-                            num_parallel_calls=num_parallel_calls, sobel=sobel,
+                            num_parallel_calls=num_parallel_calls, 
                             single_channel=single_channel, notes=notes,
                             trainer="deepcluster")
         
@@ -284,7 +282,6 @@ class DeepClusterTrainer(GenericExtractor):
                                     batch_size=self.input_config["batch_size"], 
                                     mult=self.config["mult"],
                                     augment=self.augment_config,
-                                    sobel=self.input_config["sobel"],
                                     single_channel=self.input_config["single_channel"])
         
         for x, y in train_ds:
@@ -314,7 +311,6 @@ class DeepClusterTrainer(GenericExtractor):
                     hp.HParam("pca_dim", hp.IntInterval(0, 1000000)):self.config["pca_dim"],
                     hp.HParam("k", hp.IntInterval(1, 1000000)):self.config["k"],
                     hp.HParam("mult", hp.IntInterval(1, 1000000)):self.config["mult"],
-                    hp.HParam("sobel", hp.Discrete([True, False])):self.input_config["sobel"]
                     }
                 for e, d in enumerate(self.config["dense"]):
                     hparams[hp.HParam("dense_%s"%e, hp.IntInterval(1, 1000000))] = d

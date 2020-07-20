@@ -6,6 +6,7 @@ import tensorflow as tf
 from patchwork._losses import entropy_loss, masked_binary_crossentropy
 from patchwork._losses import masked_mean_average_error
 from patchwork._losses import masked_binary_focal_loss
+from patchwork._losses import multilabel_distillation_loss
 
 def test_entropy_loss():
     bs = 7
@@ -53,7 +54,14 @@ def test_masked_mean_average_error():
     mae = masked_mean_average_error(y_true, y_pred).numpy()
     mae2 = masked_mean_average_error(y_true, y_true).numpy()
     
-    #assert (mae == np.array([0, 0.5])).all()
-    #assert (mae2 == np.array([0, 0])).all()
     assert mae == 0.5
     assert mae2 == 0.
+    
+def test_multilabel_distillation_loss():
+    teacher = 0.5*tf.ones((5,3), dtype=tf.float32)
+    student = 0.2*tf.ones((5,3), dtype=tf.float32)
+    
+    self_loss = multilabel_distillation_loss(teacher, teacher)
+    student_loss = multilabel_distillation_loss(teacher, student)
+
+    assert self_loss.numpy() < student_loss.numpy() 

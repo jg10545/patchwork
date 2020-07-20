@@ -56,7 +56,12 @@ def _build_training_dataset(features, df, num_classes, num_samples,
                             batch_size):
     indices, labels = stratified_sample(df, num_samples, 
                                             return_indices=True)
-    ds = tf.data.Dataset.from_tensor_slices((features[indices], labels))
+    #ds = tf.data.Dataset.from_tensor_slices((features[indices], labels))
+    ds = tf.data.Dataset.from_tensor_slices((indices, labels))
+    
+    def _load_feature(x,y):
+        return tf.gather(features, x, axis=0), y
+    ds = ds.map(_load_feature)
     ds = ds.batch(batch_size)
     ds = ds.prefetch(1)
     return ds
@@ -386,7 +391,7 @@ def sample_badge(labels, features, model, max_to_return=None):
     # compute badge embeddings- define a tf.function for it
     compute_output_gradients = _build_output_gradient_function(model)
     # then run that function across all the images.
-    output_gradients = tf.map_fn(compute_output_gradients, features).numpy()
+    output_gradients = compute_output_gradients(features).numpy()
     
     # figure out which indices are yet labeled
     df = _labels_to_dataframe(labels)

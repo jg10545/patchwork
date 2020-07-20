@@ -319,8 +319,7 @@ class ContextEncoderTrainer(GenericExtractor):
                                 num_parallel_calls=num_parallel_calls,
                                 batch_size=batch_size, prefetch=True,
                                 augment=augment, 
-                                single_channel=single_channel,
-                                trainer="contextencoder")
+                                single_channel=single_channel)
         else:
             assert isinstance(trainingdata, tf.data.Dataset), "i don't know what to do with this"
             self._train_ds = trainingdata
@@ -351,7 +350,8 @@ class ContextEncoderTrainer(GenericExtractor):
                             imshape=imshape, num_channels=num_channels,
                             norm=norm, batch_size=batch_size, 
                             num_parallel_calls=num_parallel_calls, 
-                            single_channel=single_channel, notes=notes)
+                            single_channel=single_channel, notes=notes,
+                            trainer="contextencoder")
         
         
     def _run_training_epoch(self, **kwargs):
@@ -412,8 +412,7 @@ class ContextEncoderTrainer(GenericExtractor):
             if not hasattr(self, "_hparams_config"):
                 from tensorboard.plugins.hparams import api as hp
                 hparams = {
-                    hp.HParam("adv_weight", hp.RealInterval(0., 10000.)):self.config["adv_weight"],
-                    hp.HParam("sobel", hp.Discrete([True, False])):self.input_config["sobel"]
+                    hp.HParam("adv_weight", hp.RealInterval(0., 10000.)):self.config["adv_weight"]
                     }
             else:
                 hparams=None

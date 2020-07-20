@@ -13,7 +13,7 @@ from patchwork._training_functions import build_training_function
 from patchwork.loaders import dataset
 from patchwork._losses import entropy_loss, masked_binary_crossentropy
 from patchwork._util import _load_img
-from patchwork._badge import KPlusPlusSampler, _build_output_gradient_function_v1
+from patchwork._badge import KPlusPlusSampler, _build_output_gradient_function#_v1
 
 EPSILON = 1e-5
 
@@ -44,7 +44,8 @@ class GUI(object):
         self.fine_tuning_model = None
         # by default, pandas maps empty values to np.nan. in case the user
         # is passing saved labels in, replace those with None
-        self.df = df.replace({np.nan: None})
+        #self.df = df.replace({np.nan: None})
+        self.df = df.copy()
         self.feature_vecs = feature_vecs
         self.feature_extractor = feature_extractor
         self._aug = aug
@@ -82,11 +83,19 @@ class GUI(object):
                                self, dim=dim, logdir=logdir)
         # initialize model picker
         if self.feature_vecs is not None:
-            inpt_channels = self.feature_vecs.shape[-1]
+            #inpt_channels = self.feature_vecs.shape[-1]
+            self._feature_shape = self.feature_vecs.shape[1:]
+            
         else:
-            inpt_channels = self.feature_extractor.output.get_shape().as_list()[-1]
+            #inpt_channels = self.feature_extractor.output.get_shape().as_list()[-1]
+            # find the output tensor shape from the feature extractor
+            test_tensor = tf.zeros((1, imshape[0], imshape[1], num_channels),
+                                   dtype=tf.float32)
+            self._feature_shape = feature_extractor(test_tensor).shape[1:]
+            
 
-        self.modelpicker = ModelPicker(len(self.classes), inpt_channels, self,
+        self.modelpicker = ModelPicker(len(self.classes),
+                                       self._feature_shape, self,
                                        feature_extractor=feature_extractor)
         # make a train manager- pass this object to it
         self.trainmanager = TrainManager(self)
@@ -174,7 +183,7 @@ class GUI(object):
                        num_channels=self._num_channels,
                        num_parallel_calls=self._num_parallel_calls, 
                        batch_size=batch_size, shuffle=False,
-                       augment=False)#, num_steps
+                       augment=False)
         # PRE-EXTRACTED FEATURE CASE
         else:
             return tf.data.Dataset.from_tensor_slices(self.feature_vecs
@@ -312,13 +321,10 @@ class GUI(object):
         Note that this stores all output gradients IN MEMORY.
         """
         # compute badge embeddings- define a tf.function for it
-        compute_output_gradients = _build_output_gradient_function_v1(
-                                        self.models["fine_tuning"], 
-                                        self.models["output"], 
-                                        self.models["feature_extractor"])
+        compute_output_gradients = _build_output_gradient_function(self.models['full'])
         # then run that function across all the iamges.
         output_gradients = np.concatenate(
-            [tf.map_fn(compute_output_gradients,x).numpy() 
+            [compute_output_gradients(x).numpy() 
              for x in self._pred_dataset()[0]], axis=0)
         # find the indices that have already been fully or partially
         # labeled, so we can avoid sampling nearby
