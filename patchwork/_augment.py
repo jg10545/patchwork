@@ -169,6 +169,9 @@ def _gaussian_blur(x, prob=0.25, **kwargs):
             np.stack([zeros, zeros, kernel], -1)
         ], -1)
         conv = tf.nn.conv2d(tf.expand_dims(x,0), kernel, strides=[1, 1, 1, 1], padding="SAME")
+        # add a chance to blur again
+        if _choose(prob):
+            conv = tf.nn.conv2d(conv, kernel, strides=[1, 1, 1, 1], padding="SAME")
         x = tf.squeeze(conv, 0)
     return x
 
