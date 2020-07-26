@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from tqdm import tqdm
 import tensorflow as tf
+from sklearn.metrics import accuracy_score, roc_auc_score
 
 import patchwork as pw
 from patchwork._losses import multilabel_distillation_loss
@@ -8,7 +9,8 @@ from patchwork._losses import multilabel_distillation_loss
 _fcn = {"vgg16":tf.keras.applications.VGG16,
         "vgg19":tf.keras.applications.VGG19,
         "resnet50":tf.keras.applications.ResNet50V2,
-        "inception":tf.keras.applications.InceptionV3}
+        "inception":tf.keras.applications.InceptionV3,
+        "mobilenet":tf.keras.applications.MobileNetV2}
 
 
 def _build_student_model(model, output_dim, imshape=(256,256), num_channels=3):
@@ -19,7 +21,7 @@ def _build_student_model(model, output_dim, imshape=(256,256), num_channels=3):
     ----------
     model : string or keras Model
         student model to use for distillation, or the name of a standard
-        convnet design: vgg16, vgg19, resnet50, or inception
+        convnet design: vgg16, vgg19, resnet50, inception, or mobilenet
     output_dim : int
         Number of output dimensions (e.g. number of categories)
     imshape : tuple of ints, optional
@@ -48,7 +50,8 @@ def _build_student_model(model, output_dim, imshape=(256,256), num_channels=3):
     
     
 
-def distill(filepaths, ys, student, epochs=5, lr=1e-3, optimizer="momentum",
+def distill(filepaths, ys, student, epochs=5, testfiles=None, testlabels=None,
+            lr=1e-3, optimizer="momentum",
             imshape=(256,256), num_channels=3, **kwargs):
     """
     
@@ -60,7 +63,11 @@ def distill(filepaths, ys, student, epochs=5, lr=1e-3, optimizer="momentum",
     ys : array
         Teacher outputs for each image. 1st dimension should be length of filepaths; second should be number of classes.
     student : string or Keras model
-        Keras model to use as the student, or name of a model type to build (vgg16, vgg19, resnet50, or inception)
+        Keras model to use as the student, or name of a model type to build (vgg16, vgg19, resnet50, inception, or mobilenet)
+    testfiles : list of strings, optional
+        List of filepaths of validation-set images
+    testlabels : array, optional
+        Array of ground truth labels, (len(testfiles), num_classes)
     epochs : int, optional
         Number of epochs to train
     lr : float, optional
@@ -83,6 +90,7 @@ def distill(filepaths, ys, student, epochs=5, lr=1e-3, optimizer="momentum",
 
     """
     output_dim = ys.shape[1]
+    outputs = {}
     # CREATE THE OPTIMIZER
     if optimizer.lower() == "momentum":
         opt = tf.keras.optimizers.SGD(lr, momentum=0.9)
@@ -91,12 +99,22 @@ def distill(filepaths, ys, student, epochs=5, lr=1e-3, optimizer="momentum",
     else:
         assert False, "dont know what optimizer %s is"%optimizer
         
+    # SET UP TESTING IF NECESSARY
+    if (testfiles is not None)&(testlabels is not None):
+        test_ds, test_ns = pw.loaders.dataset(testfiles, imshape=imshape,
+                                num_channels=num_channels, shuffle=False,
+                                augment=False)
+        for c in range(output_dim):
+            outputs["auc_%s"%c] = []
+            outputs["accuracy_%s"%c] = []
+        
     # SET UP THE MODEL
     student = _build_student_model(student, output_dim,
                                    imshape, num_channels)
     # SET UP THE INPUT PIPELINE
     ds, ns = pw.loaders.dataset(filepaths, ys=ys, imshape=imshape,
-                                num_channels=num_channels, **kwargs)
+                                num_channels=num_channels, shuffle=True,
+                                **kwargs)
         
     # CREATE A TRAINING FUNCTION
     @tf.function
@@ -109,10 +127,21 @@ def distill(filepaths, ys, student, epochs=5, lr=1e-3, optimizer="momentum",
         opt.apply_gradients(zip(gradients, student.trainable_variables))
         return loss
     
+    # TRAIN THE STUDENT MODEL
     train_loss = []
     for e in tqdm(range(epochs)):
         for x, y in ds:
             train_loss.append(train_step(x,y).numpy())
             
-    return student, train_loss
+        # AT THE END OF EVERY EPOCH RUN TESTS
+        if (testfiles is not None)&(testlabels is not None):
+            predictions = student.predict(test_ds, steps=test_ns)
+            # compute performance metrics for each category
+            for i in range(output_dim):
+                outputs["auc_%s"%i].append(roc_auc_score(testlabels[:,i], predictions[:,i]))
+                outputs["accuracy_%s"%i].append(accuracy_score(testlabels[:,i], (predictions[:,i] >= 0.5).astype(int)))
+            
+           
+    outputs["train_loss"] = train_loss
+    return student, outputs
     
