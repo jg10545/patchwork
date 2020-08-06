@@ -42,5 +42,5 @@ def test_distill(test_png_path):
     assert len(student0.layers) == len(student1.layers)
     assert student0.output_shape == student1.output_shape
     
-    assert isinstance(trainloss, list)
-    assert isinstance(trainloss[0], np.float32)
+    assert isinstance(trainloss, dict)
+    assert isinstance(trainloss["train_loss"][0], np.float32)

@@ -26,13 +26,14 @@ INPUT_PARAMS = ["imshape", "num_channels", "norm", "batch_size",
 
 
 
-def linear_classification_test(fcn, downstream_labels, **input_config):
+def linear_classification_test(fcn, downstream_labels, avpool=False, **input_config):
     """
     Train a linear classifier on a fully-convolutional network
     and return out-of-sample results.
     
     :fcn: Keras fully-convolutional network
     :downstream_labels: dictionary mapping image file paths to labels
+    :avpool: average-pool feature tensors before fitting linear model. if False, flatten instead.
     :input_config: kwargs for patchwork.loaders.dataset()
     
     Returns
@@ -60,6 +61,12 @@ def linear_classification_test(fcn, downstream_labels, **input_config):
                                     for x in ds], 0).mean(axis=1).mean(axis=1)
         testvecs = np.concatenate([fcn(x).numpy() 
                                    for x in test_ds], 0).mean(axis=1).mean(axis=1)
+        if avpool:
+            trainvecs = trainvecs.mean(axis=1).mean(axis=1)
+            testvecs = testvecs.mean(axis=1).mean(axis=1)
+        else:
+            trainvecs = trainvecs.reshape(trainvecs.shape[0], -1)
+            testvecs = testvecs.reshape(testvecs.shape[0], -1)
         
     else:
         ds, num_steps = dataset(X[~split], shuffle=False,
