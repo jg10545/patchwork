@@ -119,8 +119,15 @@ def _image_file_dataset(fps, ys=None, imshape=(256,256),
         and (x) otherwise. images (x) are a 3D float32 tensor and labels
         should be a 0D int64 tensor
     """    
-    # SINGLE-INPUT CASE (DEFAULT)
-    if isinstance(fps[0], str):
+    passed_dataset = isinstance(fps, tf.data.Dataset)
+    # SINGLE-INPUT PRE-BUILT DATASET
+    if isinstance(fps, tf.data.Dataset):
+        ds = fps
+        if augment:
+            _aug = augment_function(imshape, augment)
+            ds = ds.map(_aug, num_parallel_calls=num_parallel_calls)
+    # SINGLE-INPUT CASE (probably what almost always will get used)
+    elif isinstance(fps[0], str):
         if ys is None:
             no_labels = True
             ys = np.zeros(len(fps), dtype=np.int64)
@@ -206,8 +213,11 @@ def dataset(fps, ys = None, imshape=(256,256), num_channels=3,
                       num_parallel_calls=num_parallel_calls, norm=norm,
                       shuffle=shuffle, single_channel=single_channel,
                       augment=augment)
+    # CUSTOM DATASET CASE 
+    if isinstance(fps, tf.data.Dataset):
+        num_steps = None
     # SINGLE-INPUT CASE (DEFAULT)
-    if isinstance(fps[0], str):
+    elif isinstance(fps[0], str):
         num_steps = int(np.ceil(len(fps)/batch_size))
 
     # DUAL-INPUT CASE
