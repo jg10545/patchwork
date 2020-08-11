@@ -74,6 +74,23 @@ def test_simclr_dataset_with_dual_inputs(test_png_path):
     
     
     
+def test_simclr_dataset_with_custom_dataset():
+    rawdata = np.zeros((10,32,32,3)).astype(np.float32)
+    ds = tf.data.Dataset.from_tensor_slices(rawdata)
+    batch_size = 5
+    ds = _build_simclr_dataset(ds, imshape=(32,32),
+                              num_channels=3, norm=255,
+                              augment=True, single_channel=False,
+                              batch_size=batch_size)
+    
+    assert isinstance(ds, tf.data.Dataset)
+    for x,y in ds:
+        break
+    # since SimCLR makes augmented pairs, the batch size
+    # is doubled
+    assert x.shape[0] == 2*batch_size
+    assert (y.numpy() == np.array([1,-1,1,-1,1,-1,1,-1,1,-1])).all()
+    
 def test_build_embedding_model():
     model = _build_embedding_model(fcn, (32,32), 3, 17, 11)
     assert isinstance(model, tf.keras.Model)
