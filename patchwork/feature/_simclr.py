@@ -55,7 +55,7 @@ def _build_simclr_dataset(imfiles, imshape=(256,256), batch_size=256,
                              augment=False)  
     
     # SINGLE-INPUT CASE (DEFAULT)
-    if isinstance(imfiles[0], str):
+    if isinstance(imfiles, tf.data.Dataset) or isinstance(imfiles[0], str):
         _aug = augment_function(imshape, augment)
         @tf.function
         def _augment_and_stack(x):
