@@ -92,6 +92,37 @@ def test_image_file_dataset_multi_input_and_labels(test_png_path):
     assert x1.shape == (17, 23, 3)
     assert y.size == 1
 
+def test_image_file_dataset_with_custom_dataset():
+    rawdata = np.zeros((7,5,11,3)).astype(np.float32)
+    ds = tf.data.Dataset.from_tensor_slices(rawdata)
+    ds = _image_file_dataset(ds, imshape=(5,11),
+                             norm=255, num_channels=3,
+                             shuffle=False)
+    for x in ds:
+        x = x.numpy()
+    
+    assert isinstance(ds, tf.data.Dataset)
+    assert isinstance(x, np.ndarray)
+    assert x.mean() == 0
+    assert x.shape == (5, 11, 3)
+
+
+def test_image_file_dataset_with_custom_dataset_and_aug():
+    aug = {"flip_left_right":True}
+    rawdata = np.zeros((7,5,11,3)).astype(np.float32)
+    ds = tf.data.Dataset.from_tensor_slices(rawdata)
+    ds = _image_file_dataset(ds, imshape=(5,11),
+                             norm=255, num_channels=3,
+                             shuffle=False, augment=aug)
+    for x in ds:
+        x = x.numpy()
+    
+    assert isinstance(ds, tf.data.Dataset)
+    assert isinstance(x, np.ndarray)
+    assert x.mean() == 0
+    assert x.shape == (5, 11, 3)
+
+
 
 def test_dataset_without_augmentation(test_png_path):
     imfiles = [test_png_path]*10
@@ -206,6 +237,24 @@ def test_dual_input_dataset_with_augmentation(test_png_path,
     assert ns == 2
     assert x.shape == (5, 11, 17, 3)
     assert y.shape == (5, 11, 17, 1)
+    
+def test_dataset_with_custom_dataset():
+    rawdata = np.zeros((7,11,17,3)).astype(np.float32)
+    ds = tf.data.Dataset.from_tensor_slices(rawdata)
+    
+    ds, ns = dataset(ds, ys=None, imshape=(11,17),
+                     num_channels=3, norm=255,
+                     batch_size=5, augment=False)
+    
+    for x in ds:
+        x = x.numpy()
+        break
+    
+    assert isinstance(ds, tf.data.Dataset)
+    # for a custom dataset, can't precompute number of steps
+    assert ns is None
+    assert x.shape == (5, 11, 17, 3)
+    
     
 def test_stratified_training_dataset(test_png_path):
     imfiles = [test_png_path]*10

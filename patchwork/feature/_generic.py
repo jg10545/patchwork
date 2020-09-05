@@ -58,23 +58,25 @@ def linear_classification_test(fcn, downstream_labels, avpool=False, **input_con
         # this is stupid but there appears to be a bug in the keras.predict
         # API when using TF Datasets as the input.
         trainvecs = np.concatenate([fcn(x).numpy() 
-                                    for x in ds], 0).mean(axis=1).mean(axis=1)
+                                    for x in ds], 0)
         testvecs = np.concatenate([fcn(x).numpy() 
-                                   for x in test_ds], 0).mean(axis=1).mean(axis=1)
-        if avpool:
-            trainvecs = trainvecs.mean(axis=1).mean(axis=1)
-            testvecs = testvecs.mean(axis=1).mean(axis=1)
-        else:
-            trainvecs = trainvecs.reshape(trainvecs.shape[0], -1)
-            testvecs = testvecs.reshape(testvecs.shape[0], -1)
+                                   for x in test_ds], 0)
         
     else:
         ds, num_steps = dataset(X[~split], shuffle=False,
                                             **input_config)
         test_ds, test_num_steps = dataset(X[split], shuffle=False,
                                             **input_config)
-        trainvecs = fcn.predict(ds, steps=num_steps).mean(axis=1).mean(axis=1)
-        testvecs = fcn.predict(test_ds, steps=test_num_steps).mean(axis=1).mean(axis=1)
+        trainvecs = fcn.predict(ds, steps=num_steps)
+        testvecs = fcn.predict(test_ds, steps=test_num_steps)
+    # turn feature tensors into feature vectors, either by 
+    # averaging across spatial dimensions or by flattening
+    if avpool:
+        trainvecs = trainvecs.mean(axis=1).mean(axis=1)
+        testvecs = testvecs.mean(axis=1).mean(axis=1)
+    else:
+        trainvecs = trainvecs.reshape(trainvecs.shape[0], -1)
+        testvecs = testvecs.reshape(testvecs.shape[0], -1)
 
     # rescale train and test
     scaler = StandardScaler().fit(trainvecs)
