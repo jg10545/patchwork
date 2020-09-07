@@ -372,7 +372,7 @@ class GenericExtractor(object):
         else:
             return self._optimizer.lr(self.step)
                 
-    def save_projections(self, proj_dim=64, sprite_size=50):
+    def save_projections(self, proj_dim=0, sprite_size=50):
         """
         Use Tensorboard's projector to visualize the embeddings of images
         in the downstream_labels dictionary. It does all this in memory, 
