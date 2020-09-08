@@ -18,6 +18,7 @@ from sklearn.metrics import accuracy_score, confusion_matrix
 from tensorboard.plugins.hparams import api as hp
 
 from patchwork.loaders import dataset
+from patchwork.viz._projector import save_embeddings
 
 
 INPUT_PARAMS = ["imshape", "num_channels", "norm", "batch_size",
@@ -371,3 +372,21 @@ class GenericExtractor(object):
         else:
             return self._optimizer.lr(self.step)
                 
+    def save_projections(self, proj_dim=0, sprite_size=50):
+        """
+        Use Tensorboard's projector to visualize the embeddings of images
+        in the downstream_labels dictionary. It does all this in memory, 
+        so probably not a great idea to call this if you have a million
+        labels.
+        
+        Each image is run through the FCN and then flattened.
+        
+        :proj_dim: Use PCA to reduce the dimension before saving. 0 
+                to disable
+        :sprite_size: size of each sprite, in pixels. For now this 
+                function assumes the patches are square.
+        """
+        labels = self._downstream_labels
+        assert isinstance(labels, dict) & (len(labels)>0), "dont you need some labels?"
+        save_embeddings(self._models["fcn"], labels, self.logdir,
+                        proj_dim, sprite_size, **self.input_config)
