@@ -15,9 +15,12 @@ def test_make_sprite_return_val(test_tif_path):
     
 
 def test_make_sprite_return_val(test_png_path):
-    imfiles = [test_png_path]*4
-    
-    sprite_img = _make_sprite(imfiles, resize=[50,50])
+    #imfiles = np.array([test_png_path]*4)
+    images = np.stack([np.array(Image.open(test_png_path))
+                       for _ in range(4)])
+    images = images.astype(np.float32)/255
+    #print(images.shape)
+    sprite_img = _make_sprite(images, spritesize=50)
     assert isinstance(sprite_img, Image.Image)
     assert sprite_img.width == 100
     assert sprite_img.height == 100
