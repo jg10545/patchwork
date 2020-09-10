@@ -156,7 +156,7 @@ def _build_output_gradient_function(*models):
     @tf.function
     def map_grads(x):
         return tf.map_fn(compute_output_gradients, x,
-                         parallel_iterations=128)
+                         parallel_iterations=128, dtype=tf.float32)
     
     return map_grads
 
