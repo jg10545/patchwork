@@ -352,7 +352,7 @@ class SimCLRTrainer(GenericExtractor):
                             num_parallel_calls=num_parallel_calls,
                             single_channel=single_channel, notes=notes,
                             trainer="simclr", strategy=str(strategy),
-                            decay_type=decay_type)
+                            decay_type=decay_type, opt_type=opt_type)
 
     def _run_training_epoch(self, **kwargs):
         """
