@@ -210,7 +210,10 @@ def _gaussian_blur(x, prob=0.25, **kwargs):
     return x
 
 def _random_brightness(x, brightness_delta=0.2, **kwargs):
-    return tf.image.random_brightness(x, brightness_delta)
+    #return tf.image.random_brightness(x, brightness_delta)
+    factor = tf.random.uniform([], tf.maximum(1.0-brightness_delta, 0),
+                                       1.0+brightness_delta)
+    return x*factor
 
 def _random_contrast(x, contrast_delta=0.4, **kwargs):
     return tf.image.random_contrast(x, 1-contrast_delta, 1+contrast_delta)
