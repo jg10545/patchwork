@@ -35,7 +35,7 @@ def _build_student_model(model, output_dim, imshape=(256,256), num_channels=3):
     """
     if isinstance(model, str):
         assert model.lower() in _fcn, "I don't know what to do with model type %s"%model
-        fcn = _fcn[model.lower()](weights="imagenet", include_top=False)
+        fcn = _fcn[model.lower()](weights=None, include_top=False)
         
         inpt = tf.keras.layers.Input((imshape[0], imshape[1], num_channels))
         net = fcn(inpt)
