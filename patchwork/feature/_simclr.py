@@ -235,6 +235,7 @@ class SimCLRTrainer(GenericExtractor):
                  augment=True, temperature=1., num_hidden=128,
                  output_dim=64, weight_decay=0,
                  lr=0.01, lr_decay=100000, decay_type="exponential",
+                 opt_type="adam",
                  imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, num_parallel_calls=None,
                  single_channel=False, notes="",
@@ -252,6 +253,7 @@ class SimCLRTrainer(GenericExtractor):
         :lr: (float) initial learning rate
         :lr_decay: (int) steps for learning rate to decay by half (0 to disable)
         :decay_type: (str) how to decay learning rate; "exponential" or "cosine"
+        :opt_type: (string) optimizer type; "adam" or "momentum"
         :imshape: (tuple) image dimensions in H,W
         :num_channels: (int) number of image channels
         :norm: (int or float) normalization constant for images (for rescaling to
@@ -301,7 +303,7 @@ class SimCLRTrainer(GenericExtractor):
         self._ds = self._distribute_dataset(ds)
         
         # create optimizer
-        self._optimizer = self._build_optimizer(lr, lr_decay,
+        self._optimizer = self._build_optimizer(lr, lr_decay, opt_type=opt_type,
                                                 decay_type=decay_type)
         
         
@@ -350,7 +352,7 @@ class SimCLRTrainer(GenericExtractor):
                             num_parallel_calls=num_parallel_calls,
                             single_channel=single_channel, notes=notes,
                             trainer="simclr", strategy=str(strategy),
-                            decay_type=decay_type)
+                            decay_type=decay_type, opt_type=opt_type)
 
     def _run_training_epoch(self, **kwargs):
         """

@@ -39,6 +39,40 @@ DEFAULT_SIMCLR_PARAMS = {
     "gaussian_blur":0.5
 }
 
+# parameters used by Falcon and Cho in "A Framework for Contrastive Self-
+# Supervised Learning and Designing a New Approach"
+FALCON_CHO_PARAMS = {"gaussian_blur": 0.5,
+              "zoom_scale":0.1,
+              "jitter":1.,
+              "drop_color":0.2,
+              "flip_left_right":True}
+
+def _jitter(x, strength=1., **kwargs):
+    """
+    Color jitter more closely patterned after the SimCLR paper
+    """
+    def _transform(i,img):
+        if i == 0:
+            delta = 0.8*strength
+            factor = tf.random.uniform([], 
+                                       tf.maximum(1.0-delta, 0),
+                                       1.0+delta)
+            return img*factor
+        elif i == 1:
+            delta = 0.8*strength
+            return tf.image.random_contrast(img, 1-delta, 1+delta)
+        elif i == 2:
+            delta = 0.8*strength
+            return tf.image.random_saturation(img, 1-delta, 1+delta)
+        else:
+            delta = 0.2*strength
+            return tf.image.random_hue(img, delta)
+    # apply in random order
+    perm = tf.random.shuffle(tf.range(4))
+    for i in range(4):
+        x = _transform(perm[i], x)
+        x = tf.clip_by_value(x, 0,1)
+    return x
 
 
 def _poisson(lam):
@@ -176,7 +210,10 @@ def _gaussian_blur(x, prob=0.25, **kwargs):
     return x
 
 def _random_brightness(x, brightness_delta=0.2, **kwargs):
-    return tf.image.random_brightness(x, brightness_delta)
+    #return tf.image.random_brightness(x, brightness_delta)
+    factor = tf.random.uniform([], tf.maximum(1.0-brightness_delta, 0),
+                                       1.0+brightness_delta)
+    return x*factor
 
 def _random_contrast(x, contrast_delta=0.4, **kwargs):
     return tf.image.random_contrast(x, 1-contrast_delta, 1+contrast_delta)
@@ -211,15 +248,16 @@ SINGLE_AUG_FUNC = {
     "flip_up_down":_random_up_down_flip,
     "rot90":_random_rotate,
     "zoom_scale":_random_zoom,
-    "mask":_random_mask
+    "mask":_random_mask,
+    "jitter":_jitter
 }
 
-AUGMENT_ORDERING = ["gaussian_blur", "gaussian_noise", "brightness_delta",
+
+AUGMENT_ORDERING = ["flip_left_right", "flip_up_down", "rot90", 
+                    "zoom_scale", "jitter", "brightness_delta",
                     "contrast_delta", "saturation_delta", "hue_delta",
-                    "flip_left_right", "flip_up_down", "rot90", 
-                    "drop_color", "sobel_prob", "zoom_scale", "mask"]
-
-
+                    "gaussian_blur", "gaussian_noise", 
+                    "drop_color", "sobel_prob",  "mask"]
 
 def _augment(im, aug_dict, imshape=None):
     """

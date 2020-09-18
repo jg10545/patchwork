@@ -18,6 +18,7 @@ from sklearn.metrics import accuracy_score, confusion_matrix
 from tensorboard.plugins.hparams import api as hp
 
 from patchwork.loaders import dataset
+from patchwork.viz._projector import save_embeddings
 
 
 INPUT_PARAMS = ["imshape", "num_channels", "norm", "batch_size",
@@ -32,7 +33,8 @@ def linear_classification_test(fcn, downstream_labels, avpool=False, **input_con
     and return out-of-sample results.
     
     :fcn: Keras fully-convolutional network
-    :downstream_labels: dictionary mapping image file paths to labels
+    :downstream_labels: dictionary mapping image file paths to labels, or a 
+        dataset returning image/label pairs
     :avpool: average-pool feature tensors before fitting linear model. if False, flatten instead.
     :input_config: kwargs for patchwork.loaders.dataset()
     
@@ -40,56 +42,53 @@ def linear_classification_test(fcn, downstream_labels, avpool=False, **input_con
     :acc: float; test accuracy
     :cm: 2D numpy array; confusion matrix
     """
-    # do a 2:1 train:test split
-    split = np.array([(i%3 == 0) for i in range(len(downstream_labels))])
-    Y = np.array(list(downstream_labels.values()))
-    X = np.array(list(downstream_labels.keys()))
-    # multiple input case:
-    if "," in X[0]:
-        X0 = np.array([x.split(",")[0] for x in X])
-        X1 = np.array([x.split(",")[1] for x in X])
-        ds, num_steps = dataset([list(X0[~split]), list(X1[~split])], 
+    # if input is a dictionary, build the dataset
+    if not isinstance(downstream_labels, tf.data.Dataset):
+        X = list(downstream_labels.keys())
+        Y = list(downstream_labels.values())
+        # multiple input case
+        if "," in X[0]:
+            X0 = [x.split(",")[0] for x in X]
+            X1 = [x.split(",")[1] for x in X]
+            ds, num_steps = dataset([X0, X1], ys=Y,
                                 shuffle=False,
                                 **input_config)
-        test_ds, test_num_steps = dataset([list(X0[split]), list(X1[split])], 
-                                           shuffle=False,
+        # single input case
+        else:
+            ds, num_steps = dataset(X, ys=Y, shuffle=False,
                                             **input_config)
-
-        # this is stupid but there appears to be a bug in the keras.predict
-        # API when using TF Datasets as the input.
-        trainvecs = np.concatenate([fcn(x).numpy() 
-                                    for x in ds], 0)
-        testvecs = np.concatenate([fcn(x).numpy() 
-                                   for x in test_ds], 0)
-        
     else:
-        ds, num_steps = dataset(X[~split], shuffle=False,
-                                            **input_config)
-        test_ds, test_num_steps = dataset(X[split], shuffle=False,
-                                            **input_config)
-        trainvecs = fcn.predict(ds, steps=num_steps)
-        testvecs = fcn.predict(test_ds, steps=test_num_steps)
-    # turn feature tensors into feature vectors, either by 
-    # averaging across spatial dimensions or by flattening
+        ds = downstream_labels
+    # run labeled images through the network and flatten or average
+    features = []
+    labels = []
+    for x,y in ds:
+        features.append(fcn(x).numpy())
+        labels.append(y.numpy())
+    features = np.concatenate(features, 0)
+    labels = np.concatenate(labels, 0)
+    labels = np.array([str(l) for l in labels.ravel()])
     if avpool:
-        trainvecs = trainvecs.mean(axis=1).mean(axis=1)
-        testvecs = testvecs.mean(axis=1).mean(axis=1)
+        features = features.mean(axis=1).mean(axis=1)
     else:
-        trainvecs = trainvecs.reshape(trainvecs.shape[0], -1)
-        testvecs = testvecs.reshape(testvecs.shape[0], -1)
-
+        features = features.reshape(features.shape[0], -1)     
+    # build a deterministic train/test split
+    split = np.array([(i%3 == 0) for i in range(features.shape[0])])
+    trainvecs = features[~split]
+    testvecs = features[split]
+    
     # rescale train and test
     scaler = StandardScaler().fit(trainvecs)
     trainvecs = scaler.transform(trainvecs)
     testvecs = scaler.transform(testvecs)
     # train a multinomial linear classifier
     logreg = SVC(kernel="linear")
-    logreg.fit(trainvecs, Y[~split])
+    logreg.fit(trainvecs, labels[~split])
     # make predictions on test set
     preds = logreg.predict(testvecs)
     # compute metrics and return
-    acc = accuracy_score(Y[split], preds)
-    cm = confusion_matrix(Y[split], preds)
+    acc = accuracy_score(labels[split], preds)
+    cm = confusion_matrix(labels[split], preds)
     return acc, cm
 
 
@@ -371,3 +370,21 @@ class GenericExtractor(object):
         else:
             return self._optimizer.lr(self.step)
                 
+    def save_projections(self, proj_dim=0, sprite_size=50):
+        """
+        Use Tensorboard's projector to visualize the embeddings of images
+        in the downstream_labels dictionary. It does all this in memory, 
+        so probably not a great idea to call this if you have a million
+        labels.
+        
+        Each image is run through the FCN and then flattened.
+        
+        :proj_dim: Use PCA to reduce the dimension before saving. 0 
+                to disable
+        :sprite_size: size of each sprite, in pixels. For now this 
+                function assumes the patches are square.
+        """
+        labels = self._downstream_labels
+        assert isinstance(labels, dict) & (len(labels)>0), "dont you need some labels?"
+        save_embeddings(self._models["fcn"], labels, self.logdir,
+                        proj_dim, sprite_size, **self.input_config)
