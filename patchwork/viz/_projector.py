@@ -16,7 +16,6 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 
 import patchwork as pw
-#from patchwork._util import _load_img
 
 
 
@@ -46,6 +45,14 @@ def _make_sprite(images, spritesize=50):
 def save_embeddings(fcn, labeldict, log_dir, proj_dim=64, 
                     sprite_size=50, **input_config):
     """
+    Output embeddings in a format the tensorboard projector can use.
+    
+    :fcn: keras Model; feature extractor to generate embeddings
+    :labeldict: dictionary mapping filepaths to labels
+    :log_dir: path to directory to save in
+    :proj_dim: if above zero, use PCA to project embeddings down to this
+        dimension before saving
+    :sprite_size: pixel size for saving sprites
     """
     # load images into memory
     X = np.array(list(labeldict.keys()))
