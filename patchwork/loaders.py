@@ -119,7 +119,6 @@ def _image_file_dataset(fps, ys=None, imshape=(256,256),
         and (x) otherwise. images (x) are a 3D float32 tensor and labels
         should be a 0D int64 tensor
     """    
-    passed_dataset = isinstance(fps, tf.data.Dataset)
     # SINGLE-INPUT PRE-BUILT DATASET
     if isinstance(fps, tf.data.Dataset):
         ds = fps

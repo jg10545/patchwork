@@ -5,6 +5,7 @@ import tensorflow as tf
 from patchwork.feature._generic import linear_classification_test
 from patchwork.feature._generic import build_optimizer
 from patchwork.feature._generic import GenericExtractor
+from patchwork.loaders import dataset
 
 
 class MockLabelDict():
@@ -35,6 +36,23 @@ fcn = tf.keras.Model(inpt, conv)
 
 
 inpt2 = tf.keras.layers.Input((None, None, 1))
+
+def test_linear_classification_test_dual_input(test_png_path, test_jpg_path,
+                                               test_single_channel_png_path):
+    labeldict = MockLabelDict(test_png_path, test_jpg_path,
+                              test_single_channel_png_path)
+    
+    acc,cm = linear_classification_test(multi_input_fcn, labeldict, 
+                                        imshape=[(20,20),(20,20)],
+                                        num_channels=[3,1],
+                                        norm=255,
+                                        single_channel=[False,True],
+                                        batch_size=10)
+
+    assert isinstance(acc, float)
+    assert acc <= 1
+    assert acc >= 0
+    assert isinstance(cm, np.ndarray)
 conv2 = tf.keras.layers.Conv2D(5, 1, (2,2))(inpt)
 concat = tf.keras.layers.Concatenate()([conv, conv2])
 multi_input_fcn = tf.keras.Model([inpt, inpt2], concat)
@@ -48,7 +66,7 @@ def test_linear_classification_test(test_png_path, test_jpg_path):
                                         num_channels=3,
                                         norm=255,
                                         single_channel=False,
-                                        batch_size=10)
+                                        batch_size=1)
 
     assert isinstance(acc, float)
     assert acc <= 1
@@ -68,6 +86,19 @@ def test_linear_classification_test_dual_input(test_png_path, test_jpg_path,
                                         norm=255,
                                         single_channel=[False,True],
                                         batch_size=10)
+
+    assert isinstance(acc, float)
+    assert acc <= 1
+    assert acc >= 0
+    assert isinstance(cm, np.ndarray)
+    
+    
+def test_linear_classification_test_dataset_input(test_png_path, test_jpg_path):
+    filepaths = [test_png_path, test_jpg_path]*5
+    ys = [0,1]*5
+    ds = dataset(filepaths, ys=ys, imshape=(20,20), batch_size=2)[0]
+    
+    acc,cm = linear_classification_test(multi_input_fcn, ds)
 
     assert isinstance(acc, float)
     assert acc <= 1
