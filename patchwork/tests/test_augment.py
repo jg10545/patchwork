@@ -2,7 +2,7 @@
 import numpy as np
 import tensorflow as tf
 
-from patchwork._augment import augment_function, _poisson, _random_zoom, _choose
+from patchwork._augment import augment_function, _poisson, _random_zoom, _choose, _jitter
 from patchwork._augment import SINGLE_AUG_FUNC
 
 
@@ -37,4 +37,10 @@ def test_choose():
     choice = _choose(0.5)
     assert choice.dtype == tf.bool
     
-#def test_all_single_aug_funcs():
+    
+def test_jitter():
+    img = np.random.uniform(0,1, (32,32,3)).astype(np.float32)
+    
+    jittered = _jitter(img, 1.)
+    assert img.shape == jittered.shape
+    assert (jittered.numpy() == img).all() == False

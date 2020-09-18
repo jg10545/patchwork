@@ -252,11 +252,6 @@ SINGLE_AUG_FUNC = {
     "jitter":_jitter
 }
 
-#AUGMENT_ORDERING = ["gaussian_blur", "gaussian_noise", "brightness_delta",
-#                    "contrast_delta", "saturation_delta", "hue_delta",
-#                    "flip_left_right", "flip_up_down", "rot90", 
-#                    "drop_color", "sobel_prob", "zoom_scale", "mask"]
-
 
 AUGMENT_ORDERING = ["flip_left_right", "flip_up_down", "rot90", 
                     "zoom_scale", "jitter", "brightness_delta",
