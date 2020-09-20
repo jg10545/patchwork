@@ -58,6 +58,7 @@ concat = tf.keras.layers.Concatenate()([conv, conv2])
 multi_input_fcn = tf.keras.Model([inpt, inpt2], concat)
 
 
+
 def test_linear_classification_test(test_png_path, test_jpg_path):
     labeldict = MockLabelDict(test_png_path, test_jpg_path)
     
@@ -98,7 +99,7 @@ def test_linear_classification_test_dataset_input(test_png_path, test_jpg_path):
     ys = [0,1]*5
     ds = dataset(filepaths, ys=ys, imshape=(20,20), batch_size=2)[0]
     
-    acc,cm = linear_classification_test(multi_input_fcn, ds)
+    acc,cm = linear_classification_test(fcn, ds)
 
     assert isinstance(acc, float)
     assert acc <= 1
