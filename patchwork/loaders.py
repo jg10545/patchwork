@@ -298,3 +298,64 @@ def stratified_training_dataset(fps, y, imshape=(256,256), num_channels=3,
                       augment=augment, batch_size=batch_size)
 
     return ds
+
+
+
+def _get_features(fcn, downstream_labels, avpool=False, 
+                  return_images=False, **input_config):
+    """
+    Load features into memory either from a dictionary mapping filepaths
+    to labels, or a dataset that generates batches of (image, label) pairs
+    
+    :fcn: Keras fully-convolutional network
+    :downstream_labels: dictionary mapping image file paths to labels, or a 
+        dataset returning image/label pairs
+    :avpool: average-pool feature tensors before fitting linear model. if False, flatten instead.
+    :return_images: if True, also return a big array of all the stacked-up 
+        raw images
+    :input_config: kwargs for patchwork.loaders.dataset()
+    
+    Returns
+    :acc: float; test accuracy
+    :cm: 2D numpy array; confusion matrix
+    """
+    # if input is a dictionary, build the dataset
+    if not isinstance(downstream_labels, tf.data.Dataset):
+        X = list(downstream_labels.keys())
+        Y = list(downstream_labels.values())
+        # multiple input case
+        if "," in X[0]:
+            X0 = [x.split(",")[0] for x in X]
+            X1 = [x.split(",")[1] for x in X]
+            ds, num_steps = dataset([X0, X1], ys=Y,
+                                shuffle=False,
+                                **input_config)
+        # single input case
+        else:
+            ds, num_steps = dataset(X, ys=Y, shuffle=False,
+                                            **input_config)
+    else:
+        ds = downstream_labels
+    # run labeled images through the network and flatten or average
+    features = []
+    labels = []
+    images = []
+    for x,y in ds:
+        features.append(fcn(x).numpy())
+        labels.append(y.numpy())
+        if return_images: images.append(x)
+    features = np.concatenate(features, 0)
+    labels = np.concatenate(labels, 0)
+    labels = np.array([str(l) for l in labels.ravel()])
+    if return_images: images = np.concatenate(images, 0)
+    
+    if avpool:
+        features = features.mean(axis=1).mean(axis=1)
+    else:
+        features = features.reshape(features.shape[0], -1)   
+        
+    if return_images:
+        return features, labels, images
+    else:
+        return features, labels
+    
