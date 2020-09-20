@@ -17,13 +17,15 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import accuracy_score, confusion_matrix
 from tensorboard.plugins.hparams import api as hp
 
-from patchwork.loaders import dataset
+from patchwork.loaders import dataset, _get_features
 from patchwork.viz._projector import save_embeddings
 
 
 INPUT_PARAMS = ["imshape", "num_channels", "norm", "batch_size",
                 "shuffle", "num_parallel_calls", "single_channel",
                 "global_batch_size"]
+
+
 
 
 
@@ -42,36 +44,9 @@ def linear_classification_test(fcn, downstream_labels, avpool=False, **input_con
     :acc: float; test accuracy
     :cm: 2D numpy array; confusion matrix
     """
-    # if input is a dictionary, build the dataset
-    if not isinstance(downstream_labels, tf.data.Dataset):
-        X = list(downstream_labels.keys())
-        Y = list(downstream_labels.values())
-        # multiple input case
-        if "," in X[0]:
-            X0 = [x.split(",")[0] for x in X]
-            X1 = [x.split(",")[1] for x in X]
-            ds, num_steps = dataset([X0, X1], ys=Y,
-                                shuffle=False,
-                                **input_config)
-        # single input case
-        else:
-            ds, num_steps = dataset(X, ys=Y, shuffle=False,
-                                            **input_config)
-    else:
-        ds = downstream_labels
-    # run labeled images through the network and flatten or average
-    features = []
-    labels = []
-    for x,y in ds:
-        features.append(fcn(x).numpy())
-        labels.append(y.numpy())
-    features = np.concatenate(features, 0)
-    labels = np.concatenate(labels, 0)
-    labels = np.array([str(l) for l in labels.ravel()])
-    if avpool:
-        features = features.mean(axis=1).mean(axis=1)
-    else:
-        features = features.reshape(features.shape[0], -1)     
+    # load features into memory
+    features, labels = _get_features(fcn, 
+                                            downstream_labels, **input_config)     
     # build a deterministic train/test split
     split = np.array([(i%3 == 0) for i in range(features.shape[0])])
     trainvecs = features[~split]
@@ -373,9 +348,9 @@ class GenericExtractor(object):
     def save_projections(self, proj_dim=0, sprite_size=50):
         """
         Use Tensorboard's projector to visualize the embeddings of images
-        in the downstream_labels dictionary. It does all this in memory, 
-        so probably not a great idea to call this if you have a million
-        labels.
+        in the downstream_labels dictionary or dataset. It does all this in 
+        memory, so probably not a great idea to call this if you have a
+        million labels.
         
         Each image is run through the FCN and then flattened.
         

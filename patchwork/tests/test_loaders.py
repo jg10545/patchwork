@@ -3,6 +3,7 @@ import numpy as np
 import tensorflow as tf
 from patchwork.loaders import _image_file_dataset, dataset, stratified_training_dataset
 from patchwork.loaders import _build_load_function
+from patchwork.loaders import _get_features
 
 
 
@@ -317,4 +318,33 @@ def test_dataset_works_with_keras_api(test_png_path):
     assert isinstance(hist, tf.keras.callbacks.History)
     print(hist)
     
+inpt = tf.keras.layers.Input((None, None, 3))
+conv = tf.keras.layers.Conv2D(5, 1, (2,2))(inpt)
+fcn = tf.keras.Model(inpt, conv)
+
+
+def test_get_features_from_labeldict(test_png_path, test_jpg_path):
+    labeldict = {test_png_path:"foo", test_jpg_path:"bar"}
     
+    features, labels = _get_features(fcn, labeldict, 
+                                        imshape=(20,20),
+                                        num_channels=3,
+                                        norm=255,
+                                        single_channel=False,
+                                        batch_size=1)
+    
+    assert isinstance(features, np.ndarray)
+    assert len(features.shape) == 2
+    assert isinstance(labels, np.ndarray)
+    assert features.shape[0] == len(labels)
+    
+def test_get_features_from_dataset(test_png_path, test_jpg_path):
+    filepaths = [test_png_path, test_jpg_path]*5
+    ys = [0,1]*5
+    ds = dataset(filepaths, ys=ys, imshape=(20,20), batch_size=2)[0]
+    features, labels = _get_features(fcn, ds)
+    
+    assert isinstance(features, np.ndarray)
+    assert len(features.shape) == 2
+    assert isinstance(labels, np.ndarray)
+    assert features.shape[0] == len(labels)
