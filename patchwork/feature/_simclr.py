@@ -99,8 +99,11 @@ def _build_embedding_model(fcn, imshape, num_channels, num_hidden, output_dim):
         inpt = [inpt0, inpt1]
     net = fcn(inpt)
     net = tf.keras.layers.Flatten()(net)
-    net = tf.keras.layers.Dense(num_hidden, activation="relu")(net)
-    net = tf.keras.layers.Dense(output_dim)(net)
+    net = tf.keras.layers.Dense(num_hidden)(net)
+    net = tf.keras.layers.BatchNormalization()(net)
+    net = tf.keras.layers.Activation("relu")(net)
+    net = tf.keras.layers.Dense(output_dim, use_bias=False)(net)
+    net = tf.keras.layers.BatchNormalization()(net)
     embedding_model = tf.keras.Model(inpt, net)
     return embedding_model
 
