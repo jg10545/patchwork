@@ -39,7 +39,7 @@ def exponential_model_update(slow, fast, alpha=0.999):
 
 
 
-def build_augment_pair_dataset(imfiles, imshape=(256,256), batch_size=256, 
+def _build_augment_pair_dataset(imfiles, imshape=(256,256), batch_size=256, 
                       num_parallel_calls=None, norm=255,
                       num_channels=3, augment=True,
                       single_channel=False):
@@ -70,20 +70,18 @@ def build_momentum_contrast_training_step(model, mo_model, optimizer, buffer, ba
     Function to build tf.function for a MoCo training step. Basically just follow
     Algorithm 1 in He et al's paper.
     """
-    #flatten = tf.keras.layers.GlobalAvgPool2D()
     
     @tf.function
     def training_step(img1, img2, step):
         print("tracing training step")
         batch_size = img1.shape[0]
+        # compute averaged embeddings. tensor is (N,d)
+        k = tf.nn.l2_normalize(mo_model(img2, training=True), axis=1)
         with tf.GradientTape() as tape:
-            # compute averaged and normalized embeddings for each 
-            # separately-augmented batch of pairs of images. Each is (N,d)
-            #q = tf.nn.l2_normalize(flatten(fcn(img1)), axis=1)
-            #k = tf.nn.l2_normalize(flatten(mo_fcn(img2)), axis=1)
-            q = tf.nn.l2_normalize(model(img1), axis=1)
-            k = tf.nn.l2_normalize(mo_model(img2), axis=1)
-    
+            # compute normalized embeddings for each 
+            # separately-augmented batch of pairs of images. tensor is (N,d)
+            q = tf.nn.l2_normalize(model(img1, training=True), axis=1)
+            
             # compute positive logits- (N,1)
             positive_logits = tf.squeeze(
                 tf.matmul(tf.expand_dims(q,1), 
@@ -127,11 +125,11 @@ class MomentumContrastTrainer(GenericExtractor):
 
     def __init__(self, logdir, trainingdata, testdata=None, fcn=None, 
                  augment=True, batches_in_buffer=10, alpha=0.999, 
-                 tau=0.07, output_dim=128,
-                 lr=0.01, lr_decay=100000,
+                 tau=0.07, output_dim=128, num_hidden=2048,
+                 lr=0.01, lr_decay=100000, decay_type="exponential",
                  imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, num_parallel_calls=None,
-                 sobel=False, single_channel=False, notes="",
+                 single_channel=False, notes="",
                  downstream_labels=None):
         """
         :logdir: (string) path to log directory
@@ -143,15 +141,16 @@ class MomentumContrastTrainer(GenericExtractor):
         :alpha:
         :tau:
         :output_dim:
+        :num_hidden:
         :lr: (float) initial learning rate
         :lr_decay: (int) steps for learning rate to decay by half (0 to disable)
+        :decay_type:
         :imshape: (tuple) image dimensions in H,W
         :num_channels: (int) number of image channels
         :norm: (int or float) normalization constant for images (for rescaling to
                unit interval)
         :batch_size: (int) batch size for training
         :num_parallel_calls: (int) number of threads for loader mapping
-        :sobel: whether to replace the input image with its sobel edges
         :single_channel: if True, expect a single-channel input image and 
                 stack it num_channels times.
         :notes: (string) any notes on the experiment that you want saved in the
@@ -162,7 +161,6 @@ class MomentumContrastTrainer(GenericExtractor):
         self.logdir = logdir
         self.trainingdata = trainingdata
         self._downstream_labels = downstream_labels
-        channels = 3 if sobel else num_channels
         
         self._file_writer = tf.summary.create_file_writer(logdir, flush_millis=10000)
         self._file_writer.set_as_default()
@@ -173,36 +171,34 @@ class MomentumContrastTrainer(GenericExtractor):
         self.fcn = fcn
         # from "technical details" in paper- after FCN they did global pooling
         # and then a dense layer. i assume linear outputs on it.
-        inpt = tf.keras.layers.Input((None, None, channels))
+        inpt = tf.keras.layers.Input((None, None, num_channels))
         features = fcn(inpt)
         pooled = tf.keras.layers.GlobalAvgPool2D()(features)
-        outpt = tf.keras.layers.Dense(output_dim)(pooled)
+        # MoCoV2 paper adds a hidden layer
+        dense = tf.keras.layers.Dense(num_hidden, activation="relu")(pooled)
+        outpt = tf.keras.layers.Dense(output_dim)(dense)
         full_model = tf.keras.Model(inpt, outpt)
         
-        momentum_encoder = copy_model(full_model)
+        #momentum_encoder = copy_model(full_model)
+        momentum_encoder = tf.keras.models.clone_model(full_model)
         self._models = {"fcn":fcn, 
                         "full":full_model,
                         "momentum_encoder":momentum_encoder}
         
         # build training dataset
-        self._ds = build_augment_pair_dataset(trainingdata, 
+        self._ds = _build_augment_pair_dataset(trainingdata, 
                             imshape=imshape, batch_size=batch_size,
                             num_parallel_calls=num_parallel_calls, 
-                            norm=norm, num_channels=channels, 
+                            norm=norm, num_channels=num_channels, 
                             augment=augment, single_channel=single_channel)
         
         # create optimizer
-        if lr_decay > 0:
-            learnrate = tf.keras.optimizers.schedules.ExponentialDecay(lr, 
-                                            decay_steps=lr_decay, decay_rate=0.5,
-                                            staircase=False)
-        else:
-            learnrate = lr
-        self._optimizer = tf.keras.optimizers.SGD(learnrate, momentum=0.9)
+        self._optimizer = self._build_optimizer(lr, lr_decay, opt_type="momentum",
+                                                decay_type=decay_type)
         
         # build buffer
         K = batch_size*batches_in_buffer
-        d = output_dim #fcn.output_shape[-1]
+        d = output_dim 
         self._buffer = tf.Variable(np.zeros((K,d), dtype=np.float32))
         
         # build training step
@@ -235,10 +231,11 @@ class MomentumContrastTrainer(GenericExtractor):
         self._parse_configs(augment=augment, 
                             batches_in_buffer=batches_in_buffer, 
                             alpha=alpha, tau=tau, output_dim=output_dim,
+                            num_hidden=num_hidden,
                             lr=lr, lr_decay=lr_decay, 
                             imshape=imshape, num_channels=num_channels,
                             norm=norm, batch_size=batch_size,
-                            num_parallel_calls=num_parallel_calls, sobel=sobel,
+                            num_parallel_calls=num_parallel_calls, 
                             single_channel=single_channel, notes=notes)
         self._prepopulate_buffer()
         
@@ -281,7 +278,7 @@ class MomentumContrastTrainer(GenericExtractor):
                     hp.HParam("alpha", hp.RealInterval(0., 1.)):self.config["alpha"],
                     hp.HParam("batches_in_buffer", hp.IntInterval(1, 1000000)):self.config["batches_in_buffer"],
                     hp.HParam("output_dim", hp.IntInterval(1, 1000000)):self.config["output_dim"],
-                    hp.HParam("sobel", hp.Discrete([True, False])):self.input_config["sobel"]
+                    hp.HParam("num_hidden", hp.IntInterval(1, 1000000)):self.config["num_hidden"]
                     }
             else:
                 hparams=None
