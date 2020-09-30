@@ -56,10 +56,10 @@ def _build_augment_pair_dataset(imfiles, imshape=(256,256), batch_size=256,
                              norm=norm, num_channels=num_channels,
                              shuffle=True, single_channel=single_channel)  
     
-    a1 = ds.map(_aug, num_parallel_calls=num_parallel_calls)
-    a2 = ds.map(_aug, num_parallel_calls=num_parallel_calls)
-   
-    ds = ds.zip((a1, a2))
+    def _augment_pair(x):
+        return _aug(x), _aug(x)
+
+    ds = ds.map(_augment_pair, num_parallel_calls=num_parallel_calls)
     ds = ds.batch(batch_size)
     ds = ds.prefetch(1)
     return ds
