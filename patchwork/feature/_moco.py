@@ -87,7 +87,7 @@ def build_momentum_contrast_training_step(model, mo_model, optimizer, buffer, ba
         k2 = mo_model(img2[a:c,:,:,:], training=True)
         k = tf.nn.l2_normalize(tf.concat([
                 k1[:a,:], k2, k1[a:,:]], axis=0
-            ))
+            ), axis=1)
         #print("k:", k.shape)
         with tf.GradientTape() as tape:
             # compute normalized embeddings for each 
@@ -95,7 +95,7 @@ def build_momentum_contrast_training_step(model, mo_model, optimizer, buffer, ba
             #q = tf.nn.l2_normalize(model(img1, training=True), axis=1)
             q1 = model(img1[:b,:,:,:], training=True)
             q2 = model(img1[b:,:,:,:], training=True)
-            q = tf.nn.l2_normalize(tf.concat([q1,q2], 0))
+            q = tf.nn.l2_normalize(tf.concat([q1,q2], 0), axis=1)
             #print("q", q.shape)
             # compute positive logits- (N,1)
             positive_logits = tf.squeeze(
