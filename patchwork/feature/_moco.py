@@ -65,7 +65,7 @@ def _build_augment_pair_dataset(imfiles, imshape=(256,256), batch_size=256,
     return ds
 
 
-def build_momentum_contrast_training_step(model, mo_model, optimizer, buffer, batches_in_buffer, alpha=0.999, tau=0.07):
+def _build_momentum_contrast_training_step(model, mo_model, optimizer, buffer, batches_in_buffer, alpha=0.999, tau=0.07):
     """
     Function to build tf.function for a MoCo training step. Basically just follow
     Algorithm 1 in He et al's paper.
@@ -88,7 +88,6 @@ def build_momentum_contrast_training_step(model, mo_model, optimizer, buffer, ba
         k = tf.nn.l2_normalize(tf.concat([
                 k1[:a,:], k2, k1[a:,:]], axis=0
             ), axis=1)
-        #print("k:", k.shape)
         with tf.GradientTape() as tape:
             # compute normalized embeddings for each 
             # separately-augmented batch of pairs of images. tensor is (N,d)
@@ -96,7 +95,6 @@ def build_momentum_contrast_training_step(model, mo_model, optimizer, buffer, ba
             q1 = model(img1[:b,:,:,:], training=True)
             q2 = model(img1[b:,:,:,:], training=True)
             q = tf.nn.l2_normalize(tf.concat([q1,q2], 0), axis=1)
-            #print("q", q.shape)
             # compute positive logits- (N,1)
             positive_logits = tf.squeeze(
                 tf.matmul(tf.expand_dims(q,1), 
@@ -105,13 +103,10 @@ def build_momentum_contrast_training_step(model, mo_model, optimizer, buffer, ba
             #print("positive logits", positive_logits.shape)
             # and negative logits- (N, buffer_size)
             negative_logits = tf.matmul(q, buffer, transpose_b=True)
-            #print("negative_logits", negative_logits.shape)
             # assemble positive and negative- (N, buffer_size+1)
             all_logits = tf.concat([positive_logits, negative_logits], axis=1)
-            #print("all_logits", all_logits.shape)
             # create labels (correct class is 0)- (N,)
             labels = tf.zeros((batch_size,), dtype=tf.int32)
-            #print("labels", labels.shape)
             # compute crossentropy loss
             loss = tf.reduce_mean(
                     tf.nn.sparse_softmax_cross_entropy_with_logits(
@@ -128,8 +123,9 @@ def build_momentum_contrast_training_step(model, mo_model, optimizer, buffer, ba
         i = step % batches_in_buffer
         _ = buffer[batch_size*i:batch_size*(i+1),:].assign(k)
         
-        return loss, weight_diff
+        return {"loss":loss, "weight_diff":weight_diff}
     return training_step
+
 
 
 
@@ -185,22 +181,23 @@ class MomentumContrastTrainer(GenericExtractor):
         self._file_writer.set_as_default()
         
         # if no FCN is passed- build one
-        if fcn is None:
-            fcn = tf.keras.applications.ResNet50V2(weights=None, include_top=False)
-        self.fcn = fcn
-        # from "technical details" in paper- after FCN they did global pooling
-        # and then a dense layer. i assume linear outputs on it.
-        inpt = tf.keras.layers.Input((None, None, num_channels))
-        features = fcn(inpt)
-        pooled = tf.keras.layers.GlobalAvgPool2D()(features)
-        # MoCoV2 paper adds a hidden layer
-        dense = tf.keras.layers.Dense(num_hidden, activation="relu")(pooled)
-        outpt = tf.keras.layers.Dense(output_dim)(dense)
-        full_model = tf.keras.Model(inpt, outpt)
+        with self.scope():
+            if fcn is None:
+                fcn = tf.keras.applications.ResNet50V2(weights=None, include_top=False)
+            self.fcn = fcn
+            # from "technical details" in paper- after FCN they did global pooling
+            # and then a dense layer. i assume linear outputs on it.
+            inpt = tf.keras.layers.Input((None, None, num_channels))
+            features = fcn(inpt)
+            pooled = tf.keras.layers.GlobalAvgPool2D()(features)
+            # MoCoV2 paper adds a hidden layer
+            dense = tf.keras.layers.Dense(num_hidden, activation="relu")(pooled)
+            outpt = tf.keras.layers.Dense(output_dim)(dense)
+            full_model = tf.keras.Model(inpt, outpt)
         
-        #momentum_encoder = copy_model(full_model)
-        momentum_encoder = tf.keras.models.clone_model(full_model)
-        self._models = {"fcn":fcn, 
+            #momentum_encoder = copy_model(full_model)
+            momentum_encoder = tf.keras.models.clone_model(full_model)
+            self._models = {"fcn":fcn, 
                         "full":full_model,
                         "momentum_encoder":momentum_encoder}
         
@@ -221,7 +218,7 @@ class MomentumContrastTrainer(GenericExtractor):
         self._buffer = tf.Variable(np.zeros((K,d), dtype=np.float32))
         
         # build training step
-        self._training_step = build_momentum_contrast_training_step(
+        self._training_step = _build_momentum_contrast_training_step(
                 full_model, 
                 momentum_encoder, 
                 self._optimizer, 
@@ -255,7 +252,8 @@ class MomentumContrastTrainer(GenericExtractor):
                             imshape=imshape, num_channels=num_channels,
                             norm=norm, batch_size=batch_size,
                             num_parallel_calls=num_parallel_calls, 
-                            single_channel=single_channel, notes=notes)
+                            single_channel=single_channel, notes=notes,
+                            trainer="moco")
         self._prepopulate_buffer()
         
     def _prepopulate_buffer(self):
@@ -276,17 +274,20 @@ class MomentumContrastTrainer(GenericExtractor):
         
         """
         for x, y in self._ds:
-            loss, weight_diff = self._training_step(x,y, self._step_var)
+            #loss, weight_diff = self._training_step(x,y, self._step_var)
+            lossdict = self._training_step(x,y, self._step_var)
             
-            self._record_scalars(loss=loss, weight_diff=weight_diff)
+            self._record_scalars(**lossdict)
             
             self._step_var.assign_add(1)
             self.step += 1
             
  
     def evaluate(self):
-        b = tf.expand_dims(tf.expand_dims(self._buffer,0),-1)
-        self._record_images(buffer=b)
+        # image visualization for the buffer- can probably
+        # drop this if we're confident it's working
+        #b = tf.expand_dims(tf.expand_dims(self._buffer,0),-1)
+        #self._record_images(buffer=b)
             
         if self._downstream_labels is not None:
             # choose the hyperparameters to record
@@ -299,6 +300,9 @@ class MomentumContrastTrainer(GenericExtractor):
                     hp.HParam("output_dim", hp.IntInterval(1, 1000000)):self.config["output_dim"],
                     hp.HParam("num_hidden", hp.IntInterval(1, 1000000)):self.config["num_hidden"]
                     }
+                for k in self.augment_config:
+                    if isinstance(self.augment_config[k], float):
+                        hparams[hp.HParam(k, hp.RealInterval(0., 10000.))] = self.augment_config[k]
             else:
                 hparams=None
             self._linear_classification_test(hparams)

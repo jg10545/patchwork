@@ -3,7 +3,8 @@ import numpy as np
 import tensorflow as tf
 
 from patchwork.feature._moco import copy_model, exponential_model_update
-
+from patchwork.feature._moco import _build_augment_pair_dataset
+from patchwork.feature._moco import _build_momentum_contrast_training_step
 
 def test_copy_model():
     orig = tf.keras.applications.VGG16(weights=None, include_top=False)
@@ -41,4 +42,18 @@ def test_exponenial_model_update():
     out4 = mod1(test_inpt).numpy()
     assert np.sum((out4 - out2)**2) < 1e-5
     
+    
+def test_build_augment_pair_dataset(test_png_path):
+    filepaths = 10*[test_png_path]
+    ds = _build_augment_pair_dataset(filepaths, imshape=(32,32),
+                                     batch_size=5, 
+                                     augment={"flip_left_right":True})
+    assert isinstance(ds, tf.data.Dataset)
+    for x,y in ds:
+        x = x.numpy()
+        y = y.numpy()
+        break
+    
+    assert x.shape == (5,32,32,3)
+    assert y.shape == (5,32,32,3)
     
