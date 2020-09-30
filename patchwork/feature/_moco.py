@@ -76,23 +76,42 @@ def build_momentum_contrast_training_step(model, mo_model, optimizer, buffer, ba
         print("tracing training step")
         batch_size = img1.shape[0]
         # compute averaged embeddings. tensor is (N,d)
-        k = tf.nn.l2_normalize(mo_model(img2, training=True), axis=1)
+        #k = tf.nn.l2_normalize(mo_model(img2, training=True), axis=1)
+        # my shot at an alternative to shuffling BN
+        a = int(batch_size/4)
+        b = int(batch_size/2)
+        c = int(3*batch_size/4)
+        
+        k1 = mo_model(tf.concat([img2[:a,:,:,:], img2[c:,:,:,:]], 0),
+                      training=True)
+        k2 = mo_model(img2[a:c,:,:,:], training=True)
+        k = tf.nn.l2_normalize(tf.concat([
+                k1[:a,:], k2, k1[a:,:]], axis=0
+            ))
+        #print("k:", k.shape)
         with tf.GradientTape() as tape:
             # compute normalized embeddings for each 
             # separately-augmented batch of pairs of images. tensor is (N,d)
-            q = tf.nn.l2_normalize(model(img1, training=True), axis=1)
-            
+            #q = tf.nn.l2_normalize(model(img1, training=True), axis=1)
+            q1 = model(img1[:b,:,:,:], training=True)
+            q2 = model(img1[b:,:,:,:], training=True)
+            q = tf.nn.l2_normalize(tf.concat([q1,q2], 0))
+            #print("q", q.shape)
             # compute positive logits- (N,1)
             positive_logits = tf.squeeze(
                 tf.matmul(tf.expand_dims(q,1), 
                       tf.expand_dims(k,1), transpose_b=True),
                 axis=-1)
+            #print("positive logits", positive_logits.shape)
             # and negative logits- (N, buffer_size)
             negative_logits = tf.matmul(q, buffer, transpose_b=True)
+            #print("negative_logits", negative_logits.shape)
             # assemble positive and negative- (N, buffer_size+1)
             all_logits = tf.concat([positive_logits, negative_logits], axis=1)
+            #print("all_logits", all_logits.shape)
             # create labels (correct class is 0)- (N,)
             labels = tf.zeros((batch_size,), dtype=tf.int32)
+            #print("labels", labels.shape)
             # compute crossentropy loss
             loss = tf.reduce_mean(
                     tf.nn.sparse_softmax_cross_entropy_with_logits(
@@ -246,7 +265,7 @@ class MomentumContrastTrainer(GenericExtractor):
         #flatten = tf.keras.layers.GlobalAvgPool2D()
         for x,y in self._ds:
             k = tf.nn.l2_normalize(
-                    self._models["momentum_encoder"](y), axis=1)
+                    self._models["momentum_encoder"](y, training=True), axis=1)
             _ = self._buffer[bs*i:bs*(i+1),:].assign(k)
             i += 1
             if i >= bib:
