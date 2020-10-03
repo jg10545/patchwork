@@ -5,6 +5,7 @@ import tensorflow as tf
 from patchwork.feature._generic import GenericExtractor
 from patchwork._augment import augment_function
 from patchwork.loaders import _image_file_dataset
+from patchwork._util import compute_l2_loss
 
 
 
@@ -65,7 +66,7 @@ def _build_augment_pair_dataset(imfiles, imshape=(256,256), batch_size=256,
     return ds
 
 
-def _build_momentum_contrast_training_step(model, mo_model, optimizer, buffer, batches_in_buffer, alpha=0.999, tau=0.07):
+def _build_momentum_contrast_training_step(model, mo_model, optimizer, buffer, batches_in_buffer, alpha=0.999, tau=0.07, weight_decay=0):
     """
     Function to build tf.function for a MoCo training step. Basically just follow
     Algorithm 1 in He et al's paper.
@@ -111,6 +112,8 @@ def _build_momentum_contrast_training_step(model, mo_model, optimizer, buffer, b
             loss = tf.reduce_mean(
                     tf.nn.sparse_softmax_cross_entropy_with_logits(
                             labels, all_logits/tau))
+            if weight_decay > 0:
+                loss += weight_decay*compute_l2_loss(model)
     
         # update fast model
         variables = model.trainable_variables
@@ -140,7 +143,7 @@ class MomentumContrastTrainer(GenericExtractor):
 
     def __init__(self, logdir, trainingdata, testdata=None, fcn=None, 
                  augment=True, batches_in_buffer=10, alpha=0.999, 
-                 tau=0.07, output_dim=128, num_hidden=2048,
+                 tau=0.07, output_dim=128, num_hidden=2048, weight_decay=0,
                  lr=0.01, lr_decay=100000, decay_type="exponential",
                  imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, num_parallel_calls=None,
@@ -157,6 +160,7 @@ class MomentumContrastTrainer(GenericExtractor):
         :tau:
         :output_dim:
         :num_hidden:
+        :weight_decay:
         :lr: (float) initial learning rate
         :lr_decay: (int) steps for learning rate to decay by half (0 to disable)
         :decay_type:
@@ -223,7 +227,7 @@ class MomentumContrastTrainer(GenericExtractor):
                 momentum_encoder, 
                 self._optimizer, 
                 self._buffer, 
-                batches_in_buffer, alpha, tau)
+                batches_in_buffer, alpha, tau, weight_decay)
         # build evaluation dataset
         #if testdata is not None:
         #    self._test_ds, self._test_steps = dataset(testdata,
@@ -247,7 +251,7 @@ class MomentumContrastTrainer(GenericExtractor):
         self._parse_configs(augment=augment, 
                             batches_in_buffer=batches_in_buffer, 
                             alpha=alpha, tau=tau, output_dim=output_dim,
-                            num_hidden=num_hidden,
+                            num_hidden=num_hidden, weight_decay=weight_decay,
                             lr=lr, lr_decay=lr_decay, 
                             imshape=imshape, num_channels=num_channels,
                             norm=norm, batch_size=batch_size,
@@ -298,7 +302,8 @@ class MomentumContrastTrainer(GenericExtractor):
                     hp.HParam("alpha", hp.RealInterval(0., 1.)):self.config["alpha"],
                     hp.HParam("batches_in_buffer", hp.IntInterval(1, 1000000)):self.config["batches_in_buffer"],
                     hp.HParam("output_dim", hp.IntInterval(1, 1000000)):self.config["output_dim"],
-                    hp.HParam("num_hidden", hp.IntInterval(1, 1000000)):self.config["num_hidden"]
+                    hp.HParam("num_hidden", hp.IntInterval(1, 1000000)):self.config["num_hidden"],
+                    hp.HParam("weight_decay", hp.RealInterval(0., 10000.)):self.config["weight_decay"]
                     }
                 for k in self.augment_config:
                     if isinstance(self.augment_config[k], float):
