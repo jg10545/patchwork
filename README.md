@@ -23,7 +23,7 @@ In the recent [SimCLRv2 paper](https://arxiv.org/abs/2006.10029), Chen *et al* l
 
 The `patchwork.feature` module has [methods for pretraining convolutional networks as feature extractors](docs/feature.md).
 
-* Self-supervised methods include context encoders, DeepCluster, and SimCLR
+* Self-supervised methods include context encoders, DeepCluster, MoCo, and SimCLR
 * A [multitask learning](docs/multitask.md) interface for building feature extractors from whatever labeled data you have available. It automatically handles partially-missing labels (so you can combine disparate datasets with labels for different tasks) and can weigh tasks manually or automatically.
 * All extractor trainers share a common set of [input and augmentation parameters](docs/input_aug.md)
 * If you label a small number of patches before you start, all feature extractor trainers can automatically monitor linear model performance on a downstream task during training using TensorBoard
