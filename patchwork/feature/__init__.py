@@ -4,3 +4,4 @@ from patchwork.feature._deepcluster import DeepClusterTrainer
 from patchwork.feature._simclr import SimCLRTrainer
 from patchwork.feature._autoencoder import AutoEncoderTrainer
 from patchwork.feature._multitask import MultiTaskTrainer
+from patchwork.feature._moco import MomentumContrastTrainer

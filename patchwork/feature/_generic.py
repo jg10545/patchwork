@@ -79,6 +79,10 @@ def build_optimizer(lr, lr_decay=0, opt_type="adam", decay_type="exponential"):
             lr = tf.keras.optimizers.schedules.ExponentialDecay(lr, 
                                         decay_steps=lr_decay, decay_rate=0.5,
                                         staircase=False)
+        elif decay_type == "staircase":
+            lr = tf.keras.optimizers.schedules.ExponentialDecay(lr, 
+                                        decay_steps=lr_decay, decay_rate=0.5,
+                                        staircase=True)
         elif decay_type == "cosine":
             lr = tf.keras.experimental.CosineDecayRestarts(lr, lr_decay,
                                                            t_mul=2., m_mul=1.,
@@ -363,3 +367,12 @@ class GenericExtractor(object):
         assert isinstance(labels, dict) & (len(labels)>0), "dont you need some labels?"
         save_embeddings(self._models["fcn"], labels, self.logdir,
                         proj_dim, sprite_size, **self.input_config)
+        
+    def load_weights(self, logdir):
+        """
+        Update model weights from a previously trained model
+        """
+        for k in self._models:
+            savedloc = os.path.join(logdir, k+".h5")
+            self._models[k].load_weights(savedloc)
+
