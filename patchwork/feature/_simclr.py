@@ -254,8 +254,8 @@ class SimCLRTrainer(GenericExtractor):
         :output_dim: dimension of projection head's output space. Figure 8 in Chen et al's paper shows that their results did not depend strongly on this value.
         :weight_decay: coefficient for L2-norm loss. The original SimCLR paper used 1e-6.
         :lr: (float) initial learning rate
-        :lr_decay: (int) steps for learning rate to decay by half (0 to disable)
-        :decay_type: (str) how to decay learning rate; "exponential" or "cosine"
+        :lr_decay:  (int) number of steps for one decay period (0 to disable)
+        :decay_type: (string) how to decay the learning rate- "exponential" (smooth exponential decay), "staircase" (non-smooth exponential decay), or "cosine"
         :opt_type: (string) optimizer type; "adam" or "momentum"
         :imshape: (tuple) image dimensions in H,W
         :num_channels: (int) number of image channels

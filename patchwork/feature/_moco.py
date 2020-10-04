@@ -77,7 +77,6 @@ def _build_momentum_contrast_training_step(model, mo_model, optimizer, buffer, b
         print("tracing training step")
         batch_size = img1.shape[0]
         # compute averaged embeddings. tensor is (N,d)
-        #k = tf.nn.l2_normalize(mo_model(img2, training=True), axis=1)
         # my shot at an alternative to shuffling BN
         a = int(batch_size/4)
         b = int(batch_size/2)
@@ -92,7 +91,6 @@ def _build_momentum_contrast_training_step(model, mo_model, optimizer, buffer, b
         with tf.GradientTape() as tape:
             # compute normalized embeddings for each 
             # separately-augmented batch of pairs of images. tensor is (N,d)
-            #q = tf.nn.l2_normalize(model(img1, training=True), axis=1)
             q1 = model(img1[:b,:,:,:], training=True)
             q2 = model(img1[b:,:,:,:], training=True)
             q = tf.nn.l2_normalize(tf.concat([q1,q2], 0), axis=1)
@@ -101,7 +99,6 @@ def _build_momentum_contrast_training_step(model, mo_model, optimizer, buffer, b
                 tf.matmul(tf.expand_dims(q,1), 
                       tf.expand_dims(k,1), transpose_b=True),
                 axis=-1)
-            #print("positive logits", positive_logits.shape)
             # and negative logits- (N, buffer_size)
             negative_logits = tf.matmul(q, buffer, transpose_b=True)
             # assemble positive and negative- (N, buffer_size+1)
@@ -145,6 +142,7 @@ class MomentumContrastTrainer(GenericExtractor):
                  augment=True, batches_in_buffer=10, alpha=0.999, 
                  tau=0.07, output_dim=128, num_hidden=2048, weight_decay=0,
                  lr=0.01, lr_decay=100000, decay_type="exponential",
+                 opt_type="momentum",
                  imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, num_parallel_calls=None,
                  single_channel=False, notes="",
@@ -156,14 +154,15 @@ class MomentumContrastTrainer(GenericExtractor):
         :fcn: (keras Model) fully-convolutional network to train as feature extractor
         :augment: (dict) dictionary of augmentation parameters, True for defaults
         :batches_in_buffer:
-        :alpha:
-        :tau:
-        :output_dim:
-        :num_hidden:
-        :weight_decay:
+        :alpha: momentum parameter for updating the momentum encoder
+        :tau: temperature parameter for noise-contrastive loss
+        :output_dim: dimension for features to be projected into for NCE loss
+        :num_hidden: number of neurons in the projection head's hidden layer (from the MoCoV2 paper)
+        :weight_decay: L2 loss weight; 0 to disable
         :lr: (float) initial learning rate
-        :lr_decay: (int) steps for learning rate to decay by half (0 to disable)
-        :decay_type:
+        :lr_decay: (int) number of steps for one decay period (0 to disable)
+        :decay_type: (string) how to decay the learning rate- "exponential" (smooth exponential decay), "staircase" (non-smooth exponential decay), or "cosine"
+        :opt_type: (str) which optimizer to use; "momentum" or "adam"
         :imshape: (tuple) image dimensions in H,W
         :num_channels: (int) number of image channels
         :norm: (int or float) normalization constant for images (for rescaling to
@@ -213,7 +212,7 @@ class MomentumContrastTrainer(GenericExtractor):
                             augment=augment, single_channel=single_channel)
         
         # create optimizer
-        self._optimizer = self._build_optimizer(lr, lr_decay, opt_type="momentum",
+        self._optimizer = self._build_optimizer(lr, lr_decay, opt_type=opt_type,
                                                 decay_type=decay_type)
         
         # build buffer
@@ -252,7 +251,7 @@ class MomentumContrastTrainer(GenericExtractor):
                             batches_in_buffer=batches_in_buffer, 
                             alpha=alpha, tau=tau, output_dim=output_dim,
                             num_hidden=num_hidden, weight_decay=weight_decay,
-                            lr=lr, lr_decay=lr_decay, 
+                            lr=lr, lr_decay=lr_decay, opt_type=opt_type,
                             imshape=imshape, num_channels=num_channels,
                             norm=norm, batch_size=batch_size,
                             num_parallel_calls=num_parallel_calls, 
@@ -264,7 +263,6 @@ class MomentumContrastTrainer(GenericExtractor):
         i = 0
         bs = self.input_config["batch_size"]
         bib = self.config["batches_in_buffer"]
-        #flatten = tf.keras.layers.GlobalAvgPool2D()
         for x,y in self._ds:
             k = tf.nn.l2_normalize(
                     self._models["momentum_encoder"](y, training=True), axis=1)
@@ -282,6 +280,7 @@ class MomentumContrastTrainer(GenericExtractor):
             lossdict = self._training_step(x,y, self._step_var)
             
             self._record_scalars(**lossdict)
+            self._record_scalars(learning_rate=self._get_current_learning_rate())
             
             self._step_var.assign_add(1)
             self.step += 1
@@ -312,5 +311,12 @@ class MomentumContrastTrainer(GenericExtractor):
                 hparams=None
             self._linear_classification_test(hparams)
         
+        
+    def load_weights(self, logdir):
+        """
+        Update model weights from a previously trained model
+        """
+        super().load_weights(logdir)
+        self._prepopulate_buffer()
             
         
