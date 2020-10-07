@@ -115,7 +115,7 @@ class RotationTrainer(GenericExtractor):
                 fcn = tf.keras.applications.ResNet50V2(weights=None, include_top=False)
             self.fcn = fcn
             # make a prediction model 
-            inpt = tf.keras.layers.Input((None, None, num_channels))
+            inpt = tf.keras.layers.Input((imshape[0], imshape[1], num_channels))
             net = fcn(inpt)
             net = tf.keras.layers.Flatten()(net)
             net = tf.keras.layers.Dense(num_hidden, activation="relu")(net)
@@ -168,7 +168,6 @@ class RotationTrainer(GenericExtractor):
                             num_parallel_calls=num_parallel_calls, 
                             single_channel=single_channel, notes=notes,
                             trainer="rotation")
-        self._prepopulate_buffer()
         
         
     def _run_training_epoch(self, **kwargs):
@@ -176,7 +175,7 @@ class RotationTrainer(GenericExtractor):
         
         """
         for x, y in self._ds:
-            lossdict = self._training_step(x,y, self._step_var)
+            lossdict = self._training_step(x,y)
             
             self._record_scalars(**lossdict)
             self._record_scalars(learning_rate=self._get_current_learning_rate())
