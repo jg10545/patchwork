@@ -272,6 +272,10 @@ class GenericExtractor(object):
         Labels" by Reed et al for why you'd want to do this!
         
         https://arxiv.org/abs/2009.07724
+        
+        :testdata: a list of filepaths, or a tf Dataset that loads and
+            returns single images
+        :avpool: if True, use average pooling instead of flattening.
         """
         if testdata is None:
             if hasattr(self, "_testdata"):

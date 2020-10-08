@@ -6,13 +6,17 @@ from patchwork.feature._generic import GenericExtractor
 from patchwork._augment import augment_function
 from patchwork.loaders import _image_file_dataset
 from patchwork._util import compute_l2_loss
-from patchwork._tasks import _rotate, _build_rotation_dataset
+from patchwork.loaders import  _build_rotation_dataset
 
 
 
 def _build_rotation_training_step(model, optimizer, weight_decay=0):
     """
+    :model: keras model mapping image to 4-category classification
+    :optimizer: keras optimizer
+    :weight_decay: float; 0 to disable
     
+    Returns a tf.function to use as a training step
     """
     
     @tf.function
