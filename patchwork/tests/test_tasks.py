@@ -1,23 +1,19 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 import tensorflow as tf
+from PIL import Image
 
-from patchwork._tasks import _rotate, _build_rotation_dataset
+from patchwork._tasks import _rotate
 
+
+def test_rotate(test_png_path):
+    img = np.array(Image.open(test_png_path)).astype(np.float32)/255
+    img_r, theta = _rotate(img)
     
-def test_build_rotation_dataset(test_png_path):
-    filepaths = 10*[test_png_path]
-    ds = _build_rotation_dataset(filepaths, imshape=(32,32),
-                                     batch_size=5, 
-                                     augment={"flip_left_right":True})
-    assert isinstance(ds, tf.data.Dataset)
-    for x,y in ds:
-        x = x.numpy()
-        y = y.numpy()
-        break
-    
-    assert x.shape == (5,32,32,3)
-    assert y.shape == (5,)
-    assert y.max() < 4
-    assert y.min() >= 0
+    img_r = img_r.numpy()
+    assert img.shape == img_r.shape
+    for i in range(3):
+        assert (img[:,:,i].sum() - img_r[:,:,i].sum())**2 < 1e-2
+        
+    assert theta.numpy() in [0,1,2,3]
     
