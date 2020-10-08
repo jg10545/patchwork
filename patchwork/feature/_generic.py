@@ -17,7 +17,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import accuracy_score, confusion_matrix
 from tensorboard.plugins.hparams import api as hp
 
-from patchwork.loaders import dataset, _get_features
+from patchwork.loaders import _get_features, _get_rotation_features
 from patchwork.viz._projector import save_embeddings
 
 
@@ -28,8 +28,8 @@ INPUT_PARAMS = ["imshape", "num_channels", "norm", "batch_size",
 
 
 
-
-def linear_classification_test(fcn, downstream_labels, avpool=False, **input_config):
+def linear_classification_test(fcn, downstream_labels, avpool=False, rotation_task=False,
+                               **input_config):
     """
     Train a linear classifier on a fully-convolutional network
     and return out-of-sample results.
@@ -38,6 +38,8 @@ def linear_classification_test(fcn, downstream_labels, avpool=False, **input_con
     :downstream_labels: dictionary mapping image file paths to labels, or a 
         dataset returning image/label pairs
     :avpool: average-pool feature tensors before fitting linear model. if False, flatten instead.
+    :rotation_task: if True, use an unlabeled list of filepaths and measure performance on an
+        image-rotation task (see "Evaluating Self-Supervised Pretraining Without Using Labels")
     :input_config: kwargs for patchwork.loaders.dataset()
     
     Returns
@@ -45,7 +47,12 @@ def linear_classification_test(fcn, downstream_labels, avpool=False, **input_con
     :cm: 2D numpy array; confusion matrix
     """
     # load features into memory
-    features, labels = _get_features(fcn, 
+    if rotation_task:
+        features, labels = _get_rotation_features(fcn, 
+                                            downstream_labels, **input_config)     
+        
+    else:
+        features, labels = _get_features(fcn, 
                                             downstream_labels, **input_config)     
     # build a deterministic train/test split
     split = np.array([(i%3 == 0) for i in range(features.shape[0])])
@@ -65,6 +72,7 @@ def linear_classification_test(fcn, downstream_labels, avpool=False, **input_con
     acc = accuracy_score(labels[split], preds)
     cm = confusion_matrix(labels[split], preds)
     return acc, cm
+
 
 
 def build_optimizer(lr, lr_decay=0, opt_type="adam", decay_type="exponential"):
@@ -256,6 +264,26 @@ class GenericExtractor(object):
                 if len(run_name) == 0:
                     base_dir, run_name = os.path.split(base_dir)
                 hp.hparams(params, trial_id=run_name)
+                
+    def rotation_classification_test(self, testdata=None, avpool=False):
+        """
+        Test the feature extractor's performance on a rotation-prediction
+        task. See "Evaluating Self-Supervised Pretraining Without Using 
+        Labels" by Reed et al for why you'd want to do this!
+        
+        https://arxiv.org/abs/2009.07724
+        """
+        if testdata is None:
+            if hasattr(self, "_testdata"):
+                testdata = self._testdata
+            else:
+                assert False, "need images to sample from"
+        
+        acc, conf_mat = linear_classification_test(self.fcn, 
+                                    testdata, avpool=avpool,
+                                    rotation_task=True,
+                                    **self.input_config)
+        self._record_scalars(rotation_classification_accuracy=acc)
                 
     def _build_optimizer(self, lr, lr_decay=0, opt_type="adam", decay_type="exponential"):
         # macro for creating the Keras optimizer

@@ -3,7 +3,8 @@ import numpy as np
 import tensorflow as tf
 from patchwork.loaders import _image_file_dataset, dataset, stratified_training_dataset
 from patchwork.loaders import _build_load_function
-from patchwork.loaders import _get_features
+from patchwork.loaders import _get_features, _get_rotation_features
+from patchwork.loaders import _build_rotation_dataset
 
 
 
@@ -343,6 +344,41 @@ def test_get_features_from_dataset(test_png_path, test_jpg_path):
     ys = [0,1]*5
     ds = dataset(filepaths, ys=ys, imshape=(20,20), batch_size=2)[0]
     features, labels = _get_features(fcn, ds)
+    
+    assert isinstance(features, np.ndarray)
+    assert len(features.shape) == 2
+    assert isinstance(labels, np.ndarray)
+    assert features.shape[0] == len(labels)
+    
+    
+    
+def test_build_rotation_dataset(test_png_path):
+    filepaths = 10*[test_png_path]
+    ds = _build_rotation_dataset(filepaths, imshape=(32,32),
+                                     batch_size=5, 
+                                     augment={"flip_left_right":True})
+    assert isinstance(ds, tf.data.Dataset)
+    for x,y in ds:
+        x = x.numpy()
+        y = y.numpy()
+        break
+    
+    assert x.shape == (5,32,32,3)
+    assert y.shape == (5,)
+    assert y.max() < 4
+    assert y.min() >= 0
+    
+
+    
+def test_get_rotation_features_from_filepaths(test_png_path):
+    filepaths = [test_png_path]*7
+    
+    features, labels = _get_rotation_features(fcn, filepaths, 
+                                        imshape=(20,20),
+                                        num_channels=3,
+                                        norm=255,
+                                        single_channel=False,
+                                        batch_size=1)
     
     assert isinstance(features, np.ndarray)
     assert len(features.shape) == 2
