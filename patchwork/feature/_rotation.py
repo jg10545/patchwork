@@ -6,33 +6,7 @@ from patchwork.feature._generic import GenericExtractor
 from patchwork._augment import augment_function
 from patchwork.loaders import _image_file_dataset
 from patchwork._util import compute_l2_loss
-
-
-
-def _rotate(x, foo=False, **kwargs):
-    # create a labeled rotated image
-    theta = tf.random.uniform(shape=[], minval=0, maxval=4, dtype=tf.int32)
-    return tf.image.rot90(x, theta), theta
-
-
-
-
-def _build_rotation_dataset(imfiles, imshape=(256,256), batch_size=256, 
-                      num_parallel_calls=None, norm=255,
-                      num_channels=3, augment=False,
-                      single_channel=False):
-    """
-    """
-    ds = _image_file_dataset(imfiles, shuffle=True, augment=augment, 
-                             imshape=imshape, norm=norm,
-                             single_channel=single_channel,
-                             num_parallel_calls=num_parallel_calls)
-        
-    ds = ds.map(_rotate, num_parallel_calls=num_parallel_calls)
-    ds = ds.batch(batch_size)
-    ds = ds.prefetch(1)
-    return ds
-    
+from patchwork._tasks import _rotate, _build_rotation_dataset
 
 
 
@@ -66,8 +40,9 @@ def _build_rotation_training_step(model, optimizer, weight_decay=0):
 
 class RotationTrainer(GenericExtractor):
     """
-
-    
+    Rotation-task trainer, based on "Unsupervised Representation Learning
+    by Predicting Image Rotations" by Gidaris et al
+    https://arxiv.org/abs/1803.07728
     """
 
     def __init__(self, logdir, trainingdata, testdata=None, fcn=None, 
@@ -184,11 +159,6 @@ class RotationTrainer(GenericExtractor):
             
  
     def evaluate(self):
-        # image visualization for the buffer- can probably
-        # drop this if we're confident it's working
-        #b = tf.expand_dims(tf.expand_dims(self._buffer,0),-1)
-        #self._record_images(buffer=b)
-            
         if self._downstream_labels is not None:
             # choose the hyperparameters to record
             if not hasattr(self, "_hparams_config"):
