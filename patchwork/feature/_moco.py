@@ -140,7 +140,8 @@ class MomentumContrastTrainer(GenericExtractor):
 
     def __init__(self, logdir, trainingdata, testdata=None, fcn=None, 
                  augment=True, batches_in_buffer=10, alpha=0.999, 
-                 tau=0.07, output_dim=128, num_hidden=2048, weight_decay=0,
+                 tau=0.07, output_dim=128, num_hidden=2048, 
+                 copy_weights=False, weight_decay=0,
                  lr=0.01, lr_decay=100000, decay_type="exponential",
                  opt_type="momentum",
                  imshape=(256,256), num_channels=3,
@@ -158,6 +159,8 @@ class MomentumContrastTrainer(GenericExtractor):
         :tau: temperature parameter for noise-contrastive loss
         :output_dim: dimension for features to be projected into for NCE loss
         :num_hidden: number of neurons in the projection head's hidden layer (from the MoCoV2 paper)
+        :copy_weights: if True, copy the query model weights at the beginning as well 
+            as the structure.
         :weight_decay: L2 loss weight; 0 to disable
         :lr: (float) initial learning rate
         :lr_decay: (int) number of steps for one decay period (0 to disable)
@@ -198,8 +201,10 @@ class MomentumContrastTrainer(GenericExtractor):
             outpt = tf.keras.layers.Dense(output_dim)(dense)
             full_model = tf.keras.Model(inpt, outpt)
         
-            #momentum_encoder = copy_model(full_model)
-            momentum_encoder = tf.keras.models.clone_model(full_model)
+            if copy_weights:
+                momentum_encoder = copy_model(full_model)
+            else:
+                momentum_encoder = tf.keras.models.clone_model(full_model)
             self._models = {"fcn":fcn, 
                         "full":full_model,
                         "momentum_encoder":momentum_encoder}
