@@ -72,8 +72,16 @@ def save_embeddings(fcn, labeldict, log_dir, proj_dim=64,
     for i in range(len(traintest)):
         if i % 3 == 0:
             traintest[i] = "test"
-    metadata = pd.DataFrame({"label":list(labeldict.values()),
+    labels = list(labeldict.values())
+    filepaths = list(labeldict.keys())
+    metadata = pd.DataFrame({"label":labels,
                              "traintest":traintest})
+    # if possible, save out parent and grandparent directories
+    if len(filepaths[0].split("/")) > 1:
+        metadata["parent"] = [f.split("/")[-2] for f in filepaths]
+    if len(filepaths[0].split("/")) > 2:
+        metadata["grandparent"] = [f.split("/")[-3] for f in filepaths]
+    
     metadata.to_csv(os.path.join(log_dir, "metadata.tsv"), sep="\t",
                     index=False)
 
