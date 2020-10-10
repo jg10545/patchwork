@@ -2,7 +2,8 @@
 import numpy as np
 import tensorflow as tf
 
-from patchwork._augment import augment_function, _poisson, _random_zoom, _choose, _jitter
+from patchwork._augment import augment_function, _poisson, _random_zoom, _choose
+from patchwork._augment import _center_crop, _jitter
 from patchwork._augment import SINGLE_AUG_FUNC
 
 
@@ -30,6 +31,13 @@ def test_random_zoom():
     img = np.random.uniform(0,1, (32,32,3)).astype(np.float32)
     
     zoomed = _random_zoom(img, 0.1, (32,32))
+    assert img.shape == zoomed.shape
+    assert (zoomed.numpy() == img).all() == False
+    
+def test_center_crop():
+    img = np.random.uniform(0,1, (32,32,3)).astype(np.float32)
+    
+    zoomed = _center_crop(img, 0.1, (32,32))
     assert img.shape == zoomed.shape
     assert (zoomed.numpy() == img).all() == False
     
