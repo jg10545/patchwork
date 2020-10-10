@@ -161,7 +161,7 @@ def _center_crop(x, scale=0.1, imshape=(256,256), **kwargs):
     box = (1-z)*tf.random.uniform(np.array([1,4]), 0, 0.5) * np.array([[1,1,-1,-1]], dtype=np.float32) 
     box += np.array([0,0,1,1], dtype=np.float32)
     ind = np.array([0], dtype=np.int32)
-    return tf.image.crop_and_resize(np.expand_dims(x, 0), box, ind, imshape)[0]
+    return tf.image.crop_and_resize(tf.expand_dims(x, 0), box, ind, imshape)[0]
 
 
 def _random_mask(x, prob=0.25,  **kwargs):
