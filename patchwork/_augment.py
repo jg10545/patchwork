@@ -47,6 +47,7 @@ FALCON_CHO_PARAMS = {"gaussian_blur": 0.5,
               "drop_color":0.2,
               "flip_left_right":True}
 
+
 def _jitter(x, strength=1., **kwargs):
     """
     Color jitter more closely patterned after the SimCLR paper
@@ -155,6 +156,13 @@ def _random_zoom(x, scale=0.1, imshape=(256,256), **kwargs):
     x = tf.image.resize([cropped_image], imshape, method="bicubic")[0]
     return x
 
+def _center_crop(x, scale=0.1, imshape=(256,256), **kwargs):
+    z = tf.random.uniform(np.array([1]), scale, 1)
+    box = (1-z)*tf.random.uniform(np.array([1,4]), 0, 0.5) * np.array([[1,1,-1,-1]], dtype=np.float32) 
+    box += np.array([0,0,1,1], dtype=np.float32)
+    ind = np.array([0], dtype=np.int32)
+    return tf.image.crop_and_resize(np.expand_dims(x, 0), box, ind, imshape)[0]
+
 
 def _random_mask(x, prob=0.25,  **kwargs):
     """
@@ -248,13 +256,14 @@ SINGLE_AUG_FUNC = {
     "flip_up_down":_random_up_down_flip,
     "rot90":_random_rotate,
     "zoom_scale":_random_zoom,
+    "center_zoom_scale":_center_crop,
     "mask":_random_mask,
     "jitter":_jitter
 }
 
 
 AUGMENT_ORDERING = ["flip_left_right", "flip_up_down", "rot90", 
-                    "zoom_scale", "jitter", "brightness_delta",
+                    "zoom_scale", "center_zoom_scale", "jitter", "brightness_delta",
                     "contrast_delta", "saturation_delta", "hue_delta",
                     "gaussian_blur", "gaussian_noise", 
                     "drop_color", "sobel_prob",  "mask"]
