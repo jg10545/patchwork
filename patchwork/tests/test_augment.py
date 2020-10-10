@@ -3,7 +3,7 @@ import numpy as np
 import tensorflow as tf
 
 from patchwork._augment import augment_function, _poisson, _random_zoom, _choose
-from patchwork._augment import _center_crop, _jitter
+from patchwork._augment import _center_crop, _jitter, _random_jpeg_degrade
 from patchwork._augment import SINGLE_AUG_FUNC
 
 
@@ -52,3 +52,11 @@ def test_jitter():
     jittered = _jitter(img, 1.)
     assert img.shape == jittered.shape
     assert (jittered.numpy() == img).all() == False
+    
+
+def test_random_jpeg_degrade():
+    img = np.random.uniform(0,1, (32,32,3)).astype(np.float32)
+    
+    degraded = _random_jpeg_degrade(img, 1.)
+    assert img.shape == degraded.shape
+    assert (degraded.numpy() == img).all() == False

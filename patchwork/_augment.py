@@ -243,6 +243,16 @@ def _random_rotate(x, foo=False, **kwargs):
     theta = tf.random.uniform(shape=[], minval=0, maxval=4, dtype=tf.int32)
     return tf.image.rot90(x, theta)
 
+
+def _random_jpeg_degrade(x, prob=0.25, **kwargs):
+    # do two coin flips- if you pass both degrade it more
+    if _choose(prob):
+        if _choose(prob):
+            x = tf.image.adjust_jpeg_quality(x, 3)
+        else:
+            x = tf.image.adjust_jpeg_quality(img, 5)
+    return x
+
 SINGLE_AUG_FUNC = {
     "gaussian_blur":_gaussian_blur,
     "drop_color":_drop_color,
@@ -258,7 +268,8 @@ SINGLE_AUG_FUNC = {
     "zoom_scale":_random_zoom,
     "center_zoom_scale":_center_crop,
     "mask":_random_mask,
-    "jitter":_jitter
+    "jitter":_jitter,
+    "jpeg_degrade":_random_jpeg_degrade
 }
 
 
@@ -266,7 +277,7 @@ AUGMENT_ORDERING = ["flip_left_right", "flip_up_down", "rot90",
                     "zoom_scale", "center_zoom_scale", "jitter", "brightness_delta",
                     "contrast_delta", "saturation_delta", "hue_delta",
                     "gaussian_blur", "gaussian_noise", 
-                    "drop_color", "sobel_prob",  "mask"]
+                    "drop_color", "sobel_prob", "jpeg_degrade", "mask"]
 
 def _augment(im, aug_dict, imshape=None):
     """
