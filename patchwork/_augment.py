@@ -47,6 +47,7 @@ FALCON_CHO_PARAMS = {"gaussian_blur": 0.5,
               "drop_color":0.2,
               "flip_left_right":True}
 
+
 def _jitter(x, strength=1., **kwargs):
     """
     Color jitter more closely patterned after the SimCLR paper
@@ -155,6 +156,13 @@ def _random_zoom(x, scale=0.1, imshape=(256,256), **kwargs):
     x = tf.image.resize([cropped_image], imshape, method="bicubic")[0]
     return x
 
+def _center_crop(x, scale=0.1, imshape=(256,256), **kwargs):
+    z = tf.random.uniform(np.array([1]), scale, 1)
+    box = (1-z)*tf.random.uniform(np.array([1,4]), 0, 0.5) * np.array([[1,1,-1,-1]], dtype=np.float32) 
+    box += np.array([0,0,1,1], dtype=np.float32)
+    ind = np.array([0], dtype=np.int32)
+    return tf.image.crop_and_resize(tf.expand_dims(x, 0), box, ind, imshape)[0]
+
 
 def _random_mask(x, prob=0.25,  **kwargs):
     """
@@ -235,6 +243,16 @@ def _random_rotate(x, foo=False, **kwargs):
     theta = tf.random.uniform(shape=[], minval=0, maxval=4, dtype=tf.int32)
     return tf.image.rot90(x, theta)
 
+
+def _random_jpeg_degrade(x, prob=0.25, **kwargs):
+    # do two coin flips- if you pass both degrade it more
+    if _choose(prob):
+        if _choose(prob):
+            x = tf.image.adjust_jpeg_quality(x, 3)
+        else:
+            x = tf.image.adjust_jpeg_quality(img, 5)
+    return x
+
 SINGLE_AUG_FUNC = {
     "gaussian_blur":_gaussian_blur,
     "drop_color":_drop_color,
@@ -248,16 +266,18 @@ SINGLE_AUG_FUNC = {
     "flip_up_down":_random_up_down_flip,
     "rot90":_random_rotate,
     "zoom_scale":_random_zoom,
+    "center_zoom_scale":_center_crop,
     "mask":_random_mask,
-    "jitter":_jitter
+    "jitter":_jitter,
+    "jpeg_degrade":_random_jpeg_degrade
 }
 
 
 AUGMENT_ORDERING = ["flip_left_right", "flip_up_down", "rot90", 
-                    "zoom_scale", "jitter", "brightness_delta",
+                    "zoom_scale", "center_zoom_scale", "jitter", "brightness_delta",
                     "contrast_delta", "saturation_delta", "hue_delta",
                     "gaussian_blur", "gaussian_noise", 
-                    "drop_color", "sobel_prob",  "mask"]
+                    "drop_color", "sobel_prob", "jpeg_degrade", "mask"]
 
 def _augment(im, aug_dict, imshape=None):
     """
