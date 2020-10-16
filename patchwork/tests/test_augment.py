@@ -3,7 +3,7 @@ import numpy as np
 import tensorflow as tf
 
 from patchwork._augment import augment_function, _poisson, _random_zoom, _choose
-from patchwork._augment import _center_crop, _jitter, _random_jpeg_degrade
+from patchwork._augment import _center_crop, _jitter, _random_jpeg_degrade, _gaussian_blur
 from patchwork._augment import SINGLE_AUG_FUNC
 
 
@@ -33,6 +33,15 @@ def test_random_zoom():
     zoomed = _random_zoom(img, 0.1, (32,32))
     assert img.shape == zoomed.shape
     assert (zoomed.numpy() == img).all() == False
+    
+    
+def test_gaussian_blur():
+    img = np.random.uniform(0,1, (32,32,3)).astype(np.float32)
+    
+    blurred = _gaussian_blur(img, 1., (32,32))
+    assert img.shape == blurred.shape
+    assert (blurred.numpy() == img).all() == False
+    
     
 def test_center_crop():
     img = np.random.uniform(0,1, (32,32,3)).astype(np.float32)
