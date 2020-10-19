@@ -19,6 +19,7 @@ from tensorboard.plugins.hparams import api as hp
 
 from patchwork.loaders import _get_features, _get_rotation_features
 from patchwork.viz._projector import save_embeddings
+from patchwork.viz._kernel import _make_kernel_sprites
 
 
 INPUT_PARAMS = ["imshape", "num_channels", "norm", "batch_size",
@@ -26,6 +27,14 @@ INPUT_PARAMS = ["imshape", "num_channels", "norm", "batch_size",
                 "global_batch_size"]
 
 
+def _run_this_epoch(flag, e): 
+    if isinstance(flag, bool):
+        return flag
+    else:
+        if e > 0:
+            return flag%e ==0 
+        else:
+            return False
 
 
 def linear_classification_test(fcn, downstream_labels, avpool=False, rotation_task=False,
@@ -197,21 +206,31 @@ class GenericExtractor(object):
         # REPLACE THIS WHEN SUBCLASSING
         return True
     
-    def fit(self, epochs=1, save=True, evaluate=True):
+    def fit(self, epochs=1, save=True, evaluate=True, save_projections=False,
+            visualize_kernels=False):
         """
-        Train the feature extractor
+        Train the feature extractor. All kwargs after "epochs" can either be
+        Boolean (whether to run after every epoch) or an integer (run after
+        every N epochs)
         
         :epochs: number of epochs to train for
-        :save: if True, save after each epoch
-        :evaluate: if True, run eval metrics after each epoch
+        :save: save every model in the trainer
+        :evaluate: run eval metrics
+        :save_projections: record projections from labeldict
+        :visualize_kernels: record a visualization of the first convolutional
+            layer's kernels
         """
         for e in tqdm(range(epochs)):
             self._run_training_epoch()
             
-            if save:
+            if _run_this_epoch(save, e):
                 self.save()
-            if evaluate:
+            if _run_this_epoch(evaluate, e):
                 self.evaluate()
+            if _run_this_epoch(save_projections, e):
+                self.save_projections()
+            if _run_this_epoch(visualize_kernels,e):
+                self.visualize_kernels()
     
     def save(self):
         """
@@ -408,3 +427,11 @@ class GenericExtractor(object):
             savedloc = os.path.join(logdir, k+".h5")
             self._models[k].load_weights(savedloc)
 
+    def visualize_kernels(self):
+        """
+        Save a visualization to TensorBoard of all the kernels in the first
+        convolutional layer
+        """
+        kernels = np.expand_dims(_make_kernel_sprites(self._models["fcn"]),0)
+        self._record_images(first_convolution_filters=kernels)
+        
