@@ -92,7 +92,7 @@ def compute_l2_loss(*models):
     loss = 0
     for m in models:
         for v in m.trainable_variables:
-            if "batch_normalization" not in v.name:
+            if "kernel" in v.name:
                 loss += tf.nn.l2_loss(v)
                 
     return loss
