@@ -66,7 +66,65 @@ def _build_augment_pair_dataset(imfiles, imshape=(256,256), batch_size=256,
     return ds
 
 
-def _build_momentum_contrast_training_step(model, mo_model, optimizer, buffer, batches_in_buffer, alpha=0.999, tau=0.07, weight_decay=0):
+def _build_logits(q, k, buffer, tape, N=0, s=0, s_prime=0, margin=0):
+    """
+    Compute logits for momentum contrast, optionally including MoCHi
+    hard negatives
+    """
+    # compute positive logits- (batch_size,1)
+    positive_logits = tf.squeeze(
+                tf.matmul(tf.expand_dims(q,1), 
+                      tf.expand_dims(k,1), transpose_b=True),
+                axis=-1) - margin
+    # and negative logits- (batch_size, buffer_size)
+    negative_logits = tf.matmul(q, buffer, transpose_b=True)
+    # assemble positive and negative- (batch_size, buffer_size+1)
+    all_logits = tf.concat([positive_logits, negative_logits], axis=1)
+    # from MoChi paper
+    if (N > 0)&(s > 0):
+        # i'm pretty sure we don't want to compute gradients through
+        # any of the synthetic embedding creation
+        with tape.stop_recording():
+            # find the top-N negative logits- the N hardest "naturally 
+            # occurring" negatives. inds is (batch_size, N)
+            vals, inds = tf.math.top_k(negative_logits, k=N)
+            # sample twice from the list of hard negative indices. each is (batch_size,s)
+            inds1 = tf.transpose(tf.random.shuffle(tf.transpose(inds)))[:,:s]
+            inds2 = tf.transpose(tf.random.shuffle(tf.transpose(inds)))[:,:s]
+            # gather the actual embeddings corresponding to the sampled indices.
+            # each is (batch_size, s, embed_dim)
+            gathered1 = tf.gather(buffer, inds1, axis=0)
+            gathered2 = tf.gather(buffer, inds2, axis=0)
+            # and a mixing coefficient for each s
+            alpha = tf.random.uniform((1,s,1), minval=1, maxval=1)
+            # combine the sampled embeddings using the mixing coefficients, and normalize.
+            # will still be (batch_size, s, embed_dim)
+            mixed_negatives = tf.nn.l2_normalize(alpha*gathered1+(1-alpha)*gathered2, 2)
+            # hard negatives by mixing query vectors
+            if s_prime > 0:
+                # sample from list of hard negative indices- (batch_size, s_prime)
+                inds3 = tf.transpose(tf.random.shuffle(tf.transpose(inds)))[:,:s_prime]
+                # gather the actual embeddings- (batch_size, s_prime, embed_dim)
+                gathered3 = tf.gather(buffer, inds3, axis=0)
+                # and a mixing coefficient for each one
+                beta = tf.random.uniform((1,s_prime,1), minval=0, maxval=0.5)
+                # and tile query vectors to combine with negatives
+                q_tiled = tf.tile(tf.expand_dims(q,1), tf.constant([1,s_prime,1]))
+                hardest_negatives = tf.nn.l2_normalize(beta*q_tiled + (1-beta)*gathered3, 2)
+                
+        # now, with gradients, compute the logits between query embeddings and our
+        # synthetic negatives- shape (batch_size, s)
+        hnm_logits = tf.squeeze(tf.matmul(mixed_negatives, tf.expand_dims(q, -1)), -1)
+        # and concatenate on the end of our block'o'logits: (batch_size, buffer_size+s+s_prime+1)
+        if s_prime > 0:
+            hardest_logits = tf.squeeze(tf.matmul(hardest_negatives, tf.expand_dims(q, -1)), -1)
+            all_logits = tf.concat([all_logits, hnm_logits, hardest_logits], axis=1)
+        else:
+            all_logits = tf.concat([all_logits, hnm_logits], axis=1)
+    return all_logits
+
+
+def _build_momentum_contrast_training_step(model, mo_model, optimizer, buffer, batches_in_buffer, alpha=0.999, tau=0.07, weight_decay=0, N=0, s=0, s_prime=0, margin=0):
     """
     Function to build tf.function for a MoCo training step. Basically just follow
     Algorithm 1 in He et al's paper.
@@ -94,15 +152,8 @@ def _build_momentum_contrast_training_step(model, mo_model, optimizer, buffer, b
             q1 = model(img1[:b,:,:,:], training=True)
             q2 = model(img1[b:,:,:,:], training=True)
             q = tf.nn.l2_normalize(tf.concat([q1,q2], 0), axis=1)
-            # compute positive logits- (N,1)
-            positive_logits = tf.squeeze(
-                tf.matmul(tf.expand_dims(q,1), 
-                      tf.expand_dims(k,1), transpose_b=True),
-                axis=-1)
-            # and negative logits- (N, buffer_size)
-            negative_logits = tf.matmul(q, buffer, transpose_b=True)
-            # assemble positive and negative- (N, buffer_size+1)
-            all_logits = tf.concat([positive_logits, negative_logits], axis=1)
+            # compute MoCo and/or MoCHi logits
+            all_logits = _build_logits(q, k, buffer, tape, N, s, s_prime, margin)
             # create labels (correct class is 0)- (N,)
             labels = tf.zeros((batch_size,), dtype=tf.int32)
             # compute crossentropy loss
@@ -123,7 +174,13 @@ def _build_momentum_contrast_training_step(model, mo_model, optimizer, buffer, b
         i = step % batches_in_buffer
         _ = buffer[batch_size*i:batch_size*(i+1),:].assign(k)
         
-        return {"loss":loss, "weight_diff":weight_diff}
+        # also compute the "accuracy"; what fraction of the batch has
+        # the key as the largest logit. from figure 2b of the MoCHi paper
+        nce_batch_accuracy = tf.reduce_mean(tf.cast(tf.argmax(all_logits, 
+                                                              axis=1)==0, tf.float32))
+        
+        return {"loss":loss, "weight_diff":weight_diff,
+                "nce_batch_accuracy":nce_batch_accuracy}
     return training_step
 
 
@@ -142,6 +199,7 @@ class MomentumContrastTrainer(GenericExtractor):
                  augment=True, batches_in_buffer=10, alpha=0.999, 
                  tau=0.07, output_dim=128, num_hidden=2048, 
                  copy_weights=False, weight_decay=0,
+                 N=0, s=0, s_prime=0, margin=0,
                  lr=0.01, lr_decay=100000, decay_type="exponential",
                  opt_type="momentum",
                  imshape=(256,256), num_channels=3,
@@ -162,6 +220,10 @@ class MomentumContrastTrainer(GenericExtractor):
         :copy_weights: if True, copy the query model weights at the beginning as well 
             as the structure.
         :weight_decay: L2 loss weight; 0 to disable
+        :N: MoCHi N parameter; sample from top-N logits. 0 to disable.
+        :s: MoCHi s parameter; create this many synthetic hard negatives
+        :s_prime: MoCHi s_prime parameter; this many query-mixed hard negatives
+        :margin: EqCo margin parameter; shift positive logits by this amount (0 to disable)
         :lr: (float) initial learning rate
         :lr_decay: (int) number of steps for one decay period (0 to disable)
         :decay_type: (string) how to decay the learning rate- "exponential" (smooth exponential decay), "staircase" (non-smooth exponential decay), or "cosine"
@@ -231,7 +293,8 @@ class MomentumContrastTrainer(GenericExtractor):
                 momentum_encoder, 
                 self._optimizer, 
                 self._buffer, 
-                batches_in_buffer, alpha, tau, weight_decay)
+                batches_in_buffer, alpha, tau, weight_decay,
+                N, s, s_prime, margin)
         # build evaluation dataset
         #if testdata is not None:
         #    self._test_ds, self._test_steps = dataset(testdata,
@@ -256,6 +319,7 @@ class MomentumContrastTrainer(GenericExtractor):
                             batches_in_buffer=batches_in_buffer, 
                             alpha=alpha, tau=tau, output_dim=output_dim,
                             num_hidden=num_hidden, weight_decay=weight_decay,
+                            N=N, s=s, s_prime=s_prime, margin=margin,
                             lr=lr, lr_decay=lr_decay, opt_type=opt_type,
                             imshape=imshape, num_channels=num_channels,
                             norm=norm, batch_size=batch_size,
@@ -307,7 +371,10 @@ class MomentumContrastTrainer(GenericExtractor):
                     hp.HParam("batches_in_buffer", hp.IntInterval(1, 1000000)):self.config["batches_in_buffer"],
                     hp.HParam("output_dim", hp.IntInterval(1, 1000000)):self.config["output_dim"],
                     hp.HParam("num_hidden", hp.IntInterval(1, 1000000)):self.config["num_hidden"],
-                    hp.HParam("weight_decay", hp.RealInterval(0., 10000.)):self.config["weight_decay"]
+                    hp.HParam("weight_decay", hp.RealInterval(0., 10000.)):self.config["weight_decay"],
+                    hp.HParam("N", hp.IntInterval(0, 1000000)):self.config["N"],
+                    hp.HParam("s", hp.IntInterval(0, 1000000)):self.config["s"],
+                    hp.HParam("margin", hp.RealInterval(0., 10000.)):self.config["margin"]
                     }
                 for k in self.augment_config:
                     if isinstance(self.augment_config[k], float):

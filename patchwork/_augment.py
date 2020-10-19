@@ -193,7 +193,7 @@ def _random_mask(x, prob=0.25,  **kwargs):
         x =  x*(1-mask) + 0.5*mask
     return x
 
-def _gaussian_blur(x, prob=0.25, **kwargs):
+def _gaussian_blur_DEPRECATED(x, prob=0.25, **kwargs):
     if _choose(prob):
         kernel = np.array([[0.00000067, 0.00002292, 0.00019117, 0.00038771, 0.00019117, 0.00002292, 0.00000067],
                        [0.00002292, 0.00078633, 0.00655965, 0.01330373, 0.00655965, 0.00078633, 0.00002292],
@@ -216,6 +216,36 @@ def _gaussian_blur(x, prob=0.25, **kwargs):
             conv = tf.nn.conv2d(conv, kernel, strides=[1, 1, 1, 1], padding="SAME")
         x = tf.squeeze(conv, 0)
     return x
+
+def _gaussian_blur(x, prob=0.25, imshape=(256,256), **kwargs):
+    """
+    based on SimCLR implementation https://github.com/google-research/simclr/blob/3fb622131d1b6dee76d0d5f6aac67db84dab3800/data_util.py#L397
+    """
+    if _choose(prob):
+        sigma = tf.random.uniform([], 0.1, 2.0, dtype=tf.float32)
+        radius = tf.cast(imshape[0]//20, tf.int32)
+        kernel_size = radius*2 + 1
+        grid = tf.cast(tf.range(-radius, radius + 1), tf.float32)
+        blur_filter = tf.exp(
+            -tf.pow(grid, 2.0) / (2.0 * tf.pow(tf.cast(sigma, tf.float32), 2.0)))
+        blur_filter /= tf.reduce_sum(blur_filter)
+        # One vertical and one horizontal filter.
+        blur_v = tf.reshape(blur_filter, [kernel_size, 1, 1, 1])
+        blur_h = tf.reshape(blur_filter, [1, kernel_size, 1, 1])
+        num_channels = tf.shape(x)[-1]
+        blur_h = tf.tile(blur_h, [1, 1, num_channels, 1])
+        blur_v = tf.tile(blur_v, [1, 1, num_channels, 1])
+        # batched input for convolutions
+        x = tf.expand_dims(x, axis=0)
+        blurred = tf.nn.depthwise_conv2d(
+            x, blur_h, strides=[1, 1, 1, 1], padding="SAME")
+        blurred = tf.nn.depthwise_conv2d(
+            blurred, blur_v, strides=[1, 1, 1, 1], padding="SAME")
+        # knock back down to 3 dimensions
+        x = tf.squeeze(blurred, axis=0)
+    return x
+        
+        
 
 def _random_brightness(x, brightness_delta=0.2, **kwargs):
     #return tf.image.random_brightness(x, brightness_delta)
@@ -250,7 +280,7 @@ def _random_jpeg_degrade(x, prob=0.25, **kwargs):
         if _choose(prob):
             x = tf.image.adjust_jpeg_quality(x, 3)
         else:
-            x = tf.image.adjust_jpeg_quality(img, 5)
+            x = tf.image.adjust_jpeg_quality(x, 5)
     return x
 
 SINGLE_AUG_FUNC = {
