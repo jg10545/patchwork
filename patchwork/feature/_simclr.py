@@ -6,7 +6,9 @@ from tqdm import tqdm
 from patchwork.feature._generic import GenericExtractor
 from patchwork._augment import augment_function
 from patchwork.loaders import _image_file_dataset
-from patchwork._util import compute_l2_loss
+from patchwork._util import compute_l2_loss, _compute_alignment_and_uniformity
+
+from patchwork.feature._moco import _build_augment_pair_dataset
 
 BIG_NUMBER = 1000.
 
@@ -317,13 +319,13 @@ class SimCLRTrainer(GenericExtractor):
         self._training_step = self._distribute_training_function(step_fn)
         
         if testdata is not None:
-            self._test_ds = _build_simclr_dataset(testdata, 
+            self._test_ds =  _build_augment_pair_dataset(testdata, 
                                         imshape=imshape, batch_size=batch_size,
                                         num_parallel_calls=num_parallel_calls, 
                                         norm=norm, num_channels=num_channels, 
                                         augment=augment,
                                         single_channel=single_channel)
-            
+            """
             @tf.function
             def test_loss(x,y):
                 eye = tf.linalg.eye(y.shape[0])
@@ -338,7 +340,7 @@ class SimCLRTrainer(GenericExtractor):
                 loss = tf.reduce_mean(
                     tf.nn.sparse_softmax_cross_entropy_with_logits(labels, logits))
                 return loss, sim
-            self._test_loss = test_loss
+            self._test_loss = test_loss"""
             self._test = True
         else:
             self._test = False
@@ -368,16 +370,21 @@ class SimCLRTrainer(GenericExtractor):
             self.step += 1
              
     def evaluate(self):
+        
         if self._test:
-            test_loss = 0
-            for x,y in self._test_ds:
-                loss, sim = self._test_loss(x,y)
-                test_loss += loss.numpy()
-                
-            self._record_scalars(test_loss=test_loss)
-            # I'm commenting out this tensorboard image- takes up a lot of
-            # space but doesn't seem to add much
-            #self._record_images(scalar_products=tf.expand_dims(tf.expand_dims(sim,-1), 0))
+            # if the user passed out-of-sample data to test- compute
+            # alignment and uniformity measures
+            alignment, uniformity = _compute_alignment_and_uniformity(
+                                            self._test_ds, self._models["full"])
+            
+            self._record_scalars(alignment=alignment,
+                             uniformity=uniformity)
+            metrics=["linear_classification_accuracy",
+                                 "alignment",
+                                 "uniformity"]
+        else:
+            metrics=["linear_classification_accuracy"]
+        
         if self._downstream_labels is not None:
             # choose the hyperparameters to record
             if not hasattr(self, "_hparams_config"):
@@ -396,5 +403,7 @@ class SimCLRTrainer(GenericExtractor):
                         hparams[hp.HParam(k, hp.RealInterval(0., 10000.))] = self.augment_config[k]
             else:
                 hparams=None
-            self._linear_classification_test(hparams)
+
+            self._linear_classification_test(hparams,
+                        metrics=metrics)
         

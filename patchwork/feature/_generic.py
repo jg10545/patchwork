@@ -261,7 +261,8 @@ class GenericExtractor(object):
         for h in hists:
             tf.summary.histogram(h, hists[h], step=self.step)
             
-    def _linear_classification_test(self, params=None):
+    def _linear_classification_test(self, params=None, 
+                                    metrics=["linear_classification_accuracy"]):
          acc, conf_mat = linear_classification_test(self.fcn, 
                                     self._downstream_labels, 
                                     **self.input_config)
@@ -274,9 +275,10 @@ class GenericExtractor(object):
          if params is not None:
              # first time- set up hparam config
              if not hasattr(self, "_hparams_config"):
+                metrics = [hp.Metric(m) for m in metrics]
                 self._hparams_config = hp.hparams_config(
                         hparams=list(params.keys()), 
-                        metrics=[hp.Metric("linear_classification_accuracy")])
+                        metrics=metrics)
                 
                 # record hyperparamters
                 base_dir, run_name = os.path.split(self.logdir)
