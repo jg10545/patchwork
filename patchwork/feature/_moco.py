@@ -5,7 +5,7 @@ import tensorflow as tf
 from patchwork.feature._generic import GenericExtractor
 from patchwork._augment import augment_function
 from patchwork.loaders import _image_file_dataset
-from patchwork._util import compute_l2_loss
+from patchwork._util import compute_l2_loss, _compute_alignment_and_uniformity
 
 
 
@@ -61,7 +61,7 @@ def _build_augment_pair_dataset(imfiles, imshape=(256,256), batch_size=256,
         return _aug(x), _aug(x)
 
     ds = ds.map(_augment_pair, num_parallel_calls=num_parallel_calls)
-    ds = ds.batch(batch_size)
+    ds = ds.batch(batch_size, drop_remainder=True)
     ds = ds.prefetch(1)
     return ds
 
@@ -296,15 +296,15 @@ class MomentumContrastTrainer(GenericExtractor):
                 batches_in_buffer, alpha, tau, weight_decay,
                 N, s, s_prime, margin)
         # build evaluation dataset
-        #if testdata is not None:
-        #    self._test_ds, self._test_steps = dataset(testdata,
-        #                             imshape=imshape,norm=norm,
-        #                             sobel=sobel, num_channels=num_channels,
-        #                             single_channel=single_channel)
-        #    self._test = True
-        #else:
-        #    self._test = False
-        self._test = False
+        if testdata is not None:
+            self._test_ds = _build_augment_pair_dataset(testdata, 
+                            imshape=imshape, batch_size=batch_size,
+                            num_parallel_calls=num_parallel_calls, 
+                            norm=norm, num_channels=num_channels, 
+                            augment=augment, single_channel=single_channel)
+            self._test = True
+        else:
+            self._test = False
         self._test_labels = None
         self._old_test_labels = None
         
@@ -356,10 +356,19 @@ class MomentumContrastTrainer(GenericExtractor):
             
  
     def evaluate(self):
-        # image visualization for the buffer- can probably
-        # drop this if we're confident it's working
-        #b = tf.expand_dims(tf.expand_dims(self._buffer,0),-1)
-        #self._record_images(buffer=b)
+        if self._test:
+            # if the user passed out-of-sample data to test- compute
+            # alignment and uniformity measures
+            alignment, uniformity = _compute_alignment_and_uniformity(
+                                            self._test_ds, self._models["full"])
+            
+            self._record_scalars(alignment=alignment,
+                             uniformity=uniformity)
+            metrics=["linear_classification_accuracy",
+                                 "alignment",
+                                 "uniformity"]
+        else:
+            metrics=["linear_classification_accuracy"]
             
         if self._downstream_labels is not None:
             # choose the hyperparameters to record
@@ -381,7 +390,7 @@ class MomentumContrastTrainer(GenericExtractor):
                         hparams[hp.HParam(k, hp.RealInterval(0., 10000.))] = self.augment_config[k]
             else:
                 hparams=None
-            self._linear_classification_test(hparams)
+            self._linear_classification_test(hparams, metrics=metrics)
         
         
     def load_weights(self, logdir):
