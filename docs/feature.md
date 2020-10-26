@@ -32,9 +32,9 @@ The module has a class to manage the training of each model. You can initialize 
 
 * All hyperparameters are automatically logged to the [TensorBoard HPARAMS](https://www.tensorflow.org/tensorboard/hyperparameter_tuning_with_hparams) interface, so you can visualize how they correlate with the downstream task accuracy, rotation task accuracy, alignment, or uniformity.
 * The `trainer.save_projections()` method will record embeddings, as well as image sprites and metadata for the [TensorBoard projector](https://www.tensorflow.org/tensorboard/tensorboard_projector_plugin). I've sometimes found this to be a helpful diagnostic tool when I'm *really* stuck.
-* The `trainer.visualize_kernels()` method will record to TensorBoard an image of the kernels from the first convolutional layer in your network.
+* The `trainer.visualize_kernels()` method will record to TensorBoard an image of the kernels from the first convolutional layer in your network. If those kernels don't include a few that look like generic edge detectors, something has probably gone horribly wrong (e.g. you're learning a shortcut somewhere). Example of a bad case below.
 
-![](hparams.png){:width="400px"}
+![](hparams.png)
 ![](projector.png)
 ![](first_convolution_filters.png)
 
