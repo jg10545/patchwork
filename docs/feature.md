@@ -14,7 +14,7 @@ The module has a class to manage the training of each model. You can initialize 
 
 ### Building
 
-* Each feature extractor training class shares common [input pipeline and augmentation parameters](input_aug.md). A copy of your parameters is saved in a YAML file in the log directory for reproducibility.
+* Each feature extractor training class shares common [input pipeline and augmentation parameters](input_aug.md).
 * Choose between `adam` and `momentum` optimizers, with no learning rate decay, or `exponential` (smooth exponential decay), `staircase` (LR cut in half every `lr_decay` steps), or `cosine` decay.
 * Call `trainer.load_weights()` to import weights of all the training components from a previous run
 
@@ -30,18 +30,18 @@ The module has a class to manage the training of each model. You can initialize 
   
 ### Interpreting
 
-* All hyperparameters are automatically logged to the TensorBoard HPARAMS interface, so you can visualize how they correlate with the downstream task accuracy, rotation task accuracy, alignment, or uniformity.
-* The `trainer.save_projections()` method will record embeddings, as well as image sprites and metadata for the TensorBoard projector. I've sometimes found this to be a helpful diagnostic tool when I'm *really* stuck.
+* All hyperparameters are automatically logged to the [TensorBoard HPARAMS](https://www.tensorflow.org/tensorboard/hyperparameter_tuning_with_hparams) interface, so you can visualize how they correlate with the downstream task accuracy, rotation task accuracy, alignment, or uniformity.
+* The `trainer.save_projections()` method will record embeddings, as well as image sprites and metadata for the [TensorBoard projector](https://www.tensorflow.org/tensorboard/tensorboard_projector_plugin). I've sometimes found this to be a helpful diagnostic tool when I'm *really* stuck.
 * The `trainer.visualize_kernels()` method will record to TensorBoard an image of the kernels from the first convolutional layer in your network.
 
-![](hparams.png)
+![](hparams.png){:width="400px"}
 ![](projector.png)
 ![](first_convolution_filters.png)
 
 ### Documenting
 
 * All hyperparameters are automatically recorded to a YAML file in the log directory
-* Call `trainer.track_with_mlflow()` before you begin training, to use the MLflow tracking API to log parameters and metrics.
+* Call `trainer.track_with_mlflow()` before you begin training, to use the [MLflow tracking API](https://mlflow.org/docs/latest/tracking.html) to log parameters and metrics.
 * Pass a string containing any contextual information about the experiment to the `notes` kwarg; it will be added to the YAML file (and recorded for MLflow)
   
 ![](mlflow_tracking.png)
