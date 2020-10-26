@@ -320,7 +320,7 @@ class GenericExtractor(object):
                                     testdata, avpool=avpool,
                                     rotation_task=True,
                                     **self.input_config)
-        self._record_scalars(rotation_classification_accuracy=acc)
+        self._record_scalars(rotation_classification_accuracy=acc, metric=True)
                 
     def _build_optimizer(self, lr, lr_decay=0, opt_type="adam", decay_type="exponential"):
         # macro for creating the Keras optimizer
