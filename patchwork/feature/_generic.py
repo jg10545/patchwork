@@ -20,6 +20,7 @@ from tensorboard.plugins.hparams import api as hp
 from patchwork.loaders import _get_features, _get_rotation_features
 from patchwork.viz._projector import save_embeddings
 from patchwork.viz._kernel import _make_kernel_sprites
+from patchwork._mlflow import _set_up_mlflow_tracking
 
 
 INPUT_PARAMS = ["imshape", "num_channels", "norm", "batch_size",
@@ -192,6 +193,11 @@ class GenericExtractor(object):
             else:
                 self.config[k] = kwargs[k]
                 
+        if "notes" in kwargs:
+            self._notes = kwargs["notes"]
+        else:
+            self._notes = None
+                
         config_path = os.path.join(self.logdir, "config.yml")
         config_dict = {"model":self.config, "input":self.input_config, 
                        "augment":self.augment_config}
@@ -249,9 +255,15 @@ class GenericExtractor(object):
         # REPLACE THIS WHEN SUBCLASSING
         return True
             
-    def _record_scalars(self, **scalars):
+    def _record_scalars(self, metric=False, **scalars):
         for s in scalars:
             tf.summary.scalar(s, scalars[s], step=self.step)
+            
+            if metric:
+                if hasattr(self, "_mlflow"):
+                    client = self._mlflow["client"]
+                    run_id = self._mlflow["run_id"]
+                    client.log_metric(run_id, s, scalars[s], step=self.step)
             
     def _record_images(self, **images):
         for i in images:
@@ -268,7 +280,7 @@ class GenericExtractor(object):
                                     **self.input_config)
          
          conf_mat = np.expand_dims(np.expand_dims(conf_mat, 0), -1)/conf_mat.max()
-         self._record_scalars(linear_classification_accuracy=acc)
+         self._record_scalars(linear_classification_accuracy=acc, metric=True)
          self._record_images(linear_classification_confusion_matrix=conf_mat)
          # if the model passed hyperparameters to record for the
          # tensorboard hparams interface:
@@ -436,4 +448,22 @@ class GenericExtractor(object):
         """
         kernels = np.expand_dims(_make_kernel_sprites(self._models["fcn"]),0)
         self._record_images(first_convolution_filters=kernels)
+        
+    def track_with_mlflow(self, tracking_uri, experiment_name, run_name):
+        """
+        Connect to an MLflow server to log parameters and metrics
+        
+        :tracking_uri: string; Address of local or remote tracking server.
+        :experiment_name: string; name of experiment to log to. if experiment 
+                doesn't exist, creates one with this name
+        :run_name: string; name of run to log to. if run doesn't exist, 
+            one will be created
+        """
+        param_dicts = {"model":self.config, "input":self.input_config}
+        if self.augment_config is not False:
+            param_dicts["augment"] = self.augment_config
+        
+        self._mlflow = _set_up_mlflow_tracking(tracking_uri, 
+                                experiment_name, run_name, 
+                                notes=self._notes, param_dicts=param_dicts)
         

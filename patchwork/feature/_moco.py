@@ -363,7 +363,7 @@ class MomentumContrastTrainer(GenericExtractor):
                                             self._test_ds, self._models["full"])
             
             self._record_scalars(alignment=alignment,
-                             uniformity=uniformity)
+                             uniformity=uniformity, metric=True)
             metrics=["linear_classification_accuracy",
                                  "alignment",
                                  "uniformity"]
