@@ -5,25 +5,52 @@ The `patchwork.feature` module has several models implemented for unsupervised o
 * [Context Encoders](https://arxiv.org/abs/1604.07379)
 * [DeepCluster](https://arxiv.org/abs/1807.05520)
 * [SimCLR](https://arxiv.org/abs/2002.05709) (along with multi-GPU version)
-* [MoCo](https://arxiv.org/abs/1911.05722)
+* [MoCo](https://arxiv.org/abs/1911.05722), including several variants:
+  * nonlinear projection head from [MocoV2](https://arxiv.org/abs/2003.04297)
+  * option to modify noise-contrastive loss function using margin term from [EqCo](https://arxiv.org/abs/2010.01929)
+  * option to generate synthetic hard examples on-the-fly using [MoCHi](https://arxiv.org/abs/2010.01028)
 
 The module has a class to manage the training of each model. You can initialize the trainer with a fully-convolutional `keras` model for it to train (otherwise it will use a default model). The trainers are meant to be as similar as possible, to make it easy to throw different self-supervision approches at your problem and see how they compare. Here's what they have in common:
 
-* Each feature extractor training class shares common [input pipeline and augmentation parameters](input_aug.md). A copy of your parameters is saved in a YAML file in the log directory for reproducibility.
+### Building
+
+* Each feature extractor training class shares common [input pipeline and augmentation parameters](input_aug.md).
 * Choose between `adam` and `momentum` optimizers, with no learning rate decay, or `exponential` (smooth exponential decay), `staircase` (LR cut in half every `lr_decay` steps), or `cosine` decay.
 * Call `trainer.load_weights()` to import weights of all the training components from a previous run
-* Input a list of paths to test files to compute out-of-sample metrics and visualizations for TensorBoard (particularly useful for context encoders)
+
+### Benchmarking
+
+* Input a list of paths to test files to compute out-of-sample metrics and visualizations for TensorBoard
+  * For context encoders, this can help you tell when you're just memorizing your dataset
+  * For contrastive learning methods, [alignment and uniformity](https://arxiv.org/abs/2005.10242) measures are computed automatically
 * If you have a small number of labels for a downstream task, the trainer will automate the linear downstream task test that self-supervision papers use for comparison:
   * Input labels as a dictionary mapping filepaths to labels
   * At the end of each epoch (or whenever `trainer.evaluate()` is called), `patchwork` will do a train/test split on your labels (the split is deterministic to make sure it's consistent across runs), compute features using flattened outputs of the FCN, and train a linear support vector classifier on the features. The test accuracy and confusion matrix are recorded for TensorBoard.
-  * The linear classification accuracy and model hyperparameters are saved for the TensorBoard HPARAMS interface, so you can visualize the effect of your hyperparameter choices. 
-  * The `trainer.save_projections()` will record embeddings, as well as image sprites and metadata for the TensorBoard projector. I've sometimes found this to be a helpful diagnostic tool when I'm *really* stuck.
-  * I can't stress enough the importance of doing actual tests on a downstream task, even if it's a small number of labels. It's *very* easy for some of these methods to learn shortcuts; they may also learn semantics that are real that just aren't useful for your problem.
+* If you can't get any labels together, call `trainer.rotation_classification_test()` to apply the proxy method from Reed *et al*'s [Evaluating Self-Supervised Pretraining Without Using Labels](Evaluating Self-Supervised Pretraining Without Using Labels).
+  
+### Interpreting
 
-![alt text](hparams.png)
+* All hyperparameters are automatically logged to the [TensorBoard HPARAMS](https://www.tensorflow.org/tensorboard/hyperparameter_tuning_with_hparams) interface, so you can visualize how they correlate with the downstream task accuracy, rotation task accuracy, alignment, or uniformity.
+* The `trainer.save_projections()` method will record embeddings, as well as image sprites and metadata for the [TensorBoard projector](https://www.tensorflow.org/tensorboard/tensorboard_projector_plugin). I've sometimes found this to be a helpful diagnostic tool when I'm *really* stuck.
+* The `trainer.visualize_kernels()` method will record to TensorBoard an image of the kernels from the first convolutional layer in your network. If those kernels don't include a few that look like generic edge detectors, something has probably gone horribly wrong (e.g. you're learning a shortcut somewhere). Example of a bad case below.
+
+![](hparams.png)
+![](projector.png)
+![](first_convolution_filters.png)
+
+### Documenting
+
+* All hyperparameters are automatically recorded to a YAML file in the log directory
+* Call `trainer.track_with_mlflow()` before you begin training, to use the [MLflow tracking API](https://mlflow.org/docs/latest/tracking.html) to log parameters and metrics.
+* Pass a string containing any contextual information about the experiment to the `notes` kwarg; it will be added to the YAML file (and recorded for MLflow)
+  
+![](mlflow_tracking.png)
+
+
 
 Click [here](ucmerced.md) for an example comparing these methods on the UCMerced Land Use dataset.
 
+# Self-supervised models in `patchwork.feature`
 
 ## Context Encoder
 
@@ -291,12 +318,3 @@ trainer = pw.feature..MomentumContrastTrainer(
 
 trainer.fit(10)
 ```
-
-# Deprecated
-        
-These feature extractors are coded up in `patchwork`, but either (1) seem to have been superceded by other inventions or (2) I personally found them finicky to work with. They are unlikely to be developed further.
-
-## Invariant Information Clustering
-
-[paper here](https://arxiv.org/abs/1807.06653)
-    
