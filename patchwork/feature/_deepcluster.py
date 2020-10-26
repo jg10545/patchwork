@@ -133,7 +133,7 @@ class DeepClusterTrainer(GenericExtractor):
     def __init__(self, logdir, trainingdata, testdata=None, fcn=None, augment=True, 
                  pca_dim=256, k=1000, dense=[4096], mult=1, 
                  kmeans_max_iter=100, kmeans_batch_size=100, lr=0.05, 
-                 lr_decay=100000, decay_type="exponential",
+                 lr_decay=100000, decay_type="exponential", opt_type="momentum",
                   imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, num_parallel_calls=None,
                  single_channel=False, notes="",
@@ -155,8 +155,9 @@ class DeepClusterTrainer(GenericExtractor):
         :kmeans_max_iter: max iterations over dataset for minibatch k-means
         :kmeans_batch_size: batch size for minibatch k-means
         :lr: (float) initial learning rate
-        :lr_decay: (int) steps for learning rate to decay by half (0 to disable)
-        :decay_type: (str) how to decay learning rate; "exponential" or "cosine"
+        :lr_decay: (int) number of steps for one decay period (0 to disable)
+        :decay_type: (string) how to decay the learning rate- "exponential" (smooth exponential decay), "staircase" (non-smooth exponential decay), or "cosine"
+        :opt_type: (str) which optimizer to use; "momentum" or "adam"
         :imshape: (tuple) image dimensions in H,W
         :num_channels: (int) number of image channels
         :norm: (int or float) normalization constant for images (for rescaling to
@@ -178,7 +179,7 @@ class DeepClusterTrainer(GenericExtractor):
         
         # if no FCN is passed- build one
         if fcn is None:
-            fcn = BNAlexNetFCN(channels)
+            fcn = BNAlexNetFCN(num_channels)
         self.fcn = fcn
         self._models = {"fcn":fcn}    
         
@@ -191,7 +192,7 @@ class DeepClusterTrainer(GenericExtractor):
         self._output_layer = output_layer
         
         # create optimizer
-        self._optimizer = self._build_optimizer(lr, lr_decay, opt_type="momentum",
+        self._optimizer = self._build_optimizer(lr, lr_decay, opt_type=opt_type,
                                                 decay_type=decay_type)
         
         # build evaluation dataset
@@ -228,7 +229,8 @@ class DeepClusterTrainer(GenericExtractor):
         
         # parse and write out config YAML
         self._parse_configs(augment=augment, k=k, pca_dim=pca_dim, lr=lr, 
-                            lr_decay=lr_decay, mult=mult, dense=dense,
+                            lr_decay=lr_decay, opt_type=opt_type,
+                            mult=mult, dense=dense,
                             kmeans_max_iter=kmeans_max_iter, 
                             kmeans_batch_size=kmeans_batch_size,
                             imshape=imshape, num_channels=num_channels,

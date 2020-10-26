@@ -3,7 +3,9 @@ import numpy as np
 import tensorflow as tf
 
 from patchwork.feature._moco import copy_model, exponential_model_update
-
+from patchwork.feature._moco import _build_augment_pair_dataset
+from patchwork.feature._moco import _build_momentum_contrast_training_step
+from patchwork.feature._moco import _build_logits
 
 def test_copy_model():
     orig = tf.keras.applications.VGG16(weights=None, include_top=False)
@@ -42,3 +44,77 @@ def test_exponenial_model_update():
     assert np.sum((out4 - out2)**2) < 1e-5
     
     
+def test_build_augment_pair_dataset(test_png_path):
+    filepaths = 10*[test_png_path]
+    ds = _build_augment_pair_dataset(filepaths, imshape=(32,32),
+                                     batch_size=5, 
+                                     augment={"flip_left_right":True})
+    assert isinstance(ds, tf.data.Dataset)
+    for x,y in ds:
+        x = x.numpy()
+        y = y.numpy()
+        break
+    
+    assert x.shape == (5,32,32,3)
+    assert y.shape == (5,32,32,3)
+    
+    
+def test_build_logits_no_mochi():
+    batch_size = 7
+    embed_dim = 5
+    K = 13
+
+    q = tf.nn.l2_normalize(np.random.normal(0, 1, size=(batch_size, embed_dim)).astype(np.float32), axis=1)
+    k = tf.nn.l2_normalize(np.random.normal(0, 1, size=(batch_size, embed_dim)).astype(np.float32), axis=1)
+    buffer = tf.Variable(tf.nn.l2_normalize(np.random.normal(0, 1, size=(K,embed_dim)).astype(np.float32), axis=1))
+    all_logits = _build_logits(q, k, buffer, tf.GradientTape())
+    assert len(all_logits.shape) == 2
+    assert all_logits.shape[0] == batch_size
+    assert all_logits.shape[1] == K +1
+    
+def test_build_logits_with_margin():
+    batch_size = 7
+    embed_dim = 5
+    K = 13
+
+    q = tf.nn.l2_normalize(np.random.normal(0, 1, size=(batch_size, embed_dim)).astype(np.float32), axis=1)
+    k = tf.nn.l2_normalize(np.random.normal(0, 1, size=(batch_size, embed_dim)).astype(np.float32), axis=1)
+    buffer = tf.Variable(tf.nn.l2_normalize(np.random.normal(0, 1, size=(K,embed_dim)).astype(np.float32), axis=1))
+    all_logits = _build_logits(q, k, buffer, tf.GradientTape(), margin=100)
+    assert len(all_logits.shape) == 2
+    assert all_logits.shape[0] == batch_size
+    assert all_logits.shape[1] == K +1
+    
+    
+def test_build_logits_with_mochi():
+    batch_size = 7
+    embed_dim = 5
+    K = 13
+    N = 6
+    s = 2
+
+    q = tf.nn.l2_normalize(np.random.normal(0, 1, size=(batch_size, embed_dim)).astype(np.float32), axis=1)
+    k = tf.nn.l2_normalize(np.random.normal(0, 1, size=(batch_size, embed_dim)).astype(np.float32), axis=1)
+    buffer = tf.Variable(tf.nn.l2_normalize(np.random.normal(0, 1, size=(K,embed_dim)).astype(np.float32), axis=1))
+    with tf.GradientTape() as tape:
+        all_logits = _build_logits(q, k, buffer, tape, N, s)
+    assert len(all_logits.shape) == 2
+    assert all_logits.shape[0] == batch_size
+    assert all_logits.shape[1] == K +1 + s
+    
+def test_build_logits_with_mochi_and_query_mixing():
+    batch_size = 7
+    embed_dim = 5
+    K = 13
+    N = 6
+    s = 2
+    s_prime = 3
+
+    q = tf.nn.l2_normalize(np.random.normal(0, 1, size=(batch_size, embed_dim)).astype(np.float32), axis=1)
+    k = tf.nn.l2_normalize(np.random.normal(0, 1, size=(batch_size, embed_dim)).astype(np.float32), axis=1)
+    buffer = tf.Variable(tf.nn.l2_normalize(np.random.normal(0, 1, size=(K,embed_dim)).astype(np.float32), axis=1))
+    with tf.GradientTape() as tape:
+        all_logits = _build_logits(q, k, buffer, tape, N, s, s_prime)
+    assert len(all_logits.shape) == 2
+    assert all_logits.shape[0] == batch_size
+    assert all_logits.shape[1] == K +1 + s + s_prime

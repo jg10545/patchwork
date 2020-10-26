@@ -5,31 +5,64 @@ The `patchwork.feature` module has several models implemented for unsupervised o
 * [Context Encoders](https://arxiv.org/abs/1604.07379)
 * [DeepCluster](https://arxiv.org/abs/1807.05520)
 * [SimCLR](https://arxiv.org/abs/2002.05709) (along with multi-GPU version)
+* [MoCo](https://arxiv.org/abs/1911.05722), including several variants:
+  * nonlinear projection head from [MocoV2](https://arxiv.org/abs/2003.04297)
+  * option to modify noise-contrastive loss function using margin term from [EqCo](https://arxiv.org/abs/2010.01929)
+  * option to generate synthetic hard examples on-the-fly using [MoCHi](https://arxiv.org/abs/2010.01028)
 
-The module has a class to manage the training of each model. You can initialize the trainer with a fully-convolutional `keras` model for it to train (otherwise it will use a default model).
+The module has a class to manage the training of each model. You can initialize the trainer with a fully-convolutional `keras` model for it to train (otherwise it will use a default model). The trainers are meant to be as similar as possible, to make it easy to throw different self-supervision approches at your problem and see how they compare. Here's what they have in common:
 
-In addition to each model's training hyperparameters, the different feature extractor trainers share [input pipeline and augmentation parameters](input_aug.md).
+### Building
 
-For each of the above methods, `patchwork` has a training class that:
+* Each feature extractor training class shares common [input pipeline and augmentation parameters](input_aug.md).
+* Choose between `adam` and `momentum` optimizers, with no learning rate decay, or `exponential` (smooth exponential decay), `staircase` (LR cut in half every `lr_decay` steps), or `cosine` decay.
+* Call `trainer.load_weights()` to import weights of all the training components from a previous run
 
-* inputs a list of paths to training files and a `keras` fully-convolutional model to train
-* can input a list of paths to test files to compute out-of-sample metrics and visualizations for TensorBoard
-* can input a dictionary mapping image file paths to labels- you can use this to monitor the feature extractor's performance on a downstream task. At the end of every epoch, the trainer:
-  * deterministically splits the labeled data into training and test sets (2:1)
-  * computes features for each of the labeled images using the fully-convolutional network and a global average pool
-  * fits a linear softmax model to predict categories and evaluates accuracy on the test set
-  * records test accuracy, confusion matrix, and hyperparameters in TensorBoard.
+### Benchmarking
 
-![alt text](hparams.png)
+* Input a list of paths to test files to compute out-of-sample metrics and visualizations for TensorBoard
+  * For context encoders, this can help you tell when you're just memorizing your dataset
+  * For contrastive learning methods, [alignment and uniformity](https://arxiv.org/abs/2005.10242) measures are computed automatically
+* If you have a small number of labels for a downstream task, the trainer will automate the linear downstream task test that self-supervision papers use for comparison:
+  * Input labels as a dictionary mapping filepaths to labels
+  * At the end of each epoch (or whenever `trainer.evaluate()` is called), `patchwork` will do a train/test split on your labels (the split is deterministic to make sure it's consistent across runs), compute features using flattened outputs of the FCN, and train a linear support vector classifier on the features. The test accuracy and confusion matrix are recorded for TensorBoard.
+* If you can't get any labels together, call `trainer.rotation_classification_test()` to apply the proxy method from Reed *et al*'s [Evaluating Self-Supervised Pretraining Without Using Labels](Evaluating Self-Supervised Pretraining Without Using Labels).
+  
+### Interpreting
+
+* All hyperparameters are automatically logged to the [TensorBoard HPARAMS](https://www.tensorflow.org/tensorboard/hyperparameter_tuning_with_hparams) interface, so you can visualize how they correlate with the downstream task accuracy, rotation task accuracy, alignment, or uniformity.
+* The `trainer.save_projections()` method will record embeddings, as well as image sprites and metadata for the [TensorBoard projector](https://www.tensorflow.org/tensorboard/tensorboard_projector_plugin). I've sometimes found this to be a helpful diagnostic tool when I'm *really* stuck.
+* The `trainer.visualize_kernels()` method will record to TensorBoard an image of the kernels from the first convolutional layer in your network. If those kernels don't include a few that look like generic edge detectors, something has probably gone horribly wrong (e.g. you're learning a shortcut somewhere). Example of a bad case below.
+
+![](hparams.png)
+![](projector.png)
+![](first_convolution_filters.png)
+
+### Documenting
+
+* All hyperparameters are automatically recorded to a YAML file in the log directory
+* Call `trainer.track_with_mlflow()` before you begin training, to use the [MLflow tracking API](https://mlflow.org/docs/latest/tracking.html) to log parameters and metrics.
+* Pass a string containing any contextual information about the experiment to the `notes` kwarg; it will be added to the YAML file (and recorded for MLflow)
+  
+![](mlflow_tracking.png)
+
+
 
 Click [here](ucmerced.md) for an example comparing these methods on the UCMerced Land Use dataset.
 
+# Self-supervised models in `patchwork.feature`
 
 ## Context Encoder
 
-The `patchwork.feature` module contains an implementation of the algorithm in Deepak Pathak *et al*'s [Context Encoders: Feature Learning by Inpainting](https://arxiv.org/abs/1604.07379). The primary difference is that my implementation is missing the amplified loss function in the border region between masked and unmasked areas.
+The `patchwork.feature` module contains an implementation of the algorithm in Deepak Pathak *et al*'s [Context Encoders: Feature Learning by Inpainting](https://arxiv.org/abs/1604.07379). 
 
 The trainer can input a list of test files- a small out-of-sample dataset is handy for visualizing how well the inpainter can reconstruct images (as opposed to just memorizing your data).
+
+### Differences between the paper and `patchwork`
+
+My implementation is missing the amplified loss function in the border region between masked and unmasked areas.
+
+### Example code
 
 ```{python}
 import tensorflow as tf
@@ -71,9 +104,11 @@ Tensorboard logs will be stored for the loss function on `testfiles` as well as 
 
 `patchwork` contains a TensorFlow implementation of the algorithm in Mathilde Caron *et al*'s [Deep Clustering for Unsupervised Learning of Visual Features](https://arxiv.org/abs/1807.05520).
 
+### Differences between the paper and `patchwork`
+
 I tried to keep the parameters as similar to the paper as possible. One additional keyword argument is `mult` (integer, default 1). Caron *et al* refit the k-means algorithm once per epoch on Imagenet (with `batch_size=256` this works out to roughly 5000 steps between refitting the pseudolabels). If you're working on a significantly smaller dataset you may need to run through it multiple times before refitting; set `mult=N` to refit once every `N` epochs.
 
-Also, learning rate decay wasn't used in Caron *et al* but I've occasionally found it helpful. The `lr_decay` kwarg sets the half-life of the learning rate.
+### Example code
 
 ```{python}
 import tensorflow as tf
@@ -113,8 +148,13 @@ dctrainer.fit(10)
 
 ## SimCLR
 
-`patchwork` contains a TensorFlow implementation of the algorithm in Chen *et al*'s [A Simple Framework for Contrastive Learning of Visual Representations](https://arxiv.org/abs/2002.05709). For the moment, my implementation uses Adam rather than the LARS optimizer.
+`patchwork` contains a TensorFlow implementation of the algorithm in Chen *et al*'s [A Simple Framework for Contrastive Learning of Visual Representations](https://arxiv.org/abs/2002.05709). 
 
+### Differences between the paper and `patchwork`
+
+I haven't implemented the LARS optimizer used in the paper. Using the `opt_type` kwarg you can choose Adam or momentum optimizers.
+
+### Example code
    
 ```{python}
 import tensorflow as tf
@@ -219,15 +259,62 @@ trainer = pw.feature.SimCLRTrainer(
 trainer.fit(10) 
 ```
     
-      
-# Deprecated
-        
-These feature extractors are coded up in `patchwork`, but either (1) seem to have been superceded by other inventions or (2) I personally found them finicky to work with. They are unlikely to be developed further.
-
-## Invariant Information Clustering
-
-[paper here](https://arxiv.org/abs/1807.06653)
-        
+              
 ## Momentum Contrast
 
-[paper here](https://arxiv.org/abs/1911.05722)
+If the hardware you're using doesn't have enough memory for the giant batch sizes that SimCLR prefers, He *et al*'s [Momentum Contrast for Unsupervised Visual Representation Learning](https://arxiv.org/abs/1911.05722) may give better results, as it decouples the number of contrastive comparisons from the batch size.
+
+### Differences between the paper and `patchwork`
+
+The MoCo paper has some discussion on how batch normalization can cause their algorithm to learn a shortcut; their solution is to shuffle embeddings across GPUs for comparison (and then shuffling back after).
+
+The `patchwork` implementation attempts to accomplish the same effect while requiring only one GPU- each batch is divided in half, the halves passed through the network, and then projected representations are reassembled before computing the contrastive loss. The division used for the key network is different from the division used for the query network, so that each direct comparison between augmented images is sampled from different batch statistics.
+
+I have not yet implemented distributed training for MoCo.
+
+### Example code
+
+
+```{python}
+import tensorflow as tf
+import patchwork as pw
+
+# load paths to train files
+trainfiles = [x.strip() for x in open("mytrainfiles.txt").readlines()]
+labeldict = json.load(open("dictionary_mapping_some_images_to_labels.json"))
+
+# initialize a feature extractor
+fcn = tf.keras.applications.ResNet50V2(weights=None, include_top=False)
+
+# choose augmentation parameters
+aug_params = {'jitter':1,
+             'gaussian_blur': 0.25,
+             'flip_left_right': True,
+             'zoom_scale': 0.1,}
+# generally a good idea to visualize what your augmentation is doing
+pw.viz.augplot(trainfiles, aug_params)   
+
+
+# train
+trainer = pw.feature..MomentumContrastTrainer(
+        log_dir,
+        trainfiles,
+        fcn=fcn,
+        num_parallel_calls=6,
+        augment=aug_params,
+        lr=3e-2,
+        weight_decay=1e-4,
+        decay_type="staircase",
+        lr_decay=10000,
+        alpha=0.999,
+        tau=0.07,
+        batches_in_buffer=50,
+        num_hidden=512,
+        output_dim=64, 
+        batch_size=128,
+        imshape=(128,128),
+        downstream_labels=labeldict
+    )
+
+trainer.fit(10)
+```

@@ -6,7 +6,9 @@ from tqdm import tqdm
 from patchwork.feature._generic import GenericExtractor
 from patchwork._augment import augment_function
 from patchwork.loaders import _image_file_dataset
-from patchwork._util import compute_l2_loss
+from patchwork._util import compute_l2_loss, _compute_alignment_and_uniformity
+
+from patchwork.feature._moco import _build_augment_pair_dataset
 
 BIG_NUMBER = 1000.
 
@@ -99,8 +101,11 @@ def _build_embedding_model(fcn, imshape, num_channels, num_hidden, output_dim):
         inpt = [inpt0, inpt1]
     net = fcn(inpt)
     net = tf.keras.layers.Flatten()(net)
-    net = tf.keras.layers.Dense(num_hidden, activation="relu")(net)
-    net = tf.keras.layers.Dense(output_dim)(net)
+    net = tf.keras.layers.Dense(num_hidden)(net)
+    net = tf.keras.layers.BatchNormalization()(net)
+    net = tf.keras.layers.Activation("relu")(net)
+    net = tf.keras.layers.Dense(output_dim, use_bias=False)(net)
+    net = tf.keras.layers.BatchNormalization()(net)
     embedding_model = tf.keras.Model(inpt, net)
     return embedding_model
 
@@ -251,8 +256,8 @@ class SimCLRTrainer(GenericExtractor):
         :output_dim: dimension of projection head's output space. Figure 8 in Chen et al's paper shows that their results did not depend strongly on this value.
         :weight_decay: coefficient for L2-norm loss. The original SimCLR paper used 1e-6.
         :lr: (float) initial learning rate
-        :lr_decay: (int) steps for learning rate to decay by half (0 to disable)
-        :decay_type: (str) how to decay learning rate; "exponential" or "cosine"
+        :lr_decay:  (int) number of steps for one decay period (0 to disable)
+        :decay_type: (string) how to decay the learning rate- "exponential" (smooth exponential decay), "staircase" (non-smooth exponential decay), or "cosine"
         :opt_type: (string) optimizer type; "adam" or "momentum"
         :imshape: (tuple) image dimensions in H,W
         :num_channels: (int) number of image channels
@@ -314,13 +319,13 @@ class SimCLRTrainer(GenericExtractor):
         self._training_step = self._distribute_training_function(step_fn)
         
         if testdata is not None:
-            self._test_ds = _build_simclr_dataset(testdata, 
+            self._test_ds =  _build_augment_pair_dataset(testdata, 
                                         imshape=imshape, batch_size=batch_size,
                                         num_parallel_calls=num_parallel_calls, 
                                         norm=norm, num_channels=num_channels, 
                                         augment=augment,
                                         single_channel=single_channel)
-            
+            """
             @tf.function
             def test_loss(x,y):
                 eye = tf.linalg.eye(y.shape[0])
@@ -335,7 +340,7 @@ class SimCLRTrainer(GenericExtractor):
                 loss = tf.reduce_mean(
                     tf.nn.sparse_softmax_cross_entropy_with_logits(labels, logits))
                 return loss, sim
-            self._test_loss = test_loss
+            self._test_loss = test_loss"""
             self._test = True
         else:
             self._test = False
@@ -365,16 +370,21 @@ class SimCLRTrainer(GenericExtractor):
             self.step += 1
              
     def evaluate(self):
+        
         if self._test:
-            test_loss = 0
-            for x,y in self._test_ds:
-                loss, sim = self._test_loss(x,y)
-                test_loss += loss.numpy()
-                
-            self._record_scalars(test_loss=test_loss)
-            # I'm commenting out this tensorboard image- takes up a lot of
-            # space but doesn't seem to add much
-            #self._record_images(scalar_products=tf.expand_dims(tf.expand_dims(sim,-1), 0))
+            # if the user passed out-of-sample data to test- compute
+            # alignment and uniformity measures
+            alignment, uniformity = _compute_alignment_and_uniformity(
+                                            self._test_ds, self._models["full"])
+            
+            self._record_scalars(alignment=alignment,
+                             uniformity=uniformity, metric=True)
+            metrics=["linear_classification_accuracy",
+                                 "alignment",
+                                 "uniformity"]
+        else:
+            metrics=["linear_classification_accuracy"]
+        
         if self._downstream_labels is not None:
             # choose the hyperparameters to record
             if not hasattr(self, "_hparams_config"):
@@ -393,5 +403,7 @@ class SimCLRTrainer(GenericExtractor):
                         hparams[hp.HParam(k, hp.RealInterval(0., 10000.))] = self.augment_config[k]
             else:
                 hparams=None
-            self._linear_classification_test(hparams)
+
+            self._linear_classification_test(hparams,
+                        metrics=metrics)
         

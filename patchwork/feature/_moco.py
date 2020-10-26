@@ -5,6 +5,7 @@ import tensorflow as tf
 from patchwork.feature._generic import GenericExtractor
 from patchwork._augment import augment_function
 from patchwork.loaders import _image_file_dataset
+from patchwork._util import compute_l2_loss, _compute_alignment_and_uniformity
 
 
 
@@ -39,7 +40,7 @@ def exponential_model_update(slow, fast, alpha=0.999):
 
 
 
-def build_augment_pair_dataset(imfiles, imshape=(256,256), batch_size=256, 
+def _build_augment_pair_dataset(imfiles, imshape=(256,256), batch_size=256, 
                       num_parallel_calls=None, norm=255,
                       num_channels=3, augment=True,
                       single_channel=False):
@@ -56,49 +57,111 @@ def build_augment_pair_dataset(imfiles, imshape=(256,256), batch_size=256,
                              norm=norm, num_channels=num_channels,
                              shuffle=True, single_channel=single_channel)  
     
-    a1 = ds.map(_aug, num_parallel_calls=num_parallel_calls)
-    a2 = ds.map(_aug, num_parallel_calls=num_parallel_calls)
-   
-    ds = ds.zip((a1, a2))
-    ds = ds.batch(batch_size)
+    def _augment_pair(x):
+        return _aug(x), _aug(x)
+
+    ds = ds.map(_augment_pair, num_parallel_calls=num_parallel_calls)
+    ds = ds.batch(batch_size, drop_remainder=True)
     ds = ds.prefetch(1)
     return ds
 
 
-def build_momentum_contrast_training_step(model, mo_model, optimizer, buffer, batches_in_buffer, alpha=0.999, tau=0.07):
+def _build_logits(q, k, buffer, tape, N=0, s=0, s_prime=0, margin=0):
+    """
+    Compute logits for momentum contrast, optionally including MoCHi
+    hard negatives
+    """
+    # compute positive logits- (batch_size,1)
+    positive_logits = tf.squeeze(
+                tf.matmul(tf.expand_dims(q,1), 
+                      tf.expand_dims(k,1), transpose_b=True),
+                axis=-1) - margin
+    # and negative logits- (batch_size, buffer_size)
+    negative_logits = tf.matmul(q, buffer, transpose_b=True)
+    # assemble positive and negative- (batch_size, buffer_size+1)
+    all_logits = tf.concat([positive_logits, negative_logits], axis=1)
+    # from MoChi paper
+    if (N > 0)&(s > 0):
+        # i'm pretty sure we don't want to compute gradients through
+        # any of the synthetic embedding creation
+        with tape.stop_recording():
+            # find the top-N negative logits- the N hardest "naturally 
+            # occurring" negatives. inds is (batch_size, N)
+            vals, inds = tf.math.top_k(negative_logits, k=N)
+            # sample twice from the list of hard negative indices. each is (batch_size,s)
+            inds1 = tf.transpose(tf.random.shuffle(tf.transpose(inds)))[:,:s]
+            inds2 = tf.transpose(tf.random.shuffle(tf.transpose(inds)))[:,:s]
+            # gather the actual embeddings corresponding to the sampled indices.
+            # each is (batch_size, s, embed_dim)
+            gathered1 = tf.gather(buffer, inds1, axis=0)
+            gathered2 = tf.gather(buffer, inds2, axis=0)
+            # and a mixing coefficient for each s
+            alpha = tf.random.uniform((1,s,1), minval=1, maxval=1)
+            # combine the sampled embeddings using the mixing coefficients, and normalize.
+            # will still be (batch_size, s, embed_dim)
+            mixed_negatives = tf.nn.l2_normalize(alpha*gathered1+(1-alpha)*gathered2, 2)
+            # hard negatives by mixing query vectors
+            if s_prime > 0:
+                # sample from list of hard negative indices- (batch_size, s_prime)
+                inds3 = tf.transpose(tf.random.shuffle(tf.transpose(inds)))[:,:s_prime]
+                # gather the actual embeddings- (batch_size, s_prime, embed_dim)
+                gathered3 = tf.gather(buffer, inds3, axis=0)
+                # and a mixing coefficient for each one
+                beta = tf.random.uniform((1,s_prime,1), minval=0, maxval=0.5)
+                # and tile query vectors to combine with negatives
+                q_tiled = tf.tile(tf.expand_dims(q,1), tf.constant([1,s_prime,1]))
+                hardest_negatives = tf.nn.l2_normalize(beta*q_tiled + (1-beta)*gathered3, 2)
+                
+        # now, with gradients, compute the logits between query embeddings and our
+        # synthetic negatives- shape (batch_size, s)
+        hnm_logits = tf.squeeze(tf.matmul(mixed_negatives, tf.expand_dims(q, -1)), -1)
+        # and concatenate on the end of our block'o'logits: (batch_size, buffer_size+s+s_prime+1)
+        if s_prime > 0:
+            hardest_logits = tf.squeeze(tf.matmul(hardest_negatives, tf.expand_dims(q, -1)), -1)
+            all_logits = tf.concat([all_logits, hnm_logits, hardest_logits], axis=1)
+        else:
+            all_logits = tf.concat([all_logits, hnm_logits], axis=1)
+    return all_logits
+
+
+def _build_momentum_contrast_training_step(model, mo_model, optimizer, buffer, batches_in_buffer, alpha=0.999, tau=0.07, weight_decay=0, N=0, s=0, s_prime=0, margin=0):
     """
     Function to build tf.function for a MoCo training step. Basically just follow
     Algorithm 1 in He et al's paper.
     """
-    #flatten = tf.keras.layers.GlobalAvgPool2D()
     
     @tf.function
     def training_step(img1, img2, step):
         print("tracing training step")
         batch_size = img1.shape[0]
+        # compute averaged embeddings. tensor is (N,d)
+        # my shot at an alternative to shuffling BN
+        a = int(batch_size/4)
+        b = int(batch_size/2)
+        c = int(3*batch_size/4)
+        
+        k1 = mo_model(tf.concat([img2[:a,:,:,:], img2[c:,:,:,:]], 0),
+                      training=True)
+        k2 = mo_model(img2[a:c,:,:,:], training=True)
+        k = tf.nn.l2_normalize(tf.concat([
+                k1[:a,:], k2, k1[a:,:]], axis=0
+            ), axis=1)
         with tf.GradientTape() as tape:
-            # compute averaged and normalized embeddings for each 
-            # separately-augmented batch of pairs of images. Each is (N,d)
-            #q = tf.nn.l2_normalize(flatten(fcn(img1)), axis=1)
-            #k = tf.nn.l2_normalize(flatten(mo_fcn(img2)), axis=1)
-            q = tf.nn.l2_normalize(model(img1), axis=1)
-            k = tf.nn.l2_normalize(mo_model(img2), axis=1)
-    
-            # compute positive logits- (N,1)
-            positive_logits = tf.squeeze(
-                tf.matmul(tf.expand_dims(q,1), 
-                      tf.expand_dims(k,1), transpose_b=True),
-                axis=-1)
-            # and negative logits- (N, buffer_size)
-            negative_logits = tf.matmul(q, buffer, transpose_b=True)
-            # assemble positive and negative- (N, buffer_size+1)
-            all_logits = tf.concat([positive_logits, negative_logits], axis=1)
+            # compute normalized embeddings for each 
+            # separately-augmented batch of pairs of images. tensor is (N,d)
+            q1 = model(img1[:b,:,:,:], training=True)
+            q2 = model(img1[b:,:,:,:], training=True)
+            q = tf.nn.l2_normalize(tf.concat([q1,q2], 0), axis=1)
+            # compute MoCo and/or MoCHi logits
+            all_logits = _build_logits(q, k, buffer, tape, N, s, s_prime, margin)
             # create labels (correct class is 0)- (N,)
             labels = tf.zeros((batch_size,), dtype=tf.int32)
             # compute crossentropy loss
             loss = tf.reduce_mean(
                     tf.nn.sparse_softmax_cross_entropy_with_logits(
                             labels, all_logits/tau))
+            if weight_decay > 0:
+                loss += weight_decay*compute_l2_loss(model)
     
         # update fast model
         variables = model.trainable_variables
@@ -111,8 +174,15 @@ def build_momentum_contrast_training_step(model, mo_model, optimizer, buffer, ba
         i = step % batches_in_buffer
         _ = buffer[batch_size*i:batch_size*(i+1),:].assign(k)
         
-        return loss, weight_diff
+        # also compute the "accuracy"; what fraction of the batch has
+        # the key as the largest logit. from figure 2b of the MoCHi paper
+        nce_batch_accuracy = tf.reduce_mean(tf.cast(tf.argmax(all_logits, 
+                                                              axis=1)==0, tf.float32))
+        
+        return {"loss":loss, "weight_diff":weight_diff,
+                "nce_batch_accuracy":nce_batch_accuracy}
     return training_step
+
 
 
 
@@ -127,11 +197,14 @@ class MomentumContrastTrainer(GenericExtractor):
 
     def __init__(self, logdir, trainingdata, testdata=None, fcn=None, 
                  augment=True, batches_in_buffer=10, alpha=0.999, 
-                 tau=0.07, output_dim=128,
-                 lr=0.01, lr_decay=100000,
+                 tau=0.07, output_dim=128, num_hidden=2048, 
+                 copy_weights=False, weight_decay=0,
+                 N=0, s=0, s_prime=0, margin=0,
+                 lr=0.01, lr_decay=100000, decay_type="exponential",
+                 opt_type="momentum",
                  imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, num_parallel_calls=None,
-                 sobel=False, single_channel=False, notes="",
+                 single_channel=False, notes="",
                  downstream_labels=None):
         """
         :logdir: (string) path to log directory
@@ -140,18 +213,27 @@ class MomentumContrastTrainer(GenericExtractor):
         :fcn: (keras Model) fully-convolutional network to train as feature extractor
         :augment: (dict) dictionary of augmentation parameters, True for defaults
         :batches_in_buffer:
-        :alpha:
-        :tau:
-        :output_dim:
+        :alpha: momentum parameter for updating the momentum encoder
+        :tau: temperature parameter for noise-contrastive loss
+        :output_dim: dimension for features to be projected into for NCE loss
+        :num_hidden: number of neurons in the projection head's hidden layer (from the MoCoV2 paper)
+        :copy_weights: if True, copy the query model weights at the beginning as well 
+            as the structure.
+        :weight_decay: L2 loss weight; 0 to disable
+        :N: MoCHi N parameter; sample from top-N logits. 0 to disable.
+        :s: MoCHi s parameter; create this many synthetic hard negatives
+        :s_prime: MoCHi s_prime parameter; this many query-mixed hard negatives
+        :margin: EqCo margin parameter; shift positive logits by this amount (0 to disable)
         :lr: (float) initial learning rate
-        :lr_decay: (int) steps for learning rate to decay by half (0 to disable)
+        :lr_decay: (int) number of steps for one decay period (0 to disable)
+        :decay_type: (string) how to decay the learning rate- "exponential" (smooth exponential decay), "staircase" (non-smooth exponential decay), or "cosine"
+        :opt_type: (str) which optimizer to use; "momentum" or "adam"
         :imshape: (tuple) image dimensions in H,W
         :num_channels: (int) number of image channels
         :norm: (int or float) normalization constant for images (for rescaling to
                unit interval)
         :batch_size: (int) batch size for training
         :num_parallel_calls: (int) number of threads for loader mapping
-        :sobel: whether to replace the input image with its sobel edges
         :single_channel: if True, expect a single-channel input image and 
                 stack it num_channels times.
         :notes: (string) any notes on the experiment that you want saved in the
@@ -162,66 +244,67 @@ class MomentumContrastTrainer(GenericExtractor):
         self.logdir = logdir
         self.trainingdata = trainingdata
         self._downstream_labels = downstream_labels
-        channels = 3 if sobel else num_channels
         
         self._file_writer = tf.summary.create_file_writer(logdir, flush_millis=10000)
         self._file_writer.set_as_default()
         
         # if no FCN is passed- build one
-        if fcn is None:
-            fcn = tf.keras.applications.ResNet50V2(weights=None, include_top=False)
-        self.fcn = fcn
-        # from "technical details" in paper- after FCN they did global pooling
-        # and then a dense layer. i assume linear outputs on it.
-        inpt = tf.keras.layers.Input((None, None, channels))
-        features = fcn(inpt)
-        pooled = tf.keras.layers.GlobalAvgPool2D()(features)
-        outpt = tf.keras.layers.Dense(output_dim)(pooled)
-        full_model = tf.keras.Model(inpt, outpt)
+        with self.scope():
+            if fcn is None:
+                fcn = tf.keras.applications.ResNet50V2(weights=None, include_top=False)
+            self.fcn = fcn
+            # from "technical details" in paper- after FCN they did global pooling
+            # and then a dense layer. i assume linear outputs on it.
+            inpt = tf.keras.layers.Input((None, None, num_channels))
+            features = fcn(inpt)
+            pooled = tf.keras.layers.GlobalAvgPool2D()(features)
+            # MoCoV2 paper adds a hidden layer
+            dense = tf.keras.layers.Dense(num_hidden, activation="relu")(pooled)
+            outpt = tf.keras.layers.Dense(output_dim)(dense)
+            full_model = tf.keras.Model(inpt, outpt)
         
-        momentum_encoder = copy_model(full_model)
-        self._models = {"fcn":fcn, 
+            if copy_weights:
+                momentum_encoder = copy_model(full_model)
+            else:
+                momentum_encoder = tf.keras.models.clone_model(full_model)
+            self._models = {"fcn":fcn, 
                         "full":full_model,
                         "momentum_encoder":momentum_encoder}
         
         # build training dataset
-        self._ds = build_augment_pair_dataset(trainingdata, 
+        self._ds = _build_augment_pair_dataset(trainingdata, 
                             imshape=imshape, batch_size=batch_size,
                             num_parallel_calls=num_parallel_calls, 
-                            norm=norm, num_channels=channels, 
+                            norm=norm, num_channels=num_channels, 
                             augment=augment, single_channel=single_channel)
         
         # create optimizer
-        if lr_decay > 0:
-            learnrate = tf.keras.optimizers.schedules.ExponentialDecay(lr, 
-                                            decay_steps=lr_decay, decay_rate=0.5,
-                                            staircase=False)
-        else:
-            learnrate = lr
-        self._optimizer = tf.keras.optimizers.SGD(learnrate, momentum=0.9)
+        self._optimizer = self._build_optimizer(lr, lr_decay, opt_type=opt_type,
+                                                decay_type=decay_type)
         
         # build buffer
         K = batch_size*batches_in_buffer
-        d = output_dim #fcn.output_shape[-1]
+        d = output_dim 
         self._buffer = tf.Variable(np.zeros((K,d), dtype=np.float32))
         
         # build training step
-        self._training_step = build_momentum_contrast_training_step(
+        self._training_step = _build_momentum_contrast_training_step(
                 full_model, 
                 momentum_encoder, 
                 self._optimizer, 
                 self._buffer, 
-                batches_in_buffer, alpha, tau)
+                batches_in_buffer, alpha, tau, weight_decay,
+                N, s, s_prime, margin)
         # build evaluation dataset
-        #if testdata is not None:
-        #    self._test_ds, self._test_steps = dataset(testdata,
-        #                             imshape=imshape,norm=norm,
-        #                             sobel=sobel, num_channels=num_channels,
-        #                             single_channel=single_channel)
-        #    self._test = True
-        #else:
-        #    self._test = False
-        self._test = False
+        if testdata is not None:
+            self._test_ds = _build_augment_pair_dataset(testdata, 
+                            imshape=imshape, batch_size=batch_size,
+                            num_parallel_calls=num_parallel_calls, 
+                            norm=norm, num_channels=num_channels, 
+                            augment=augment, single_channel=single_channel)
+            self._test = True
+        else:
+            self._test = False
         self._test_labels = None
         self._old_test_labels = None
         
@@ -235,21 +318,23 @@ class MomentumContrastTrainer(GenericExtractor):
         self._parse_configs(augment=augment, 
                             batches_in_buffer=batches_in_buffer, 
                             alpha=alpha, tau=tau, output_dim=output_dim,
-                            lr=lr, lr_decay=lr_decay, 
+                            num_hidden=num_hidden, weight_decay=weight_decay,
+                            N=N, s=s, s_prime=s_prime, margin=margin,
+                            lr=lr, lr_decay=lr_decay, opt_type=opt_type,
                             imshape=imshape, num_channels=num_channels,
                             norm=norm, batch_size=batch_size,
-                            num_parallel_calls=num_parallel_calls, sobel=sobel,
-                            single_channel=single_channel, notes=notes)
+                            num_parallel_calls=num_parallel_calls, 
+                            single_channel=single_channel, notes=notes,
+                            trainer="moco")
         self._prepopulate_buffer()
         
     def _prepopulate_buffer(self):
         i = 0
         bs = self.input_config["batch_size"]
         bib = self.config["batches_in_buffer"]
-        #flatten = tf.keras.layers.GlobalAvgPool2D()
         for x,y in self._ds:
             k = tf.nn.l2_normalize(
-                    self._models["momentum_encoder"](y), axis=1)
+                    self._models["momentum_encoder"](y, training=True), axis=1)
             _ = self._buffer[bs*i:bs*(i+1),:].assign(k)
             i += 1
             if i >= bib:
@@ -260,17 +345,30 @@ class MomentumContrastTrainer(GenericExtractor):
         
         """
         for x, y in self._ds:
-            loss, weight_diff = self._training_step(x,y, self._step_var)
+            #loss, weight_diff = self._training_step(x,y, self._step_var)
+            lossdict = self._training_step(x,y, self._step_var)
             
-            self._record_scalars(loss=loss, weight_diff=weight_diff)
+            self._record_scalars(**lossdict)
+            self._record_scalars(learning_rate=self._get_current_learning_rate())
             
             self._step_var.assign_add(1)
             self.step += 1
             
  
     def evaluate(self):
-        b = tf.expand_dims(tf.expand_dims(self._buffer,0),-1)
-        self._record_images(buffer=b)
+        if self._test:
+            # if the user passed out-of-sample data to test- compute
+            # alignment and uniformity measures
+            alignment, uniformity = _compute_alignment_and_uniformity(
+                                            self._test_ds, self._models["full"])
+            
+            self._record_scalars(alignment=alignment,
+                             uniformity=uniformity, metric=True)
+            metrics=["linear_classification_accuracy",
+                                 "alignment",
+                                 "uniformity"]
+        else:
+            metrics=["linear_classification_accuracy"]
             
         if self._downstream_labels is not None:
             # choose the hyperparameters to record
@@ -281,11 +379,25 @@ class MomentumContrastTrainer(GenericExtractor):
                     hp.HParam("alpha", hp.RealInterval(0., 1.)):self.config["alpha"],
                     hp.HParam("batches_in_buffer", hp.IntInterval(1, 1000000)):self.config["batches_in_buffer"],
                     hp.HParam("output_dim", hp.IntInterval(1, 1000000)):self.config["output_dim"],
-                    hp.HParam("sobel", hp.Discrete([True, False])):self.input_config["sobel"]
+                    hp.HParam("num_hidden", hp.IntInterval(1, 1000000)):self.config["num_hidden"],
+                    hp.HParam("weight_decay", hp.RealInterval(0., 10000.)):self.config["weight_decay"],
+                    hp.HParam("N", hp.IntInterval(0, 1000000)):self.config["N"],
+                    hp.HParam("s", hp.IntInterval(0, 1000000)):self.config["s"],
+                    hp.HParam("margin", hp.RealInterval(0., 10000.)):self.config["margin"]
                     }
+                for k in self.augment_config:
+                    if isinstance(self.augment_config[k], float):
+                        hparams[hp.HParam(k, hp.RealInterval(0., 10000.))] = self.augment_config[k]
             else:
                 hparams=None
-            self._linear_classification_test(hparams)
+            self._linear_classification_test(hparams, metrics=metrics)
         
+        
+    def load_weights(self, logdir):
+        """
+        Update model weights from a previously trained model
+        """
+        super().load_weights(logdir)
+        self._prepopulate_buffer()
             
         

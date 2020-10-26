@@ -8,8 +8,8 @@ import numpy as np
 import tensorflow as tf
 #from PIL import Image
 from patchwork._util import tiff_to_array
-
 from patchwork._augment import augment_function
+from patchwork._tasks import _rotate
 
 
 def _generate_imtypes(fps):
@@ -359,3 +359,63 @@ def _get_features(fcn, downstream_labels, avpool=False,
     else:
         return features, labels
     
+
+
+def _build_rotation_dataset(imfiles, imshape=(256,256), batch_size=256, 
+                      num_parallel_calls=None, norm=255,
+                      num_channels=3, augment=False,
+                      single_channel=False):
+    """
+    """
+    ds = _image_file_dataset(imfiles, shuffle=True, augment=augment, 
+                             imshape=imshape, norm=norm,
+                             single_channel=single_channel,
+                             num_parallel_calls=num_parallel_calls)
+        
+    ds = ds.map(_rotate, num_parallel_calls=num_parallel_calls)
+    ds = ds.batch(batch_size)
+    ds = ds.prefetch(1)
+    return ds
+    
+
+def _get_rotation_features(fcn, imfiles, avpool=True, **input_config):
+    """
+    Generate features without labels, using a self-supervised rotation task. See "Evaluating 
+    Self-Supervised Pretraining Without Using Labels" by Reed et al for details.
+    
+    Currently only supports single-input networks.
+    
+    :fcn: Keras fully-convolutional network
+    :imfiles: list of image filepaths, or a dataset that generates images
+    :avpool: average-pool feature tensors before fitting linear model. if False, flatten instead.
+    :input_config: kwargs for patchwork.loaders.dataset()
+    
+    Returns
+    :features: 2D array of flattened or averaged feature vectors
+    :labels: 1D array of labels
+    """
+    inpt = {k:input_config[k] for k in input_config if k != "batch_size"}
+    # if input is a dictionary, build the dataset
+    if not isinstance(imfiles, tf.data.Dataset):
+        ds = _image_file_dataset(imfiles, shuffle=False, augment=False, **inpt)
+    else:
+        ds = imfiles
+        
+    ds = ds.map(_rotate, num_parallel_calls=input_config.get("num_parallel_calls", None))
+    ds = ds.batch(input_config.get("batch_size", 32))
+    
+    # run labeled images through the network and flatten or average
+    features = []
+    labels = []
+    for x,y in ds:
+        features.append(fcn(x).numpy())
+        labels.append(y.numpy())
+    features = np.concatenate(features, 0)
+    labels = np.concatenate(labels, 0).ravel()
+
+    if avpool:
+        features = features.mean(axis=1).mean(axis=1)
+    else:
+        features = features.reshape(features.shape[0], -1)   
+        
+    return features, labels

@@ -71,47 +71,6 @@ class KPlusPlusSampler():
         return self.choose(k)
         
 
-
-def _build_output_gradient_function_v1(fine_tuning_model, output_model, feature_extractor=None):
-    """
-    THIS FUNCTION WILL GET DEPRECATED
-    
-    Generate a tensorflow function for computing, for a given example, the gradient of
-    the loss function with respect to the weights in the final layer. This is useful
-    for active learning- see "DEEP BATCH ACTIVE LEARNING BY DIVERSE, UNCERTAIN GRADIENT 
-    LOWER BOUNDS" by Ash et al.
-    
-    """
-    # THERE SHOULD ONLY BE ONE TENSOR IN THIS LIST
-    output_weights = [x for x in output_model.trainable_variables if "kernel" in x.name][0]
-    
-    @tf.function
-    def compute_output_gradients(x):
-        # since we're working one record at a time- add a
-        # batch dimension
-        x = tf.expand_dims(x,0)
-        # if we're not using pre-extracted feature tensors
-        if feature_extractor is not None:
-            x = feature_extractor(x)
-        # push feature tensor through fine-tuning model to get a vector
-        x = fine_tuning_model(x)
-        # push vectors through output model and round predictions 
-        # to make pseudolabels
-        label = tf.cast(output_model(x) >= 0.5, tf.float32)
-        # now compute a gradient of the loss function against
-        # pseudolabels with respect to the output model weights
-        with tf.GradientTape() as tape:
-            pred = output_model(x)
-            loss = tf.keras.losses.binary_crossentropy(label, pred)
-
-        grad = tape.gradient(loss, output_weights)
-        # finally flatten the gradient tensor back to a vector
-        return tf.reshape(grad, [-1])
-    return compute_output_gradients
-
-
-
-
 def _build_output_gradient_function(*models):
     """
     Generate a tensorflow function for computing, for a given example, the gradient of
@@ -119,7 +78,12 @@ def _build_output_gradient_function(*models):
     for active learning- see "DEEP BATCH ACTIVE LEARNING BY DIVERSE, UNCERTAIN GRADIENT 
     LOWER BOUNDS" by Ash et al.
     
+    :models: Keras model (or multiple models to be applied sequentially). BADGE gradients
+        are computed with respect to kernel weights in the final layer of the last model.
+        
+    Returns a tensorflow function that maps inputs to flattened BADGE gradients
     """
+    # ------------ Identify the weight tensor to compute gradients against -----------
     # find the output layer of the final network
     final_layer = models[-1].layers[-1]
     # in the event that some clown defined this model with nested models,
@@ -133,30 +97,22 @@ def _build_output_gradient_function(*models):
     assert len(final_layer_weights) == 1, "not sure which weights to use"
     output_weights = final_layer_weights[0]
     
+    # ------------ Define a tf.function -----------
+    @tf.function
     def compute_output_gradients(x):
-        x = tf.expand_dims(x,0)
-        # compute a gradient of the loss function against
-        # pseudolabels with respect to the output model weights
+        # ------------ Run input through the model(s) -----------
         pred = x
         with tf.GradientTape() as tape:
             for m in models:
                 pred = m(pred)
-                
+            # ------------ Create pseudolabel by rounding model predictions -----------
             y = tf.stop_gradient(pred)
             label = tf.cast(y >= 0.5, tf.float32)
+            # ------------ Loss between prediction and pseudolabel -----------
             loss = tf.keras.losses.binary_crossentropy(label, pred)
+        # ------------ Calculate gradients and return flattened matrix -----------
+        grad = tape.jacobian(loss, output_weights)
+        return tf.reshape(grad, [x.shape[0], -1])
 
-        grad = tape.gradient(loss, output_weights)
-        # finally flatten the gradient tensor back to a vector
-        return tf.reshape(grad, [-1])
-    
-    # add a second layer of wrapper function to map the gradients
-    # separately across each example in a batch. In my tests this ran
-    # significantly faster than calling tf.map_fn() outside a tf.function.
-    @tf.function
-    def map_grads(x):
-        return tf.map_fn(compute_output_gradients, x,
-                         parallel_iterations=128, dtype=tf.float32)
-    
-    return map_grads
+    return compute_output_gradients
 

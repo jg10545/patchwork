@@ -3,7 +3,7 @@ import numpy as np
 import tensorflow as tf
 
 from patchwork._util import shannon_entropy, tiff_to_array, _load_img
-from patchwork._util import compute_l2_loss
+from patchwork._util import compute_l2_loss, _compute_alignment_and_uniformity
 
 
 
@@ -106,3 +106,17 @@ def test_l2_loss():
     model = tf.keras.Model(inpt,net)
     assert compute_l2_loss(model).numpy() == 0.
     
+    
+def test_compute_alignment_and_uniformity():
+    X = np.random.normal(0,1, size=(32,16)).astype(np.float32)
+    ds = tf.data.Dataset.from_tensor_slices((X,X))
+    ds = ds.batch(8)
+
+    inpt = tf.keras.layers.Input((16,))
+    net = tf.keras.layers.Dense(2)(inpt)
+    mod = tf.keras.Model(inpt,net)
+    
+    al, un = _compute_alignment_and_uniformity(ds, mod)
+    
+    assert al >= 0
+    assert un <= 0

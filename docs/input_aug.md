@@ -17,18 +17,21 @@ Augmentation is a critical part of effectively using self-supervision for imager
 
 You can pass `False` to the `augment` parameter to disable augmentation, `True` to use defaults, or a dictionary containing any of the following (with the rest disabled). Operations are applied in the order given here:
 
-* `gaussian_blur` (default `0.2`) with the specified probability, smooth the image by convolving with a 7x7 Gaussian kernel
-* `gaussian_noise` (default `0.2`) with the specified probability, add normally-distributed white noise to the image with standard deviation 0.1.
+* `flip_left_right` (default `True`) if `True`, flip the image left-to-right with 50% probability
+* `flip_up_down` (default `True`) if `True`, flip the image top-to-bottom with 50% probability
+* `rot90` (default `True`) if `True`, rotate the image by 0, 90, 180, or 270 degrees with equal probability
+* `zoom_scale` (default `0.2`) add a random pad to each side of the image, then randomly crop from each side- this parameter sets the scale for both (with `1` being the scale of the image).
+* `center_zoom_scale` (default off) modified version of `zoom_scale` biased toward sampling the center of the image
+* `jitter` (default off) "jitter" method from SimCLR paper; random brightness, contrast, saturation, and hue, applied in a random order
 * `brightness_delta` (default `0.2`) shift the image's brightness by a value randomly chosen from this interval
 * `contrast_delta` (default `0.1`) shift the image's contrast by a value randomly chosen from this interval
 * `saturation_delta` (default `0.1`) shift the image's saturation by a value randomly chosen from this interval
 * `hue_delta` (default `0.05`) shift the image's hue by a value randomly chosen from this interval
-* `flip_left_right` (default `True`) if `True`, flip the image left-to-right with 50% probability
-* `flip_up_down` (default `True`) if `True`, flip the image top-to-bottom with 50% probability
-* `rot90` (default `True`) if `True`, rotate the image by 0, 90, 180, or 270 degrees with equal probability
+* `gaussian_blur` (default `0.2`) with the specified probability, smooth the image by convolving with a 7x7 Gaussian kernel
+* `gaussian_noise` (default `0.2`) with the specified probability, add normally-distributed white noise to the image with standard deviation 0.1.
 * `drop_color` (default `0.2`) with the specified probability, drop color information by replacing every channel with its pixelwise average
 * `sobel_prob` (default `0.1`) with the specified probability, use a Sobel filter to trace the edges of the image and return the average of the two outputs 
-* `zoom_scale` (default `0.2`) add a random pad to each side of the image, then randomly crop from each side- this parameter sets the scale for both (with `1` being the scale of the image).
+* `jpeg_degrade` (default off) with specified probability, degrade image using low-quality JPEG compression
 * `mask` (default `0.2`) with the specified probability, randomly mask out a rectangle from the image
 
 Use `patchwork.viz.augplot()` to experiment with augmentation:

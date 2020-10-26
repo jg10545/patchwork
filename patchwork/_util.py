@@ -1,5 +1,6 @@
 import numpy as np
 from PIL import Image
+from scipy.spatial.distance import cdist
 
 import tensorflow as tf
 
@@ -92,7 +93,36 @@ def compute_l2_loss(*models):
     loss = 0
     for m in models:
         for v in m.trainable_variables:
-            if "batch_normalization" not in v.name:
+            if "kernel" in v.name:
                 loss += tf.nn.l2_loss(v)
                 
     return loss
+
+
+def _compute_alignment_and_uniformity(dataset, model, alpha=2, t=2):
+    """
+    Compute measures from "Understanding Contrastive Representation Learning
+    Through Alignment and Uniformity on the Hypersphere" by Wang and Isola.
+    
+    :dataset: tensorflow dataset returning augmented pairs of images
+    :model: keras model mapping images to semantic vectors (NOT the fully 
+              convolutional network!)
+    :alpha: parameter for alignment
+    :t: parameter for uniformity
+    
+    Returns alignment, uniformity
+    """
+    batch_alignment = []
+    vectors = []
+    for x1,x2 in dataset:
+        # compute normalized embedding vectors for each
+        z1 = tf.nn.l2_normalize(model(x1), axis=1)
+        z2 = tf.nn.l2_normalize(model(x2), axis=1)
+        batch_alignment.append(tf.reduce_sum((z1-z2)**alpha, axis=1).numpy())
+        vectors.append(z1.numpy())
+
+    alignment = np.concatenate(batch_alignment, axis=0).mean()
+
+    vectors = np.concatenate(vectors, axis=0)
+    uniformity = np.log(np.mean(np.exp(-1*t*cdist(vectors, vectors, metric="euclidean"))))
+    return alignment, uniformity
