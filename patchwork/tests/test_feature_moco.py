@@ -118,3 +118,21 @@ def test_build_logits_with_mochi_and_query_mixing():
     assert len(all_logits.shape) == 2
     assert all_logits.shape[0] == batch_size
     assert all_logits.shape[1] == K +1 + s + s_prime
+    
+    
+def test_build_logits_with_mochi_and_more_samples_than_N():
+    batch_size = 7
+    embed_dim = 5
+    K = 13
+    N = 6
+    s = 12
+    s_prime = 13
+
+    q = tf.nn.l2_normalize(np.random.normal(0, 1, size=(batch_size, embed_dim)).astype(np.float32), axis=1)
+    k = tf.nn.l2_normalize(np.random.normal(0, 1, size=(batch_size, embed_dim)).astype(np.float32), axis=1)
+    buffer = tf.Variable(tf.nn.l2_normalize(np.random.normal(0, 1, size=(K,embed_dim)).astype(np.float32), axis=1))
+    with tf.GradientTape() as tape:
+        all_logits = _build_logits(q, k, buffer, tape, N, s, s_prime)
+    assert len(all_logits.shape) == 2
+    assert all_logits.shape[0] == batch_size
+    assert all_logits.shape[1] == K +1 + s + s_prime
