@@ -88,6 +88,9 @@ def _build_logits(q, k, buffer, tape, N=0, s=0, s_prime=0, margin=0):
             # find the top-N negative logits- the N hardest "naturally 
             # occurring" negatives. inds is (batch_size, N)
             vals, inds = tf.math.top_k(negative_logits, k=N)
+            # test for case where we're sampling more than N combinations
+            while inds.shape[1] < max(s, s_prime):
+                inds = tf.concat([inds, inds], axis=1)
             # sample twice from the list of hard negative indices. each is (batch_size,s)
             inds1 = tf.transpose(tf.random.shuffle(tf.transpose(inds)))[:,:s]
             inds2 = tf.transpose(tf.random.shuffle(tf.transpose(inds)))[:,:s]
