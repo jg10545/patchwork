@@ -20,7 +20,6 @@ from tensorboard.plugins.hparams import api as hp
 from patchwork.loaders import _get_features, _get_rotation_features
 from patchwork.viz._projector import save_embeddings
 from patchwork.viz._kernel import _make_kernel_sprites
-from patchwork._mlflow import _set_up_mlflow_tracking
 
 
 INPUT_PARAMS = ["imshape", "num_channels", "norm", "batch_size",
