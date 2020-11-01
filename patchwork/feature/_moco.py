@@ -197,6 +197,7 @@ class MomentumContrastTrainer(GenericExtractor):
     Based on "Momentum Contrast for Unsupervised Visual Representation 
     Learning" by He et al.
     """
+    modelname = "MomentumContrast"
 
     def __init__(self, logdir, trainingdata, testdata=None, fcn=None, 
                  augment=True, batches_in_buffer=10, alpha=0.999, 
