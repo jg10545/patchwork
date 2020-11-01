@@ -48,6 +48,7 @@ class RotationTrainer(GenericExtractor):
     by Predicting Image Rotations" by Gidaris et al
     https://arxiv.org/abs/1803.07728
     """
+    modelname = "Rotation"
 
     def __init__(self, logdir, trainingdata, testdata=None, fcn=None, 
                  augment={"flip_left_right":True}, 

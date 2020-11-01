@@ -28,6 +28,7 @@ def _set_up_mlflow_tracking(tracking_uri, experiment_name, run_name, notes=None,
     # ------------------ SET UP EXPERIMENT ------------------
     # does this experiment name exist yet?
     existing_experiments = [x.name for x in client.list_experiments()]
+    print("existing experiments:", existing_experiments)
     # if it doesn't exist yet create it
     if experiment_name not in existing_experiments:
         client.create_experiment(experiment_name)
@@ -53,4 +54,5 @@ def _set_up_mlflow_tracking(tracking_uri, experiment_name, run_name, notes=None,
             for k in param_dicts[d]:
                 client.log_param(run_id, str(d)+"_"+str(k), str(param_dicts[d][k]))
             
-    return {"client":client, "run_id":run_id}
+    return {"client":client, "run_id":run_id, "tracking_uri":tracking_uri,
+            "experiment_name":experiment_name}
