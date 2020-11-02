@@ -4,9 +4,11 @@ import panel as pn
 import tensorflow as tf
 import os
 
+
+
 from patchwork._labeler import Labeler
 from patchwork._modelpicker import ModelPicker
-from patchwork._trainmanager import TrainManager
+from patchwork._trainmanager import TrainManager, _auc
 from patchwork._sample import stratified_sample, find_unlabeled, find_excluded_indices
 from patchwork._sample import _build_in_memory_dataset, find_labeled_indices
 from patchwork._training_functions import build_training_function
@@ -19,11 +21,14 @@ EPSILON = 1e-5
 
 
 
+
+
 class GUI(object):
     
     def __init__(self, df, feature_vecs=None, feature_extractor=None, classes=[],
                  imshape=(256,256), num_channels=3, norm=255,
-                 num_parallel_calls=2, logdir=None, aug=True, dim=3):
+                 num_parallel_calls=2, logdir=None, aug=True, dim=3,
+                 tracking_uri=None, experiment_name=None):
         """
         Initialize either with a set of feature vectors or a feature extractor
         
@@ -61,6 +66,8 @@ class GUI(object):
         self.models = {"feature_extractor":feature_extractor, 
                        "teacher_fine_tuning":None,
                        "teacher_output":None}
+        # place to hide hyperparameter info for models
+        self._model_params = {}
         self.params = {"entropy_reg_weight":0, "mean_teacher_alpha":0}
         
         
@@ -102,7 +109,64 @@ class GUI(object):
         # default optimizer
         self._opt = tf.keras.optimizers.Adam(1e-3)
         
+        if tracking_uri is not None:
+            self._configure_mlflow(tracking_uri, experiment_name)
         
+        
+        
+    def _configure_mlflow(self, tracking_uri, experiment_name):
+        """
+        Connect to an MLflow server and create or set up an experiment
+        """
+        import mlflow, mlflow.keras
+        mlflow.set_tracking_uri(tracking_uri)
+        mlflow.set_experiment(experiment_name)
+        self._mlflow = mlflow
+        
+    def _mlflow_track_run(self):
+        if hasattr(self, "_mlflow"):
+            # end the previous run, if there was one
+            self._mlflow.end_run()
+            df = self.df
+            pred = self.pred_df
+            # aggregate parameters
+            params = {}
+            for k in self._model_params["training"]:
+                params[k] = self._model_params["training"][k]
+            for k in self._model_params["fine_tuning"]:
+                if k != "num_params":
+                    params[k] = self._model_params["fine_tuning"][k]
+            for k in self._model_params["output"]:
+                if k != "num_params":
+                    params[k] = self._model_params["output"][k]
+            params["num_params"] = self._model_params["fine_tuning"]["num_params"] + \
+                                    self._model_params["output"]["num_params"]
+                                    
+            num_validation_points = df["validation"].sum()
+            params["num_validation_points"] = num_validation_points
+            num_training = len(df) - find_unlabeled(df).sum() - num_validation_points
+            params["num_training_points"] = num_training
+            # start a run
+            self._mlflow.start_run()
+            # log model params and training params
+            self._mlflow.log_params(params)
+            # compute validation AUC as a metric to log
+            for c in self.classes:
+                pos_labeled = pred[c][(df[c] == 1)&(df["validation"] == True)].values
+                neg_labeled = pred[c][(df[c] == 0)&(df["validation"] == True)].values
+                val_auc = _auc(pos_labeled, neg_labeled)
+                self._mlflow.log_metric(f"val_auc_{c}", val_auc, step=0)
+                
+    def log_model(self):
+        """
+        Log the current model to an MLflow server, if one is connected
+        """
+        if hasattr(self, "_mlflow"):
+            self._mlflow.keras.log_model(self.models["full"],
+                                         "activelearner_full_model")
+        else:
+            print("MLflow connection not set up")
+            
         
     def _update_unlabeled(self):
         """

@@ -11,8 +11,23 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import panel as pn
 import tensorflow as tf
-
 from sklearn.metrics import roc_auc_score
+
+
+
+
+def _auc(pos, neg, rnd=2):
+    """
+    macro for computing ROC AUC score for display from arrays
+    of scores for positive and negative cases
+    """
+    if (len(pos) > 0)&(len(neg) > 0):
+        y_true = np.concatenate([np.ones(len(pos)), np.zeros(len(neg))])
+        y_pred = np.concatenate([pos, neg])
+        return round(roc_auc_score(y_true, y_pred), rnd)
+    else:
+        return 0
+
 
 def _empty_fig():
     """
@@ -38,17 +53,6 @@ def _loss_fig(l):
     return fig
 
 
-def _auc(pos, neg, rnd=2):
-    """
-    macro for computing ROC AUC score for display from arrays
-    of scores for positive and negative cases
-    """
-    if (len(pos) > 0)&(len(neg) > 0):
-        y_true = np.concatenate([np.ones(len(pos)), np.zeros(len(neg))])
-        y_pred = np.concatenate([pos, neg])
-        return round(roc_auc_score(y_true, y_pred), rnd)
-    else:
-        return 0
 
 def _hist_fig(df, pred, c):
     """
@@ -154,6 +158,10 @@ class TrainManager():
     def _train_callback(self, *event):
         # update the training function
         self.pw.build_training_step(self._learn_rate.value)
+        self.pw._model_params["training"] = {"learn_rate":self._learn_rate.value,
+                                             "batch_size":self._batch_size.value,
+                                             "samples_per_epoch":self._samples_per_epoch.value,
+                                             "epochs":self._epochs.value}
         # for each epoch
         epochs = self._epochs.value
         for e in range(epochs):
@@ -165,6 +173,7 @@ class TrainManager():
         if self._eval_after_training.value:
             self._footer.object = "### EVALUATING"
             self.pw.predict_on_all(self._batch_size.value)
+            self.pw._mlflow_track_run()
             
         if self._compute_badge_gradients.value:
             self._footer.object = "### COMPUTING BADGE GRADIENTS"
@@ -180,6 +189,8 @@ class TrainManager():
         self._hist_fig.object = _hist_fig(self.pw.df, 
                                           self.pw.pred_df,
                                           self._hist_selector.value)
+        
+
             
 
         
