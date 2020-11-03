@@ -8,6 +8,10 @@ from patchwork._losses import masked_binary_focal_loss
 
 from patchwork._layers import CosineDense
 
+def _norm(x):
+    import tensorflow as tf
+    return tf.keras.backend.l2_normalize(x,1)
+
 class SigmoidCrossEntropy(param.Parameterized):
     """
     Output network for the basic sigmoid case
@@ -26,8 +30,7 @@ class SigmoidCrossEntropy(param.Parameterized):
         inpt = tf.keras.layers.Input((inpt_channels))
         net = inpt
         if self.normalize:
-            norm = tf.keras.layers.Lambda(lambda x: tf.keras.backend.l2_normalize(x,1))
-            net = norm(net)
+            net = tf.keras.layers.Lambda(_norm)(net)
         dense = tf.keras.layers.Dense(num_classes, activation="sigmoid")(net)
         def loss(y_true, y_pred):
             return masked_binary_crossentropy(y_true, y_pred, label_smoothing=self.label_smoothing)
@@ -56,8 +59,7 @@ class SigmoidFocalLoss(param.Parameterized):
         inpt = tf.keras.layers.Input((inpt_channels))
         net = inpt
         if self.normalize:
-            norm = tf.keras.layers.Lambda(lambda x: tf.keras.backend.l2_normalize(x,1))
-            net = norm(net)
+            net = tf.keras.layers.Lambda(_norm)(net)
         dense = tf.keras.layers.Dense(num_classes, activation="sigmoid")(net)
         def loss(y_true, y_pred):
             return masked_binary_focal_loss(y_true, y_pred, self.gamma)

@@ -154,7 +154,7 @@ class GUI(object):
             for c in self.classes:
                 pos_labeled = pred[c][(df[c] == 1)&(df["validation"] == True)].values
                 neg_labeled = pred[c][(df[c] == 0)&(df["validation"] == True)].values
-                val_auc = _auc(pos_labeled, neg_labeled)
+                val_auc = _auc(pos_labeled, neg_labeled, rnd=8)
                 self._mlflow.log_metric(f"val_auc_{c}", val_auc, step=0)
                 
     def log_model(self):
