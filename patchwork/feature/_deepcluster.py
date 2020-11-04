@@ -129,6 +129,7 @@ class DeepClusterTrainer(GenericExtractor):
     """
     Class for training a DeepCluster model
     """
+    modelname = "DeepCluster"
 
     def __init__(self, logdir, trainingdata, testdata=None, fcn=None, augment=True, 
                  pca_dim=256, k=1000, dense=[4096], mult=1, 

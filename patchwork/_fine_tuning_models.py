@@ -4,6 +4,7 @@ import tensorflow as tf
 
 from patchwork._layers import _next_layer
 
+
 class GlobalPooling(param.Parameterized):
     """
     Just a single pooling layer.
@@ -23,7 +24,15 @@ class GlobalPooling(param.Parameterized):
             pool = tf.keras.layers.GlobalAvgPool2D()
         else:
             pool = tf.keras.layers.Flatten()
-        return tf.keras.Model(inpt, pool(inpt))
+        # store a reference to the model in case we need it later
+        self._model = tf.keras.Model(inpt, pool(inpt))
+        return self._model
+    
+    def model_params(self):
+        return {"fine_tuning_type":"GlobalPooling",
+                "pooling_type":self.pooling_type,
+                "num_params":self._model.count_params(),
+                "num_layers":len(self._model.layers)}
         
         
 class ConvNet(param.Parameterized):
@@ -57,4 +66,16 @@ class ConvNet(param.Parameterized):
             net = tf.keras.layers.GlobalAvgPool2D()(net)
         else:
             net = tf.keras.layers.Flatten()(net)
-        return tf.keras.Model(inpt, net)
+        # store reference to model in case we need it later
+        self._model = tf.keras.Model(inpt, net)
+        return self._model
+    
+    def model_params(self):
+        return {"fine_tuning_type":"ConvNet",
+                "pooling_type":self.pooling_type,
+                "num_params":self._model.count_params(),
+                "num_layers":len(self._model.layers),
+                "kernel_size":self.kernel_size,
+                "separable":self.separable_convolutions,
+                "structure":self.layers}
+        
