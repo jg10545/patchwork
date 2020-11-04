@@ -81,11 +81,12 @@ def distill(filepaths, ys, student, epochs=5, testfiles=None, testlabels=None,
         Image input shape. The default is (256,256).
     num_channels : int, optional
         Number of input channels. The default is 3.
-    class_names :
-    
-    tracking_uri :
-        
-    experiment_name :
+    class_names : list of strings; optional
+        Names for each output category. If left blank, will use integers
+    tracking_uri : string; optional
+        URI for MLflow tracking server
+    experiment_name : string; optional
+        Name of MLflow experiment to log to
     **kwargs : 
         Additional arguments passed to pw.loaders.dataset
 
