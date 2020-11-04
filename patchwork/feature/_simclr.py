@@ -235,6 +235,7 @@ class SimCLRTrainer(GenericExtractor):
     Based on "A Simple Framework for Contrastive Learning of Visual
     Representations" by Chen et al.
     """
+    modelname = "SimCLR"
 
     def __init__(self, logdir, trainingdata, testdata=None, fcn=None, 
                  augment=True, temperature=1., num_hidden=128,

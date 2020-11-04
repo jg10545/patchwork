@@ -20,7 +20,6 @@ from tensorboard.plugins.hparams import api as hp
 from patchwork.loaders import _get_features, _get_rotation_features
 from patchwork.viz._projector import save_embeddings
 from patchwork.viz._kernel import _make_kernel_sprites
-from patchwork._mlflow import _set_up_mlflow_tracking
 
 
 INPUT_PARAMS = ["imshape", "num_channels", "norm", "batch_size",
@@ -136,6 +135,7 @@ class GenericExtractor(object):
         _run_training_epoch
         evaluate
     """
+    modelname = "GenericExtractor"
     
     
     def __init__(self, logdir=None, trainingdata=[], fcn=None, augment=False, 
@@ -261,9 +261,7 @@ class GenericExtractor(object):
             
             if metric:
                 if hasattr(self, "_mlflow"):
-                    client = self._mlflow["client"]
-                    run_id = self._mlflow["run_id"]
-                    client.log_metric(run_id, s, scalars[s], step=self.step)
+                    self._log_metrics(scalars, step=self.step)
             
     def _record_images(self, **images):
         for i in images:
@@ -449,7 +447,7 @@ class GenericExtractor(object):
         kernels = np.expand_dims(_make_kernel_sprites(self._models["fcn"]),0)
         self._record_images(first_convolution_filters=kernels)
         
-    def track_with_mlflow(self, tracking_uri, experiment_name, run_name):
+    def track_with_mlflow(self, tracking_uri, experiment_name, run_name=None):
         """
         Connect to an MLflow server to log parameters and metrics
         
@@ -459,11 +457,41 @@ class GenericExtractor(object):
         :run_name: string; name of run to log to. if run doesn't exist, 
             one will be created
         """
-        param_dicts = {"model":self.config, "input":self.input_config}
-        if self.augment_config is not False:
-            param_dicts["augment"] = self.augment_config
+        # set up a connection to the server, an experiment, and the run
+        import mlflow
+        mlflow.set_tracking_uri(tracking_uri)
+        mlflow.set_experiment(experiment_name)
+        run = mlflow.start_run(run_name=run_name)
         
-        self._mlflow = _set_up_mlflow_tracking(tracking_uri, 
-                                experiment_name, run_name, 
-                                notes=self._notes, param_dicts=param_dicts)
+        self._mlflow = {"run":run}
+        # log all our parameters for the model, input configuration, and
+        # data augmentation
+        mlflow.log_params({"model_"+k:self.config[k] for k in self.config})
+        mlflow.log_params({"input_"+k:self.input_config[k] for k in 
+                           self.input_config})
+        if self.augment_config is not False:
+            mlflow.log_params({"augment_"+k:self.augment_config[k] for k in 
+                           self.augment_config})
+        if self._notes is not None:
+            mlflow.set_tag("mlflow.note.content", self._notes)
+            
+        self._log_metrics = mlflow.log_metrics
+
+        
+    def log_model(self, model_name=None):
+        """
+        Log the feature extractor to an MLflow server. Assumes you've
+        already run track_with_mflow()
+        """
+        if model_name is None:
+            model_name = self.modelname + "_FCN"
+            
+        assert hasattr(self, "_mlflow"), "need to run track_with_mlflow() first"
+        from mlflow.keras import log_model
+        log_model(self._models["fcn"], model_name)
+        
+    def __del__(self):
+        if hasattr(self, "_mlflow"):
+            import mlflow
+            mlflow.end_run()
         

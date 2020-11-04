@@ -254,6 +254,7 @@ class ContextEncoderTrainer(GenericExtractor):
     """
     Class for training a context encoder.
     """
+    modelname = "ContextEncoder"
 
     def __init__(self, logdir, trainingdata, testdata=None, fcn=None, inpainter=None,
                  discriminator=None, augment=True, 

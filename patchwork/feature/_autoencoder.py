@@ -66,6 +66,7 @@ class AutoEncoderTrainer(GenericExtractor):
     """
     Generic convolutional autoencoder
     """
+    modelname = "Autoencoder"
 
     def __init__(self, logdir, trainingdata, testdata=None, fcn=None, full_model=None,
                  conv_layers=[32, 48, 64, 128], dropout=0.5,

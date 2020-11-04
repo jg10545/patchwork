@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import numpy as np
 from tqdm import tqdm
 import tensorflow as tf
 from sklearn.metrics import accuracy_score, roc_auc_score
@@ -52,7 +53,9 @@ def _build_student_model(model, output_dim, imshape=(256,256), num_channels=3):
 
 def distill(filepaths, ys, student, epochs=5, testfiles=None, testlabels=None,
             lr=1e-3, optimizer="momentum",
-            imshape=(256,256), num_channels=3, **kwargs):
+            imshape=(256,256), num_channels=3,
+            class_names=None,
+            tracking_uri=None, experiment_name=None, **kwargs):
     """
     
 
@@ -78,6 +81,12 @@ def distill(filepaths, ys, student, epochs=5, testfiles=None, testlabels=None,
         Image input shape. The default is (256,256).
     num_channels : int, optional
         Number of input channels. The default is 3.
+    class_names : list of strings; optional
+        Names for each output category. If left blank, will use integers
+    tracking_uri : string; optional
+        URI for MLflow tracking server
+    experiment_name : string; optional
+        Name of MLflow experiment to log to
     **kwargs : 
         Additional arguments passed to pw.loaders.dataset
 
@@ -89,6 +98,17 @@ def distill(filepaths, ys, student, epochs=5, testfiles=None, testlabels=None,
         Training batch loss
 
     """
+    if class_names is None:
+        class_names = np.arange(ys.shape[1])
+    if tracking_uri is not None:
+        import mlflow, mlflow.keras
+        mlflow.set_tracking_uri(tracking_uri)
+        mlflow.set_experiment(experiment_name)
+        mlflow.log_params({"lr":lr, "optimizer":optimizer, "imshape":imshape,
+                           "num_channels":num_channels})
+        if isinstance(student, str):
+            mlflow.log_param("student", student)
+    
     output_dim = ys.shape[1]
     outputs = {}
     # CREATE THE OPTIMIZER
@@ -104,7 +124,8 @@ def distill(filepaths, ys, student, epochs=5, testfiles=None, testlabels=None,
         test_ds, test_ns = pw.loaders.dataset(testfiles, imshape=imshape,
                                 num_channels=num_channels, shuffle=False,
                                 augment=False)
-        for c in range(output_dim):
+        #for c in range(output_dim):
+        for c in class_names:
             outputs["auc_%s"%c] = []
             outputs["accuracy_%s"%c] = []
         
@@ -129,19 +150,30 @@ def distill(filepaths, ys, student, epochs=5, testfiles=None, testlabels=None,
     
     # TRAIN THE STUDENT MODEL
     train_loss = []
+    step = 0
     for e in tqdm(range(epochs)):
         for x, y in ds:
             train_loss.append(train_step(x,y).numpy())
+            step += 1
             
         # AT THE END OF EVERY EPOCH RUN TESTS
         if (testfiles is not None)&(testlabels is not None):
             predictions = student.predict(test_ds, steps=test_ns)
             # compute performance metrics for each category
-            for i in range(output_dim):
-                outputs["auc_%s"%i].append(roc_auc_score(testlabels[:,i], predictions[:,i]))
-                outputs["accuracy_%s"%i].append(accuracy_score(testlabels[:,i], (predictions[:,i] >= 0.5).astype(int)))
+            #for i in range(output_dim):
+            for e,c in enumerate(class_names):
+                auc = roc_auc_score(testlabels[:,e], predictions[:,e])
+                acc = accuracy_score(testlabels[:,e], (predictions[:,e] >= 0.5).astype(int))
+                outputs["auc_%s"%c].append(auc)
+                outputs["accuracy_%s"%c].append(acc)
+                if tracking_uri is not None:
+                    mlflow.log_metrics({"auc_%s"%c:auc, "accuracy_%s"%c:acc},
+                                       step=step)
             
            
     outputs["train_loss"] = train_loss
+    if tracking_uri is not None:
+        mlflow.keras.log_model(student, "student_model")
+        mlflow.end_run()
     return student, outputs
     

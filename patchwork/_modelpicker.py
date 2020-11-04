@@ -139,13 +139,13 @@ class ModelPicker(object):
         # update GUI object's model dictionary
         self._pw.models["fine_tuning"] = fine_tuning_model
         self._pw.models["output"] = output_model
+        # record hyperparameter info
+        self._pw._model_params["fine_tuning"] = self._fine_tuning_chooser.value.model_params()
+        self._pw._model_params["output"] = self._output_chooser.value.model_params()
         
 
         # 3) GENERATE FULL MODEL (for inference)
         if self._feature_extractor is not None:
-            #inputshape = (self._pw._imshape[0], self._pw._imshape[1],
-            #           self._pw._num_channels)
-            #inpt = tf.keras.layers.Input(self._feature_shape)
             inpt = tf.keras.layers.Input(self._feature_extractor.input_shape[1:])
             net = self._feature_extractor(inpt)
         else:
