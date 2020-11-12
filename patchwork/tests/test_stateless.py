@@ -79,7 +79,7 @@ def test_estimate_accuracy():
     
     acc = pws._estimate_accuracy(tp, fp, tn, fn)
     assert isinstance(acc, dict)
-    assert acc["base_rate"] == "0.50"
+    assert acc["base_rate"] == "0.500"
     #assert acc["interval_low"] < acc["interval_high"]
         
 def test_eval():
@@ -236,4 +236,59 @@ def test_get_indices_of_tiles_in_predicted_class():
     assert (len(indices)==0) or (indices.max() < N)
     
     
+def test_mlflow(mocker):
+    class FakeClass():
+        def __init__(self):
+            pass
+        
+    run = FakeClass()
+    run.info = FakeClass()
+    run.info.run_id = "fake_run_id"
     
+    mocker.patch("mlflow.set_tracking_uri", return_value=None)
+    mocker.patch("mlflow.set_experiment", return_value=None)
+    mocker.patch("mlflow.start_run", return_value=run)
+    
+    run_id = pws._mlflow("fake_server_uri", "fake_experiment_name")
+    assert run_id == "fake_run_id"
+    
+def test_train_with_mlflow(mocker):
+    N = 6
+    d = 7
+    features = np.random.normal(0,1,(N,d))
+    labels = [
+        {"class0":0, "class1":1},
+              {"class0":1, "class1":1},
+              {"class0":0, "class1":0},
+              {"class0":0, "class1":1, "validation":True},
+              {"class0":1, "class1":1, "validation":True},
+              {"class0":0, "class1":0, "validation":True}
+        ]
+    classes = ["class0", "class1"]
+    
+    class FakeClass():
+        def __init__(self):
+            pass
+        
+    run = FakeClass()
+    run.info = FakeClass()
+    run.info.run_id = "fake_run_id"
+    
+    mocker.patch("mlflow.set_tracking_uri", return_value=None)
+    mocker.patch("mlflow.set_experiment", return_value=None)
+    mocker.patch("mlflow.start_run", return_value=run)
+    mocker.patch("mlflow.log_params", return_value=None)
+    mocker.patch("mlflow.log_metrics", return_value=None)
+    
+    model, loss, acc = pws.train(features, labels, classes,
+                                 training_steps=1, batch_size=10,
+                                 num_hidden_layers=0)
+    
+    
+    assert isinstance(model, tf.keras.Model)
+    assert isinstance(loss, np.ndarray)
+    assert isinstance(acc, dict)
+    assert len(loss) == 1
+    assert len(acc) == len(classes)
+    assert "base_rate" in acc["class0"]
+          

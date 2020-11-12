@@ -25,6 +25,58 @@ import sklearn.preprocessing, sklearn.decomposition, sklearn.cluster
 from sklearn.metrics import roc_auc_score
 
 
+def _mlflow(server_uri, experiment_name, params=None, metrics=None, 
+            model=None, run_id=None):
+    """
+    Wrapper for MLflow integration
+    
+    :server_uri: string; URI for tracking server
+    :experiment_name: string; name of experiment to log to
+    :params: dict; will be passed to mlflow.log_params()
+    :metrics: dict of dicts; will be passed to mlflow.log_metrics()
+    :model: tf.keras.Model; will be passed to mlflow.keras.log_model()
+    :run_id: ID of existing run to connect to
+    
+    """
+    # if Nones were passed, don't do anything
+    if server_uri is None or experiment_name is None:
+        return None
+    import mlflow
+    mlflow.set_tracking_uri(server_uri)
+    mlflow.set_experiment(experiment_name)
+    run = mlflow.start_run(run_id)
+    
+    if params is not None:
+        mlflow.log_params(params)
+    # Metrics are stored in a dictionary of dictionaries- one set
+    # of metrics per category. Flatten the dictionary and save
+    # to the tracking server.
+    if metrics is not None:
+        metric_dict = {}
+        for c in metrics:
+            for m in ["accuracy", "base_rate", "prob_above_base_rate", "auc"]:
+                if m in metrics[c]:
+                    # accuracy is reported with an interval, e.g. 0.80 (0.75-0.85)
+                    # so split on the space and just take the first value, so
+                    # MLflow server can treat it like a float
+                    metric_dict[c+"_"+m] = metrics[c][m].split(" ")[0]
+        if len(metric_dict) > 0:
+            mlflow.log_metrics(metric_dict)
+    if model is not None:
+        mlflow.keras.log_model(model, "terratorious_model")
+        
+    return run.info.run_id
+
+
+def start_mlflow_run(server_uri, experiment_name):
+    """
+    Start an mlflow run and return the run ID
+    :server_uri: string; URI for tracking server
+    :experiment_name: string; name of experiment to log to
+    """
+    return _mlflow(server_uri, experiment_name)
+
+
 def _build_model(input_dim, num_classes, num_hidden_layers=0, 
                  hidden_dimension=128,
                  normalize_inputs=False, dropout=0):
@@ -56,7 +108,6 @@ def _build_training_dataset(features, df, num_classes, num_samples,
                             batch_size):
     indices, labels = stratified_sample(df, num_samples, 
                                             return_indices=True)
-    #ds = tf.data.Dataset.from_tensor_slices((features[indices], labels))
     ds = tf.data.Dataset.from_tensor_slices((indices, labels))
     
     def _load_feature(x,y):
@@ -135,13 +186,10 @@ def _estimate_accuracy(tp, fp, tn, fn, alpha=5, beta=5):
     prob_above_base_rate = 1-st.beta.cdf(base_rate, alpha+num_right, 
                                          beta+num_wrong)
         
-    #return {"accuracy":acc, "base_rate":base_rate,
-    #       "interval_low":interval_low, "interval_high":interval_high,
-    #       "prob_above_base_rate":prob_above_base_rate}
-    return {"accuracy":"{:0.2f} ({:0.2f}-{:0.2f})".format(acc, interval_low,
+    return {"accuracy":"{:0.3f} ({:0.3f}-{:0.3f})".format(acc, interval_low,
                                                               interval_high),
-                "base_rate":"{:0.2f}".format(base_rate),
-                "prob_above_base_rate":"{:0.2f}".format(prob_above_base_rate)}
+                "base_rate":"{:0.3f}".format(base_rate),
+                "prob_above_base_rate":"{:0.3f}".format(prob_above_base_rate)}
 
 
 def _eval(features, df, classes, model, threshold=0.5, alpha=5,beta=5):
@@ -188,7 +236,7 @@ def _eval(features, df, classes, model, threshold=0.5, alpha=5,beta=5):
             # of validation points that are nonempty for this class (in case
             # there are partially-labeled val points)
             nonempty = pd.notnull(df[c]).values[val_subset]
-            outdict[c]["auc"] = "{:0.2f}".format(roc_auc_score(val_labels[nonempty,i],
+            outdict[c]["auc"] = "{:0.3f}".format(roc_auc_score(val_labels[nonempty,i],
                                                                preds[nonempty,i]))
 
             # also include raw values of model outputs for positive/negative
@@ -217,19 +265,24 @@ def _eval(features, df, classes, model, threshold=0.5, alpha=5,beta=5):
 
 def train(features, labels, classes, training_steps=1000, 
           batch_size=32, learning_rate=1e-3, focal_loss=False,
+          server_uri=None, experiment_name=None, run_id=None,
           **model_kwargs):
     """
     Hey now, you're an all-star. Get your train on.
     
     
     :features: (num_samples, input_dim) array of feature vectors
-    :training_steps: how many steps to train for
+    :labels:
     :classes: list of strings; names of categories to include in model
+    :training_steps: how many steps to train for
     :batch_size: number of examples per batch
     :learning_rate: learning rate for Adam optimizer
     :focal_loss: Boolean; whether to use focal loss (with gamma=2) instead
         of binary crossentropy loss
     :model_kwargs: keyword arguments for model construction
+    :server_uri: string; URI for mlflow tracking server
+    :experiment_name: string; name of mlflow experiment to log to
+    :run_id: string; ID of mlflow run to log to
     
     Returns
     :model: trained Keras model
@@ -273,6 +326,15 @@ def train(features, labels, classes, training_steps=1000,
         
     # finally run some performance metrics
     acc = _eval(features, df, classes, model)
+    
+    # log results to mlflow
+    params = {"batch_size":batch_size, "learning_rate":learning_rate,
+              "focal_loss":focal_loss, "training_steps":training_steps,
+              "num_labels":len(labels)}
+    for k in model_kwargs:
+        params[k] = model_kwargs[k]
+    _ = _mlflow(server_uri, experiment_name, params=params,
+                metrics=acc, run_id=run_id)
         
     return model, np.array(training_loss), acc
 
