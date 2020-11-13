@@ -26,7 +26,7 @@ from sklearn.metrics import roc_auc_score
 
 
 def _mlflow(server_uri, experiment_name, params=None, metrics=None, 
-            model=None, run_id=None):
+            model=None, run_id=None, model_name="terratorious_model"):
     """
     Wrapper for MLflow integration
     
@@ -63,7 +63,7 @@ def _mlflow(server_uri, experiment_name, params=None, metrics=None,
         if len(metric_dict) > 0:
             mlflow.log_metrics(metric_dict)
     if model is not None:
-        mlflow.keras.log_model(model, "terratorious_model")
+        mlflow.keras.log_model(model, model_name)
         
     return run.info.run_id
 
@@ -75,6 +75,20 @@ def start_mlflow_run(server_uri, experiment_name):
     :experiment_name: string; name of experiment to log to
     """
     return _mlflow(server_uri, experiment_name)
+
+def log_model(server_uri, experiment_name, run_id, model, 
+              model_name="terratorious_model"):
+    """
+    Start an mlflow run and return the run ID
+    :server_uri: string; URI for tracking server
+    :experiment_name: string; name of experiment to log to
+    :run_id: string; ID of run
+    :model: keras model to log
+    :model_name: string; relative path to log model artifact to in mlflow
+    """
+    return _mlflow(server_uri, experiment_name, run_id=run_id,
+                   model=model, model_name=model_name)
+
 
 
 def _build_model(input_dim, num_classes, num_hidden_layers=0, 
