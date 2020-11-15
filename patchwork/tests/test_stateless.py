@@ -236,21 +236,6 @@ def test_get_indices_of_tiles_in_predicted_class():
     assert (len(indices)==0) or (indices.max() < N)
     
     
-def test_mlflow(mocker):
-    class FakeClass():
-        def __init__(self):
-            pass
-        
-    run = FakeClass()
-    run.info = FakeClass()
-    run.info.run_id = "fake_run_id"
-    
-    mocker.patch("mlflow.set_tracking_uri", return_value=None)
-    mocker.patch("mlflow.set_experiment", return_value=None)
-    mocker.patch("mlflow.start_run", return_value=run)
-    
-    run_id = pws._mlflow("fake_server_uri", "fake_experiment_name")
-    assert run_id == "fake_run_id"
     
 def test_train_with_mlflow(mocker):
     N = 6
@@ -279,6 +264,7 @@ def test_train_with_mlflow(mocker):
     mocker.patch("mlflow.start_run", return_value=run)
     mocker.patch("mlflow.log_params", return_value=None)
     mocker.patch("mlflow.log_metrics", return_value=None)
+    mocker.patch("mlflow.end_run", return_value=None)
     
     model, loss, acc = pws.train(features, labels, classes,
                                  training_steps=1, batch_size=10,
