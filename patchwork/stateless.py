@@ -26,7 +26,8 @@ from sklearn.metrics import roc_auc_score
 
 
 def _mlflow(server_uri, experiment_name, params=None, metrics=None, 
-            model=None, run_id=None, model_name="terratorious_model"):
+            model=None, run_id=None, model_name="classification_model",
+            log_model=False):
     """
     Wrapper for MLflow integration
     
@@ -36,7 +37,8 @@ def _mlflow(server_uri, experiment_name, params=None, metrics=None,
     :metrics: dict of dicts; will be passed to mlflow.log_metrics()
     :model: tf.keras.Model; will be passed to mlflow.keras.log_model()
     :run_id: ID of existing run to connect to
-    
+    :model_name: relative path for logging model as an artifact
+    :log_model: Boolean for whether to log model as an artifact
     """
     # if Nones were passed, don't do anything
     if server_uri is None or experiment_name is None:
@@ -62,32 +64,11 @@ def _mlflow(server_uri, experiment_name, params=None, metrics=None,
                     metric_dict[c+"_"+m] = metrics[c][m].split(" ")[0]
         if len(metric_dict) > 0:
             mlflow.log_metrics(metric_dict)
-    if model is not None:
+    if log_model and (model is not None):
         mlflow.keras.log_model(model, model_name)
         
-    return run.info.run_id
+    mlflow.end_run()
 
-
-def start_mlflow_run(server_uri, experiment_name):
-    """
-    Start an mlflow run and return the run ID
-    :server_uri: string; URI for tracking server
-    :experiment_name: string; name of experiment to log to
-    """
-    return _mlflow(server_uri, experiment_name)
-
-def log_model(server_uri, experiment_name, run_id, model, 
-              model_name="terratorious_model"):
-    """
-    Start an mlflow run and return the run ID
-    :server_uri: string; URI for tracking server
-    :experiment_name: string; name of experiment to log to
-    :run_id: string; ID of run
-    :model: keras model to log
-    :model_name: string; relative path to log model artifact to in mlflow
-    """
-    return _mlflow(server_uri, experiment_name, run_id=run_id,
-                   model=model, model_name=model_name)
 
 
 
@@ -279,8 +260,8 @@ def _eval(features, df, classes, model, threshold=0.5, alpha=5,beta=5):
 
 def train(features, labels, classes, training_steps=1000, 
           batch_size=32, learning_rate=1e-3, focal_loss=False,
-          server_uri=None, experiment_name=None, run_id=None,
-          **model_kwargs):
+          server_uri=None, experiment_name=None, log_model=False,
+          model_name="classification_model", **model_kwargs):
     """
     Hey now, you're an all-star. Get your train on.
     
@@ -296,14 +277,14 @@ def train(features, labels, classes, training_steps=1000,
     :model_kwargs: keyword arguments for model construction
     :server_uri: string; URI for mlflow tracking server
     :experiment_name: string; name of mlflow experiment to log to
-    :run_id: string; ID of mlflow run to log to
+    :log_model: whether to log model as an mlflow artifact after training
+    :model_name: if logging, relative path to store artifact at
     
     Returns
     :model: trained Keras model
     :training_loss: array of length (training_steps) giving the
         loss function value at each training step
-    :validation_metrics: dictionary of validation metrics NOT YET
-        IMPLEMENTED
+    :validation_metrics: dictionary of validation metrics 
     """
     # convert labels to a dataframe
     df = _labels_to_dataframe(labels, classes)
@@ -342,13 +323,18 @@ def train(features, labels, classes, training_steps=1000,
     acc = _eval(features, df, classes, model)
     
     # log results to mlflow
+    num_val_examples = np.sum(df.validation)
+    num_train_examples = len(labels) - num_val_examples
     params = {"batch_size":batch_size, "learning_rate":learning_rate,
               "focal_loss":focal_loss, "training_steps":training_steps,
-              "num_labels":len(labels)}
+              "num_val_examples":num_val_examples, 
+              "num_train_examples":num_train_examples}
     for k in model_kwargs:
         params[k] = model_kwargs[k]
-    _ = _mlflow(server_uri, experiment_name, params=params,
-                metrics=acc, run_id=run_id)
+    
+    _mlflow(server_uri, experiment_name, params=params,
+                metrics=acc, model=model, log_model=log_model,
+                model_name=model_name)
         
     return model, np.array(training_loss), acc
 
