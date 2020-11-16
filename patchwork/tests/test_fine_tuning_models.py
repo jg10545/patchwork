@@ -41,7 +41,7 @@ def test_ConvNet():
     model = c.build((None, None, 7))
     
     assert isinstance(model, tf.keras.Model)
-    assert len(model.layers) == 5
+    assert len(model.layers) == 7
     assert model.output_shape[1] == 11
     
     
@@ -53,7 +53,7 @@ def test_ConvNet_with_dropout():
     model = c.build((None, None, 7))
     
     assert isinstance(model, tf.keras.Model)
-    assert len(model.layers) == 9
+    assert len(model.layers) == 12
     assert model.output_shape[1] == 13
     
 def test_ConvNet_with_separable_convolutions():
@@ -64,6 +64,6 @@ def test_ConvNet_with_separable_convolutions():
     model = c.build((None, None, 7))
     
     assert isinstance(model, tf.keras.Model)
-    assert len(model.layers) == 4
+    assert len(model.layers) == 6
     assert model.output_shape[1] == 13
     

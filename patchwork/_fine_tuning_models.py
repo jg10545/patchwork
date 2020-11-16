@@ -41,6 +41,7 @@ class ConvNet(param.Parameterized):
     """
     layers = param.String(default="128,p,d,128", doc="Comma-separated list of filters")
     kernel_size = param.ObjectSelector(default=1, objects=[1,3,5], doc="Spatial size of filters")
+    batchnorm = param.Boolean(False, doc="Whether to use batch normalization in convolutional layers")
     separable_convolutions = param.Boolean(False, doc="Whether to use depthwise separable convolutions")
     dropout_rate = param.Number(0.5, bounds=(0.05,0.95), doc="Spatial dropout rate.")
     pooling_type = param.ObjectSelector(default="max pool", objects=["max pool", "average pool", "flatten"], 
@@ -58,7 +59,8 @@ class ConvNet(param.Parameterized):
             l = l.strip()
             net = _next_layer(net, l, kernel_size=self.kernel_size,
                               dropout_rate=self.dropout_rate,
-                              separable=self.separable_convolutions)
+                              separable=self.separable_convolutions,
+                              batchnorm=self.batchnorm)
             
         if self.pooling_type == "max pool":
             net = tf.keras.layers.GlobalMaxPool2D()(net)
