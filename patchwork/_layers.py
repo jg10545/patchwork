@@ -101,7 +101,7 @@ class ChannelWiseDense(tf.keras.layers.Layer):
     
     
     
-def _next_layer(old_layer, spec, kernel_size=3, padding="same", dropout_rate=0.5, separable=False):
+def _next_layer(old_layer, spec, kernel_size=3, padding="same", dropout_rate=0.5, separable=False, batchnorm=False):
     """
     Convenience function for writing networks. Input the outputs
     from the previous layer and a spec; return the outputs from
@@ -110,9 +110,10 @@ def _next_layer(old_layer, spec, kernel_size=3, padding="same", dropout_rate=0.5
         -an integer: add a convolutional layer with that many filters
         -"p": add a 2x2 max pooling layer
         -"d": add a 2D spatial dropout layer with probability 0.5
-        -"r": add a residual layer
+        -"r": add a residual v2 layer
     
     """
+    BN = tf.keras.layers.BatchNormalization
     if separable:
         conv = tf.keras.layers.SeparableConv2D
     else:
@@ -124,17 +125,28 @@ def _next_layer(old_layer, spec, kernel_size=3, padding="same", dropout_rate=0.5
         return tf.keras.layers.SpatialDropout2D(dropout_rate)(old_layer)
     elif spec == "r":
         k = old_layer.shape[-1]
-        
-        inside_block = conv(k, kernel_size, activation="relu",
-                            padding="same")(old_layer)
-        second_conv = conv(k, kernel_size, padding="same")(inside_block)
-        added = tf.keras.layers.Add()([inside_block, second_conv])
+    
+        if batchnorm: 
+            net = BN()(old_layer)
+        else:
+            net = old_layer
+        net = tf.keras.layers.Activation("relu")(old_layer)
+        # first convolution
+        net = conv(k, kernel_size, padding="same")(net)
+        if batchnorm: net = BN()(net)
+        net = tf.keras.layers.Activation("relu")(net)
+        # second convolution
+        net = conv(k, kernel_size, padding="same")(net)
+        added = tf.keras.layers.Add()([old_layer, net])
         return tf.keras.layers.Activation("relu")(added)
+    
         
     else:
         spec = int(spec)
-        return conv(spec, kernel_size, activation="relu",
-                    padding=padding)(old_layer)
+        net = conv(spec, kernel_size, padding=padding)(old_layer)
+        if batchnorm:
+            net = BN()(net)
+        return tf.keras.layers.Activation("relu")(net)
         
         
         
