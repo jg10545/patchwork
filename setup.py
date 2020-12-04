@@ -19,6 +19,7 @@ requirements = [
         "param",
         "pillow",
         "matplotlib",
+        "mlflow>=1.12",
         "tqdm",
         "sklearn",
         "scipy"
