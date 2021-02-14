@@ -118,7 +118,7 @@ class TrainManager():
         self._header = pn.pane.Markdown("#### Train model on current set of labeled patches")
         self._learn_rate =  pn.widgets.LiteralInput(name="Learning rate", value=1e-3, type=float)                               
         self._batch_size = pn.widgets.LiteralInput(name='Batch size', value=16, type=int)
-        self._samples_per_epoch = pn.widgets.LiteralInput(name='Samples per epoch', value=1000, type=int)
+        self._batches_per_epoch = pn.widgets.LiteralInput(name='Batches per epoch', value=1000, type=int)
         self._epochs = pn.widgets.LiteralInput(name='Epochs', value=10, type=int)
         
         self._eval_after_training = pn.widgets.Checkbox(name="Update predictions after training?", value=True)
@@ -142,7 +142,7 @@ class TrainManager():
         controls =  pn.Column(self._header,
                         self._learn_rate,
                          self._batch_size, 
-                         self._samples_per_epoch,
+                         self._batches_per_epoch,
                          self._epochs,
                         self._eval_after_training,
                         self._compute_badge_gradients,
@@ -162,7 +162,7 @@ class TrainManager():
         self.pw.build_training_step(self._learn_rate.value)
         self.pw._model_params["training"] = {"learn_rate":self._learn_rate.value,
                                              "batch_size":self._batch_size.value,
-                                             "samples_per_epoch":self._samples_per_epoch.value,
+                                             "batches_per_epoch":self._batches_per_epoch.value,
                                              "epochs":self._epochs.value}
         
         # tensorflow function for computing test loss
@@ -173,8 +173,8 @@ class TrainManager():
         epochs = self._epochs.value
         for e in range(epochs):
             self._footer.object = "### TRAININ (%s / %s)"%(e+1, epochs)
-            self.pw._run_one_training_epoch(self._batch_size.value,
-                                            self._samples_per_epoch.value)
+            N = self._batch_size.value * self._batches_per_epoch.value
+            self.pw._run_one_training_epoch(self._batch_size.value, N)
             self.loss = self.pw.training_loss
             
             # at the end of each epoch compute test loss

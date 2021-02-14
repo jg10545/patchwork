@@ -9,10 +9,8 @@ GUI code for choosing a model
 #import param
 import panel as pn
 import tensorflow as tf
-#from patchwork._models import model_dict
 from patchwork._fine_tuning_models import GlobalPooling, ConvNet
 from patchwork._output_models import SigmoidCrossEntropy, CosineOutput, SigmoidFocalLoss
-#from patchwork._training_functions import build_training_function
 
 class ModelPicker(object):
     """

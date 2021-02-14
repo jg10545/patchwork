@@ -314,7 +314,6 @@ class GUI(object):
         # convenience function we'll use for computing test loss
         @tf.function
         def meanloss(x,y):
-            print("tracing meanloss")
             if self.models["feature_extractor"] is not None:
                 x = self.models["feature_extractor"](x)
             x = self.models["fine_tuning"](x)
