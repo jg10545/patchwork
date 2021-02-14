@@ -47,9 +47,6 @@ class GUI(object):
         :dim: grid dimension for labeler- show a (dim x dim) square of images
         """
         self.fine_tuning_model = None
-        # by default, pandas maps empty values to np.nan. in case the user
-        # is passing saved labels in, replace those with None
-        #self.df = df.replace({np.nan: None})
         self.df = df.copy()
         self.feature_vecs = feature_vecs
         self.feature_extractor = feature_extractor
@@ -76,7 +73,7 @@ class GUI(object):
             
         for c in classes:
             if c not in df.columns:
-                df[c] = None
+                df[c] = np.nan
         self.classes = [x for x in df.columns if x not in ["filepath", "exclude", "viewpath", "validation"]]
         # initialize dataframe of predictions
         self.pred_df = pd.DataFrame(

@@ -4,7 +4,7 @@
 
 
 """
-
+import numpy as np
 import pandas as pd
 
 
@@ -19,5 +19,5 @@ def prep_label_dataframe(filepaths, classes):
     df["exclude"] = False
     df["validation"] = False
     for c in classes:
-        df[c] = None
+        df[c] = np.nan
     return df
