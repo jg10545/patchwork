@@ -39,13 +39,15 @@ def _empty_fig():
     plt.close(fig)
     return fig
 
-def _loss_fig(l):
+def _loss_fig(l, testloss=None, testlossstep=None):
     """
     Generate matplotlib figure for a line plot of the 
     training loss
     """
     fig, ax = plt.subplots()
     ax.plot(l, "o-")
+    if (testloss is not None)&(testlossstep is not None):
+        ax.plot(testlossstep, testloss, "o-")
     ax.set_xlabel("step", fontsize=14)
     ax.set_ylabel("loss", fontsize=14)
     ax.grid(True)
@@ -162,6 +164,11 @@ class TrainManager():
                                              "batch_size":self._batch_size.value,
                                              "samples_per_epoch":self._samples_per_epoch.value,
                                              "epochs":self._epochs.value}
+        
+        # tensorflow function for computing test loss
+        meanloss = self.pw._build_loss_tf_fn()
+        val_ds = self.pw._val_dataset(self._batch_size.value)[0]
+        
         # for each epoch
         epochs = self._epochs.value
         for e in range(epochs):
@@ -169,6 +176,11 @@ class TrainManager():
             self.pw._run_one_training_epoch(self._batch_size.value,
                                             self._samples_per_epoch.value)
             self.loss = self.pw.training_loss
+            
+            # at the end of each epoch compute test loss
+            testloss = np.mean([meanloss(x,y).numpy() for x,y in val_ds])
+            self.pw.test_loss.append(testloss)
+            self.pw.test_loss_step.append(len(self.pw.training_loss))
             
         if self._eval_after_training.value:
             self._footer.object = "### EVALUATING"
@@ -179,7 +191,9 @@ class TrainManager():
             self._footer.object = "### COMPUTING BADGE GRADIENTS"
             self.pw.compute_badge_embeddings()
         
-        self._loss_fig.object = _loss_fig(self.loss)
+        self._loss_fig.object = _loss_fig(self.loss,
+                                          self.pw.test_loss,
+                                          self.pw.test_loss_step)
         self._hist_callback()
         self._footer.object = "### DONE"
         self.pw.save()

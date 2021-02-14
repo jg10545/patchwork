@@ -246,6 +246,29 @@ class GUI(object):
         else:
             return tf.data.Dataset.from_tensor_slices(self.feature_vecs
                                                       ).batch(batch_size), num_steps
+        
+        
+    def _val_dataset(self, batch_size=32):
+        """
+        Build a dataset of just validation examples
+        """
+        val_df = self.df[self.df.validation]
+        ys = val_df[self.classes].values
+        
+        if self.feature_vecs is None:
+            files = val_df["filepath"].values
+            return dataset(files, ys=ys, imshape=self._imshape, 
+                       num_channels=self._num_channels,
+                       num_parallel_calls=self._num_parallel_calls, 
+                       batch_size=batch_size, shuffle=False,
+                       augment=False)
+        # PRE-EXTRACTED FEATURE CASE
+        else:
+            vecs = self.feature_vecs[self.df.validation.values]
+            return tf.data.Dataset.from_tensor_slices((vecs, ys)
+                                                      ).batch(batch_size),
+
+        
     def build_training_step(self, lr=1e-3):
         """
         
@@ -263,6 +286,8 @@ class GUI(object):
     
     
             
+
+
 
     def _run_one_training_epoch(self, batch_size=32, num_samples=None):
         """
@@ -285,16 +310,19 @@ class GUI(object):
                 self.semisup_loss.append(ss_loss.numpy())
                 
     
-    def fit(self, batch_size=32, num_samples=None):
-        """
-        Run one training epoch
-        """
-        if self.feature_vecs is not None:
-            x, y = self._training_dataset(batch_size, num_samples)
-            return self._training_model.fit(x, y, batch_size=batch_size)
-        else:
-            dataset, num_steps = self._training_dataset(batch_size, num_samples)
-            return self._training_model.fit(dataset, steps_per_epoch=num_steps, epochs=1)
+    def _build_loss_tf_fn(self):
+        # convenience function we'll use for computing test loss
+        @tf.function
+        def meanloss(x,y):
+            print("tracing meanloss")
+            if self.models["feature_extractor"] is not None:
+                x = self.models["feature_extractor"](x)
+            x = self.models["fine_tuning"](x)
+            y_pred = self.models["output"](x)
+            loss = self.loss_fn(y, y_pred)
+            return tf.reduce_mean(loss)
+        return meanloss
+            
     
     def predict_on_all(self, batch_size=32):
         """
