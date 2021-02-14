@@ -126,3 +126,34 @@ def _compute_alignment_and_uniformity(dataset, model, alpha=2, t=2):
     vectors = np.concatenate(vectors, axis=0)
     uniformity = np.log(np.mean(np.exp(-1*t*cdist(vectors, vectors, metric="euclidean"))))
     return alignment, uniformity
+
+
+
+def build_optimizer(lr, lr_decay=0, opt_type="adam", decay_type="exponential"):
+    """
+    Macro to reduce some duplicative code for building optimizers
+    for trainers
+    
+    :decay_type: exponential or cosine
+    """
+    if lr_decay > 0:
+        if decay_type == "exponential":
+            lr = tf.keras.optimizers.schedules.ExponentialDecay(lr, 
+                                        decay_steps=lr_decay, decay_rate=0.5,
+                                        staircase=False)
+        elif decay_type == "staircase":
+            lr = tf.keras.optimizers.schedules.ExponentialDecay(lr, 
+                                        decay_steps=lr_decay, decay_rate=0.5,
+                                        staircase=True)
+        elif decay_type == "cosine":
+            lr = tf.keras.experimental.CosineDecayRestarts(lr, lr_decay,
+                                                           t_mul=2., m_mul=1.,
+                                                           alpha=0.)
+        else:
+            assert False, "don't recognize this decay type"
+    if opt_type == "adam":
+        return tf.keras.optimizers.Adam(lr)
+    elif opt_type == "momentum":
+        return tf.keras.optimizers.SGD(lr, momentum=0.9)
+    else:
+        assert False, "dont know what to do with {}".format(opt_type)

@@ -20,6 +20,7 @@ from tensorboard.plugins.hparams import api as hp
 from patchwork.loaders import _get_features, _get_rotation_features
 from patchwork.viz._projector import save_embeddings
 from patchwork.viz._kernel import _make_kernel_sprites
+from patchwork._util import build_optimizer
 
 
 INPUT_PARAMS = ["imshape", "num_channels", "norm", "batch_size",
@@ -84,34 +85,6 @@ def linear_classification_test(fcn, downstream_labels, avpool=False, rotation_ta
 
 
 
-def build_optimizer(lr, lr_decay=0, opt_type="adam", decay_type="exponential"):
-    """
-    Macro to reduce some duplicative code for building optimizers
-    for trainers
-    
-    :decay_type: exponential or cosine
-    """
-    if lr_decay > 0:
-        if decay_type == "exponential":
-            lr = tf.keras.optimizers.schedules.ExponentialDecay(lr, 
-                                        decay_steps=lr_decay, decay_rate=0.5,
-                                        staircase=False)
-        elif decay_type == "staircase":
-            lr = tf.keras.optimizers.schedules.ExponentialDecay(lr, 
-                                        decay_steps=lr_decay, decay_rate=0.5,
-                                        staircase=True)
-        elif decay_type == "cosine":
-            lr = tf.keras.experimental.CosineDecayRestarts(lr, lr_decay,
-                                                           t_mul=2., m_mul=1.,
-                                                           alpha=0.)
-        else:
-            assert False, "don't recognize this decay type"
-    if opt_type == "adam":
-        return tf.keras.optimizers.Adam(lr)
-    elif opt_type == "momentum":
-        return tf.keras.optimizers.SGD(lr, momentum=0.9)
-    else:
-        assert False, "dont know what to do with {}".format(opt_type)
 
 
 class EmptyContextManager():
