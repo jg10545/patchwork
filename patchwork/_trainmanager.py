@@ -16,7 +16,7 @@ from sklearn.metrics import roc_auc_score
 
 
 
-def _auc(pos, neg, rnd=2):
+def _auc(pos, neg, rnd=3):
     """
     macro for computing ROC AUC score for display from arrays
     of scores for positive and negative cases

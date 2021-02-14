@@ -6,7 +6,8 @@ from patchwork.feature._moco import exponential_model_update
 
 def build_training_function(loss_fn, opt, fine_tuning, output, feature_extractor=None,
                             entropy_reg_weight=0, mean_teacher_alpha=0,
-                            teacher_finetune=None, teacher_output=None):
+                            #teacher_finetune=None, teacher_output=None
+                            ):
     """
     Generate a tensorflow function for training the model.
     
@@ -44,6 +45,9 @@ def build_training_function(loss_fn, opt, fine_tuning, output, feature_extractor
                 pred_ss = output(vectors_ss, training=True)
                 
                 entropy_reg_loss = entropy_loss(pred_ss)
+            else:
+                entropy_reg_loss = 0.
+            """
             # mean teacher
             elif mean_teacher_alpha > 0:
                 if feature_extractor is not None:
@@ -55,18 +59,22 @@ def build_training_function(loss_fn, opt, fine_tuning, output, feature_extractor
                 teach_pred_ss = teacher_output(teach_vector_ss, training=True)
                 
                 entropy_reg_loss = tf.reduce_sum((pred_ss-teach_pred_ss)**2)
+            
             else:
                 entropy_reg_loss = 0.
+            """
+                
             
             total_loss = training_loss + entropy_reg_weight*entropy_reg_loss
         # compute and apply gradients
         gradients = tape.gradient(total_loss, trainvars)
         opt.apply_gradients(zip(gradients, trainvars))
-        
+        """
         if mean_teacher_alpha > 0:
             _ = exponential_model_update(teacher_finetune, fine_tuning,
                                          mean_teacher_alpha)
             _ = exponential_model_update(teacher_output, output,
                                          mean_teacher_alpha)
+        """
         return training_loss, entropy_reg_loss
     return training_step

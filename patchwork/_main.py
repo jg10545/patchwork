@@ -87,12 +87,9 @@ class GUI(object):
                                self, dim=dim, logdir=logdir)
         # initialize model picker
         if self.feature_vecs is not None:
-            #inpt_channels = self.feature_vecs.shape[-1]
             self._feature_shape = self.feature_vecs.shape[1:]
             
         else:
-            #inpt_channels = self.feature_extractor.output.get_shape().as_list()[-1]
-            # find the output tensor shape from the feature extractor
             test_tensor = tf.zeros((1, imshape[0], imshape[1], num_channels),
                                    dtype=tf.float32)
             self._feature_shape = feature_extractor(test_tensor).shape[1:]
@@ -259,55 +256,12 @@ class GUI(object):
                                         self.models["output"],
                                         feature_extractor=self.feature_extractor,
                                         entropy_reg_weight=self.params["entropy_reg_weight"],
-                                        mean_teacher_alpha=self.params["mean_teacher_alpha"],
-                                        teacher_finetune=self.models["teacher_fine_tuning"],
-                                        teacher_output=self.models["teacher_output"])
+                                        #mean_teacher_alpha=self.params["mean_teacher_alpha"],
+                                        #teacher_finetune=self.models["teacher_fine_tuning"],
+                                        #teacher_output=self.models["teacher_output"]
+                                        )
     
-    def build_model(self, entropy_reg=0):
-        """
-        Sets up a Keras model in self.model
-        
-        NOTE the semisup case will have different predict outputs. maybe
-        separate self.model from a self.training_model?
-        """
-        assert False, "LOOK HOW DEPRECATED I AM"
-        opt = tf.keras.optimizers.RMSprop(1e-3)
-
-        # JUST A FINE-TUNING NETWORK
-        if self.feature_vecs is not None:
-            inpt_shape = self.feature_vecs.shape[1:]
-            inpt = tf.keras.layers.Input(inpt_shape)
-            output = self.fine_tuning_model(inpt)
-            self.model = tf.keras.Model(inpt, output)
-            
-        elif self.feature_extractor is not None:
-            inpt_shape = [self._imshape[0], self._imshape[1], self._num_channels]
-            # FEATURE EXTRACTOR + FINE-TUNING NETWORK
-            inpt = tf.keras.layers.Input(inpt_shape)
-            features = self.feature_extractor(inpt)
-            output = self.fine_tuning_model(features)
-            self.model = tf.keras.Model(inpt, output)
-
-        else:
-            assert False, "i don't know what you want from me"
-            
-        # semi-supervised learning or not? 
-        if entropy_reg > 0:
-            self._semi_supervised = True
-            unlabeled_inpt = tf.keras.layers.Input(inpt_shape)
-            unlabeled_output = self.model(unlabeled_inpt)
-                
-            self._training_model = tf.keras.Model([inpt, unlabeled_inpt],
-                                            [output, unlabeled_output])
-            self._training_model.compile(opt, 
-                                loss=[masked_binary_crossentropy, entropy_loss],
-                                loss_weights=[1, entropy_reg])
-        else:
-            self._semi_supervised = False
-            self._training_model = self.model
-            self._training_model.compile(opt, loss=masked_binary_crossentropy)
-
-            
+    
             
 
     def _run_one_training_epoch(self, batch_size=32, num_samples=None):
@@ -319,12 +273,14 @@ class GUI(object):
         if self._semi_supervised:
             #for (x, x_unlab), y in ds:
             for (x,y) , x_unlab in ds:
-                loss, ss_loss = self._training_function(x, y, self._opt, x_unlab)
+                #loss, ss_loss = self._training_function(x, y, self._opt, x_unlab)
+                loss, ss_loss = self._training_function(x, y, x_unlab)
                 self.training_loss.append(loss.numpy())
                 self.semisup_loss.append(ss_loss.numpy())
         else:
             for x, y in ds:
-                loss, ss_loss = self._training_function(x, y, self._opt)
+                #loss, ss_loss = self._training_function(x, y, self._opt)
+                loss, ss_loss = self._training_function(x, y)
                 self.training_loss.append(loss.numpy())
                 self.semisup_loss.append(ss_loss.numpy())
                 

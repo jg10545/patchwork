@@ -59,8 +59,8 @@ class ModelPicker(object):
         # semi-supervised
         self._entropy_reg = pn.widgets.LiteralInput(name='Entropy Regularization Weight', 
                                                     value=0., type=float)
-        self._mean_teacher_alpha = pn.widgets.LiteralInput(name='Mean Teacher alpha (0 to disable)', 
-                                                    value=0., type=float)
+        #self._mean_teacher_alpha = pn.widgets.LiteralInput(name='Mean Teacher alpha (0 to disable)', 
+                                                    #value=0., type=float)
         
     def panel(self):
         """
@@ -79,9 +79,9 @@ class ModelPicker(object):
             self._output_hyperparams
         )
         semisupervised = pn.Column(
-            pn.pane.Markdown("### Semi-supervised learning\nUse unlabeled images to guide decision boundaries. Only one method can be used at a time."),
+            pn.pane.Markdown("### Semi-supervised learning\nUse unlabeled images to guide decision boundaries."),
             self._entropy_reg,
-            self._mean_teacher_alpha
+            #self._mean_teacher_alpha
         )
         
         return pn.Column(
@@ -154,7 +154,7 @@ class ModelPicker(object):
         net = fine_tuning_model(net)
         net = output_model(net)
         self._pw.models["full"] = tf.keras.Model(inpt, net)
-        
+        """
         # 4) IF USING: SET UP MEAN TEACHER MODELS
         if self._mean_teacher_alpha.value > 0:
             from patchwork.feature._moco import copy_model
@@ -163,12 +163,15 @@ class ModelPicker(object):
         else:
             self._pw.models["teacher_fine_tuning"] = None
             self._pw.models["teacher_output"] = None
+        """
 
-        self._pw._semi_supervised = (self._entropy_reg.value > 0)|(self._mean_teacher_alpha.value > 0)
+        self._pw._semi_supervised = (self._entropy_reg.value > 0)#|(self._mean_teacher_alpha.value > 0)
 
         # 5) RESET LOSS RECORDERS
         self._pw.training_loss = []
         self._pw.semisup_loss = []
+        self._pw.test_loss = []
+        self._pw.test_loss_step = []
                 
         
         
