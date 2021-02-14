@@ -84,36 +84,38 @@ def _build_logits(q, k, buffer, tape, N=0, s=0, s_prime=0, margin=0):
     if (N > 0)&(s > 0):
         # i'm pretty sure we don't want to compute gradients through
         # any of the synthetic embedding creation
-        with tape.stop_recording():
-            # find the top-N negative logits- the N hardest "naturally 
-            # occurring" negatives. inds is (batch_size, N)
-            vals, inds = tf.math.top_k(negative_logits, k=N)
-            # test for case where we're sampling more than N combinations
-            while inds.shape[1] < max(s, s_prime):
-                inds = tf.concat([inds, inds], axis=1)
-            # sample twice from the list of hard negative indices. each is (batch_size,s)
-            inds1 = tf.transpose(tf.random.shuffle(tf.transpose(inds)))[:,:s]
-            inds2 = tf.transpose(tf.random.shuffle(tf.transpose(inds)))[:,:s]
-            # gather the actual embeddings corresponding to the sampled indices.
-            # each is (batch_size, s, embed_dim)
-            gathered1 = tf.gather(buffer, inds1, axis=0)
-            gathered2 = tf.gather(buffer, inds2, axis=0)
-            # and a mixing coefficient for each s
-            alpha = tf.random.uniform((1,s,1), minval=1, maxval=1)
-            # combine the sampled embeddings using the mixing coefficients, and normalize.
-            # will still be (batch_size, s, embed_dim)
-            mixed_negatives = tf.nn.l2_normalize(alpha*gathered1+(1-alpha)*gathered2, 2)
-            # hard negatives by mixing query vectors
-            if s_prime > 0:
-                # sample from list of hard negative indices- (batch_size, s_prime)
-                inds3 = tf.transpose(tf.random.shuffle(tf.transpose(inds)))[:,:s_prime]
-                # gather the actual embeddings- (batch_size, s_prime, embed_dim)
-                gathered3 = tf.gather(buffer, inds3, axis=0)
-                # and a mixing coefficient for each one
-                beta = tf.random.uniform((1,s_prime,1), minval=0, maxval=0.5)
-                # and tile query vectors to combine with negatives
-                q_tiled = tf.tile(tf.expand_dims(q,1), tf.constant([1,s_prime,1]))
-                hardest_negatives = tf.nn.l2_normalize(beta*q_tiled + (1-beta)*gathered3, 2)
+        #with tape.stop_recording():
+        # find the top-N negative logits- the N hardest "naturally 
+        # occurring" negatives. inds is (batch_size, N)
+        vals, inds = tf.math.top_k(negative_logits, k=N)
+        # test for case where we're sampling more than N combinations
+        while inds.shape[1] < max(s, s_prime):
+            inds = tf.concat([inds, inds], axis=1)
+        # sample twice from the list of hard negative indices. each is (batch_size,s)
+        inds1 = tf.transpose(tf.random.shuffle(tf.transpose(inds)))[:,:s]
+        inds2 = tf.transpose(tf.random.shuffle(tf.transpose(inds)))[:,:s]
+        # gather the actual embeddings corresponding to the sampled indices.
+        # each is (batch_size, s, embed_dim)
+        gathered1 = tf.gather(buffer, inds1, axis=0)
+        gathered2 = tf.gather(buffer, inds2, axis=0)
+        # and a mixing coefficient for each s
+        alpha = tf.random.uniform((1,s,1), minval=1, maxval=1)
+        # combine the sampled embeddings using the mixing coefficients, and normalize.
+        # will still be (batch_size, s, embed_dim)
+        mixed_negatives = tf.stop_gradient(
+                            tf.nn.l2_normalize(alpha*gathered1+(1-alpha)*gathered2, 2))
+        # hard negatives by mixing query vectors
+        if s_prime > 0:
+            # sample from list of hard negative indices- (batch_size, s_prime)
+            inds3 = tf.transpose(tf.random.shuffle(tf.transpose(inds)))[:,:s_prime]
+            # gather the actual embeddings- (batch_size, s_prime, embed_dim)
+            gathered3 = tf.gather(buffer, inds3, axis=0)
+            # and a mixing coefficient for each one
+            beta = tf.random.uniform((1,s_prime,1), minval=0, maxval=0.5)
+            # and tile query vectors to combine with negatives
+            q_tiled = tf.tile(tf.expand_dims(q,1), tf.constant([1,s_prime,1]))
+            hardest_negatives = tf.stop_gradient(
+                            tf.nn.l2_normalize(beta*q_tiled + (1-beta)*gathered3, 2))
                 
         # now, with gradients, compute the logits between query embeddings and our
         # synthetic negatives- shape (batch_size, s)
@@ -156,7 +158,7 @@ def _build_momentum_contrast_training_step(model, mo_model, optimizer, buffer, b
             q2 = model(img1[b:,:,:,:], training=True)
             q = tf.nn.l2_normalize(tf.concat([q1,q2], 0), axis=1)
             # compute MoCo and/or MoCHi logits
-            all_logits = _build_logits(q, k, buffer, tape, N, s, s_prime, margin)
+            all_logits = _build_logits(q, k, buffer, N, s, s_prime, margin)
             # create labels (correct class is 0)- (N,)
             labels = tf.zeros((batch_size,), dtype=tf.int32)
             # compute crossentropy loss
