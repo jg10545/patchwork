@@ -159,7 +159,7 @@ class AutoEncoderTrainer(GenericExtractor):
             self._record_scalars(**lossdict)
             self.step += 1
  
-    def evaluate(self):
+    def evaluate(self, avpool=True):
         if self._test:
             test_recon_loss = 0
             for x in self._test_ds:
@@ -180,7 +180,7 @@ class AutoEncoderTrainer(GenericExtractor):
                     }
             else:
                 hparams=None
-            self._linear_classification_test(hparams)
+            self._linear_classification_test(hparams, avpool=avpool)
             
             
             

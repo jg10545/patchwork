@@ -12,7 +12,7 @@ import numpy as np
 
 import tensorflow as tf
 from tqdm import tqdm
-from sklearn.svm import SVC
+from sklearn.svm import LinearSVC
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import accuracy_score, confusion_matrix
 from tensorboard.plugins.hparams import api as hp
@@ -38,8 +38,7 @@ def _run_this_epoch(flag, e):
             return False
 
 
-def linear_classification_test(fcn, downstream_labels, avpool=False, rotation_task=False,
-                               **input_config):
+def linear_classification_test(fcn, downstream_labels, avpool=True, rotation_task=False,**input_config):
     """
     Train a linear classifier on a fully-convolutional network
     and return out-of-sample results.
@@ -74,7 +73,7 @@ def linear_classification_test(fcn, downstream_labels, avpool=False, rotation_ta
     trainvecs = scaler.transform(trainvecs)
     testvecs = scaler.transform(testvecs)
     # train a multinomial linear classifier
-    logreg = SVC(kernel="linear")
+    logreg = LinearSVC()
     logreg.fit(trainvecs, labels[~split])
     # make predictions on test set
     preds = logreg.predict(testvecs)
@@ -186,7 +185,7 @@ class GenericExtractor(object):
         return True
     
     def fit(self, epochs=1, save=True, evaluate=True, save_projections=False,
-            visualize_kernels=False):
+            visualize_kernels=False, avpool=True):
         """
         Train the feature extractor. All kwargs after "epochs" can either be
         Boolean (whether to run after every epoch) or an integer (run after
@@ -198,6 +197,8 @@ class GenericExtractor(object):
         :save_projections: record projections from labeldict
         :visualize_kernels: record a visualization of the first convolutional
             layer's kernels
+        :avpool: if True, use average-pooled features for linear classifications
+            during the evaluation step. if False, flatten the features.
         """
         for e in tqdm(range(epochs)):
             self._run_training_epoch()
@@ -245,9 +246,11 @@ class GenericExtractor(object):
             tf.summary.histogram(h, hists[h], step=self.step)
             
     def _linear_classification_test(self, params=None, 
-                                    metrics=["linear_classification_accuracy"]):
+                                    metrics=["linear_classification_accuracy"],
+                                    avpool=True):
          acc, conf_mat = linear_classification_test(self.fcn, 
                                     self._downstream_labels, 
+                                    avpool=avpool,
                                     **self.input_config)
          
          conf_mat = np.expand_dims(np.expand_dims(conf_mat, 0), -1)/conf_mat.max()

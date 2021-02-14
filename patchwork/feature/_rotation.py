@@ -163,7 +163,7 @@ class RotationTrainer(GenericExtractor):
             self.step += 1
             
  
-    def evaluate(self):
+    def evaluate(self, avpool=True):
         if self._downstream_labels is not None:
             # choose the hyperparameters to record
             if not hasattr(self, "_hparams_config"):
@@ -177,7 +177,7 @@ class RotationTrainer(GenericExtractor):
                         hparams[hp.HParam(k, hp.RealInterval(0., 10000.))] = self.augment_config[k]
             else:
                 hparams=None
-            self._linear_classification_test(hparams)
+            self._linear_classification_test(hparams, avpool=avpool)
         
         
             
