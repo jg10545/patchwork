@@ -97,8 +97,8 @@ class ButtonPanel(object):
                                             width_policy="fit",
                                             width=size, height=size)
         
-        self._value_map = {'None': None, '0': 0, '1': 1, None:None,
-                           np.nan:None}
+        self._value_map = {'None': np.nan, '0': 0., '1': 1., None:np.nan,
+                           np.nan:np.nan}
 
         self._selections = {c:_single_class_radiobuttons() for c in classes}
         self._exclude = pn.widgets.Checkbox(name="exclude", align="center")
@@ -160,7 +160,6 @@ class ButtonPanel(object):
         self._validation.value = bool(record["validation"])
         
         for c in self._classes:
-            print(record[c])
             self._selections[c].value = _button_val_map[record[c]]
         
     def select(self, i):
