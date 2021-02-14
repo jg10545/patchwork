@@ -24,7 +24,7 @@ class ModelPicker(object):
         """
         fine_tuning_model_dict = {"Global Pooling":GlobalPooling(), "Convnet":ConvNet()}
         output_model_dict = {"Sigmoid Cross-entropy":SigmoidCrossEntropy(),
-                    "Cosine":CosineOutput(), "Sigmoid Focal Loss":SigmoidFocalLoss()}
+                    "Sigmoid Focal Loss":SigmoidFocalLoss()}
         
         self._current_model = pn.pane.Markdown("**No current model**\n")
         self._feature_shape = feature_shape
