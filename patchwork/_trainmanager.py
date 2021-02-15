@@ -52,7 +52,7 @@ def _loss_fig(l, ss_loss, testloss=None, testlossstep=None):
     ax.set_xlabel("step", fontsize=14)
     ax.set_ylabel("loss", fontsize=14)
     ax.grid(True)
-    ax.legend(loc="upper_right")
+    ax.legend(loc="upper right")
     plt.close(fig)
     return fig
 
