@@ -48,8 +48,12 @@ class ConvNet(param.Parameterized):
                                         doc="Whether to use global mean or max pooling.")
     
     
-    description = """
+    _description = """
     Convolutional network with global pooling at the end. Set dropout to 0 to disable.
+    """
+    description = """
+    Convolutional network with global pooling at the end. \n\n    
+    Use a comma-separated list to define layers: integer for a convolution, `p` for 2x2 max pooling, `d` for 2D spatial dropout, and `r` for a residual block.
     """
     
     def build(self, feature_shape):

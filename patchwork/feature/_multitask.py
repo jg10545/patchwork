@@ -419,7 +419,7 @@ class MultiTaskTrainer(GenericExtractor):
             self.step += 1
         
             
-    def evaluate(self):
+    def evaluate(self, avpool=True):
         predictions = self._models["full"].predict(self._val_ds)
         
         # stupid hack- haven't figured out a better way to do
@@ -454,7 +454,7 @@ class MultiTaskTrainer(GenericExtractor):
                     }
             else:
                 hparams=None
-            self._linear_classification_test(hparams)
+            self._linear_classification_test(hparams, avpool=avpool)
             
                 
   

@@ -6,6 +6,7 @@ from sklearn.metrics import accuracy_score, roc_auc_score
 
 import patchwork as pw
 from patchwork._losses import multilabel_distillation_loss
+from patchwork._util import build_optimizer
 
 _fcn = {"vgg16":tf.keras.applications.VGG16,
         "vgg19":tf.keras.applications.VGG19,
@@ -52,7 +53,7 @@ def _build_student_model(model, output_dim, imshape=(256,256), num_channels=3):
     
 
 def distill(filepaths, ys, student, epochs=5, testfiles=None, testlabels=None,
-            lr=1e-3, optimizer="momentum",
+            lr=1e-3, opt_type="momentum", lr_decay=0, decay_type="exponential",
             imshape=(256,256), num_channels=3,
             class_names=None,
             tracking_uri=None, experiment_name=None, **kwargs):
@@ -75,8 +76,12 @@ def distill(filepaths, ys, student, epochs=5, testfiles=None, testlabels=None,
         Number of epochs to train
     lr : float, optional
         Learning rate. The default is 1e-3.
-    optimizer : string, optional
+    opt_type : string, optional
         Which optimizer to train with- 'momentum' or 'adam'
+    lr_decay: int, optional
+        If set above 0, decay learning rate with this timescale
+    decay_type: string, optional
+        'exponential', 'staircase', or 'cosine'
     imshape : tuple of ints; optional
         Image input shape. The default is (256,256).
     num_channels : int, optional
@@ -104,20 +109,16 @@ def distill(filepaths, ys, student, epochs=5, testfiles=None, testlabels=None,
         import mlflow, mlflow.keras
         mlflow.set_tracking_uri(tracking_uri)
         mlflow.set_experiment(experiment_name)
-        mlflow.log_params({"lr":lr, "optimizer":optimizer, "imshape":imshape,
-                           "num_channels":num_channels})
+        mlflow.log_params({"lr":lr, "opt_type":opt_type, "imshape":imshape,
+                           "num_channels":num_channels, "lr_decay":lr_decay,
+                           "decay_type":decay_type})
         if isinstance(student, str):
             mlflow.log_param("student", student)
     
     output_dim = ys.shape[1]
     outputs = {}
     # CREATE THE OPTIMIZER
-    if optimizer.lower() == "momentum":
-        opt = tf.keras.optimizers.SGD(lr, momentum=0.9)
-    elif optimizer.lower() == "adam":
-        opt = tf.keras.optimizers.Adam(lr)
-    else:
-        assert False, "dont know what optimizer %s is"%optimizer
+    opt = build_optimizer(lr, lr_decay, opt_type, decay_type)
         
     # SET UP TESTING IF NECESSARY
     if (testfiles is not None)&(testlabels is not None):
