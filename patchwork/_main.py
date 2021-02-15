@@ -12,22 +12,26 @@ from patchwork._trainmanager import TrainManager, _auc
 from patchwork._sample import stratified_sample, find_unlabeled, find_excluded_indices
 from patchwork._sample import _build_in_memory_dataset, find_labeled_indices
 from patchwork._training_functions import build_training_function
-from patchwork.loaders import dataset
+from patchwork.loaders import dataset, _fixmatch_unlab_dataset
 from patchwork._losses import entropy_loss, masked_binary_crossentropy
-from patchwork._util import _load_img
+from patchwork._util import _load_img, build_optimizer
 from patchwork._badge import KPlusPlusSampler, _build_output_gradient_function#_v1
 
 EPSILON = 1e-5
 
 
-
+DEFAULT_FIXMATCH_AUGMENT={"zoom_scale":0.25, "jitter":1.,
+                          "flip_left_right":True, "drop_color":0.2,
+                          "mask":0.2}
 
 
 class GUI(object):
     
-    def __init__(self, df, feature_vecs=None, feature_extractor=None, classes=[],
+    def __init__(self, df, feature_vecs=None, feature_extractor=None,
+                 classes=[],
                  imshape=(256,256), num_channels=3, norm=255,
-                 num_parallel_calls=2, logdir=None, aug=True, dim=3,
+                 num_parallel_calls=2, logdir=None, aug=True, 
+                 fixmatch_aug=DEFAULT_FIXMATCH_AUGMENT, dim=3,
                  tracking_uri=None, experiment_name=None):
         """
         Initialize either with a set of feature vectors or a feature extractor
@@ -41,20 +45,22 @@ class GUI(object):
         :num_channels: number of channels per image
         :norm: value to divide image data by to scale it to the unit interval. This will usually be 255.
         :num_parallel_calls: parallel processes for image loading
-        :outfile: file path to save labels to during annotation
-        :aug: Boolean or dict of augmentation parameters. Only matters if you're
+        :logdir: path to directory to save labels and models
+        :aug: dict of augmentation parameters. Only matters if you're
             using a feature extractor instead of static features.
+        :fixmatch_aug: strong augmentation parameters for semisupervised 
+            learning using the FixMatch algorithm
         :dim: grid dimension for labeler- show a (dim x dim) square of images
+        :tracking_uri: string; URI of MLFlow tracking server
+        :experiment_name: string; name for MLFlow experiment to track
         """
         self.fine_tuning_model = None
-        # by default, pandas maps empty values to np.nan. in case the user
-        # is passing saved labels in, replace those with None
-        #self.df = df.replace({np.nan: None})
         self.df = df.copy()
         self.feature_vecs = feature_vecs
         self.feature_extractor = feature_extractor
         self._aug = aug
         self._badge_sampler = None
+        self._fixmatch_aug = fixmatch_aug
 
 
         self._imshape = imshape
@@ -76,7 +82,7 @@ class GUI(object):
             
         for c in classes:
             if c not in df.columns:
-                df[c] = None
+                df[c] = np.nan
         self.classes = [x for x in df.columns if x not in ["filepath", "exclude", "viewpath", "validation"]]
         # initialize dataframe of predictions
         self.pred_df = pd.DataFrame(
@@ -90,12 +96,9 @@ class GUI(object):
                                self, dim=dim, logdir=logdir)
         # initialize model picker
         if self.feature_vecs is not None:
-            #inpt_channels = self.feature_vecs.shape[-1]
             self._feature_shape = self.feature_vecs.shape[1:]
             
         else:
-            #inpt_channels = self.feature_extractor.output.get_shape().as_list()[-1]
-            # find the output tensor shape from the feature extractor
             test_tensor = tf.zeros((1, imshape[0], imshape[1], num_channels),
                                    dtype=tf.float32)
             self._feature_shape = feature_extractor(test_tensor).shape[1:]
@@ -139,6 +142,8 @@ class GUI(object):
             for k in self._model_params["output"]:
                 if k != "num_params":
                     params[k] = self._model_params["output"][k]
+            for k in self._model_params["fixmatch"]:
+                params["fixmatch_"+k] = self._model_params["fixmatch"][k]
             params["num_params"] = self._model_params["fine_tuning"]["num_params"] + \
                                     self._model_params["output"]["num_params"]
                                     
@@ -210,6 +215,7 @@ class GUI(object):
             # include unlabeled data as well if 
             # we're doing semisupervised learning
             if self._semi_supervised:
+                """
                 # choose unlabeled files for this epoch
                 unlabeled_filepaths = self.df.filepath.values[find_unlabeled(self.df)]
                 unlab_fps = np.random.choice(unlabeled_filepaths,
@@ -221,7 +227,25 @@ class GUI(object):
                        num_parallel_calls=self._num_parallel_calls, 
                        batch_size=batch_size,
                        augment=self._aug)[0]
+                ds = tf.data.Dataset.zip((ds, unlab_ds))"""
+                # train on anything not specifically labeled validation
+                all_filepaths = self.df.filepath[~self.df.validation].values
+                # in the FixMatch paper they use a larger batch size for
+                # unlabeled data
+                qN = batch_size*self._model_params["fixmatch"]["mu"]
+                # Make a tensorflow dataset that will return batches of
+                # (weakly augmented image, strongly augmented image) pairs
+                unlab_ds = _fixmatch_unlab_dataset(all_filepaths, 
+                                                   self._aug,
+                                                   self._fixmatch_aug,
+                                                   imshape=self._imshape,
+                                                   norm=self._norm,
+                                                   num_channels=self._num_channels,
+                                                   num_parallel_calls=self._num_parallel_calls,
+                                                   batch_size=qN)
+                # stitch together the labeled and unlabeled datasets
                 ds = tf.data.Dataset.zip((ds, unlab_ds))
+                
             return ds
 
         # PRE-EXTRACTED FEATURE CASE
@@ -252,66 +276,45 @@ class GUI(object):
         else:
             return tf.data.Dataset.from_tensor_slices(self.feature_vecs
                                                       ).batch(batch_size), num_steps
-    def build_training_step(self, lr=1e-3):
+        
+        
+    def _val_dataset(self, batch_size=32):
+        """
+        Build a dataset of just validation examples
+        """
+        val_df = self.df[self.df.validation]
+        ys = val_df[self.classes].values
+        
+        if self.feature_vecs is None:
+            files = val_df["filepath"].values
+            return dataset(files, ys=ys, imshape=self._imshape, 
+                       num_channels=self._num_channels,
+                       num_parallel_calls=self._num_parallel_calls, 
+                       batch_size=batch_size, shuffle=False,
+                       augment=False)
+        # PRE-EXTRACTED FEATURE CASE
+        else:
+            vecs = self.feature_vecs[self.df.validation.values]
+            return tf.data.Dataset.from_tensor_slices((vecs, ys)
+                                                      ).batch(batch_size),
+
+        
+    def build_training_step(self, weight_decay=0, opt_type="adam", lr=1e-3, 
+                            lr_decay=0, decay_type="cosine"):
         """
         
         """
-        opt = tf.keras.optimizers.Adam(lr)
+        #opt = tf.keras.optimizers.Adam(lr)
+        opt = build_optimizer(lr, lr_decay=lr_decay, opt_type=opt_type,
+                              decay_type=decay_type)
         self._training_function = build_training_function(self.loss_fn, opt,
                                         self.models["fine_tuning"],
                                         self.models["output"],
                                         feature_extractor=self.feature_extractor,
-                                        entropy_reg_weight=self.params["entropy_reg_weight"],
-                                        mean_teacher_alpha=self.params["mean_teacher_alpha"],
-                                        teacher_finetune=self.models["teacher_fine_tuning"],
-                                        teacher_output=self.models["teacher_output"])
-    
-    def build_model(self, entropy_reg=0):
-        """
-        Sets up a Keras model in self.model
-        
-        NOTE the semisup case will have different predict outputs. maybe
-        separate self.model from a self.training_model?
-        """
-        assert False, "LOOK HOW DEPRECATED I AM"
-        opt = tf.keras.optimizers.RMSprop(1e-3)
-
-        # JUST A FINE-TUNING NETWORK
-        if self.feature_vecs is not None:
-            inpt_shape = self.feature_vecs.shape[1:]
-            inpt = tf.keras.layers.Input(inpt_shape)
-            output = self.fine_tuning_model(inpt)
-            self.model = tf.keras.Model(inpt, output)
-            
-        elif self.feature_extractor is not None:
-            inpt_shape = [self._imshape[0], self._imshape[1], self._num_channels]
-            # FEATURE EXTRACTOR + FINE-TUNING NETWORK
-            inpt = tf.keras.layers.Input(inpt_shape)
-            features = self.feature_extractor(inpt)
-            output = self.fine_tuning_model(features)
-            self.model = tf.keras.Model(inpt, output)
-
-        else:
-            assert False, "i don't know what you want from me"
-            
-        # semi-supervised learning or not? 
-        if entropy_reg > 0:
-            self._semi_supervised = True
-            unlabeled_inpt = tf.keras.layers.Input(inpt_shape)
-            unlabeled_output = self.model(unlabeled_inpt)
-                
-            self._training_model = tf.keras.Model([inpt, unlabeled_inpt],
-                                            [output, unlabeled_output])
-            self._training_model.compile(opt, 
-                                loss=[masked_binary_crossentropy, entropy_loss],
-                                loss_weights=[1, entropy_reg])
-        else:
-            self._semi_supervised = False
-            self._training_model = self.model
-            self._training_model.compile(opt, loss=masked_binary_crossentropy)
-
-            
-            
+                                        lam=self._model_params["fixmatch"]["lambda"],
+                                        tau=self._model_params["fixmatch"]["tau"],
+                                        weight_decay=weight_decay
+                                        )
 
     def _run_one_training_epoch(self, batch_size=32, num_samples=None):
         """
@@ -321,27 +324,29 @@ class GUI(object):
         
         if self._semi_supervised:
             #for (x, x_unlab), y in ds:
-            for (x,y) , x_unlab in ds:
-                loss, ss_loss = self._training_function(x, y, self._opt, x_unlab)
+            for (x,y), (unlab_wk, unlab_str) in ds:
+                loss, ss_loss = self._training_function(x, y, unlab_wk, unlab_str)
                 self.training_loss.append(loss.numpy())
                 self.semisup_loss.append(ss_loss.numpy())
         else:
             for x, y in ds:
-                loss, ss_loss = self._training_function(x, y, self._opt)
+                loss, ss_loss = self._training_function(x, y)
                 self.training_loss.append(loss.numpy())
                 self.semisup_loss.append(ss_loss.numpy())
                 
     
-    def fit(self, batch_size=32, num_samples=None):
-        """
-        Run one training epoch
-        """
-        if self.feature_vecs is not None:
-            x, y = self._training_dataset(batch_size, num_samples)
-            return self._training_model.fit(x, y, batch_size=batch_size)
-        else:
-            dataset, num_steps = self._training_dataset(batch_size, num_samples)
-            return self._training_model.fit(dataset, steps_per_epoch=num_steps, epochs=1)
+    def _build_loss_tf_fn(self):
+        # convenience function we'll use for computing test loss
+        @tf.function
+        def meanloss(x,y):
+            if self.models["feature_extractor"] is not None:
+                x = self.models["feature_extractor"](x)
+            x = self.models["fine_tuning"](x)
+            y_pred = self.models["output"](x)
+            loss = self.loss_fn(y, y_pred)
+            return tf.reduce_mean(loss)
+        return meanloss
+            
     
     def predict_on_all(self, batch_size=32):
         """

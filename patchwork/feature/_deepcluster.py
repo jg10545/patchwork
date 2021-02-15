@@ -293,7 +293,7 @@ class DeepClusterTrainer(GenericExtractor):
             self._record_scalars(**lossdict)
             self.step += 1
  
-    def evaluate(self):
+    def evaluate(self, avpool=True):
         if self._test:
             if self._test_labels is not None:
                 predictions = self._pred_model.predict(self._test_ds,
@@ -319,7 +319,7 @@ class DeepClusterTrainer(GenericExtractor):
                     hparams[hp.HParam("dense_%s"%e, hp.IntInterval(1, 1000000))] = d
             else:
                 hparams=None
-            self._linear_classification_test(hparams)
+            self._linear_classification_test(hparams, avpool=avpool)
             
             
             

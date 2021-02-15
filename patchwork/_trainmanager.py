@@ -16,7 +16,7 @@ from sklearn.metrics import roc_auc_score
 
 
 
-def _auc(pos, neg, rnd=2):
+def _auc(pos, neg, rnd=3):
     """
     macro for computing ROC AUC score for display from arrays
     of scores for positive and negative cases
@@ -39,16 +39,20 @@ def _empty_fig():
     plt.close(fig)
     return fig
 
-def _loss_fig(l):
+def _loss_fig(l, ss_loss, testloss=None, testlossstep=None):
     """
     Generate matplotlib figure for a line plot of the 
     training loss
     """
     fig, ax = plt.subplots()
-    ax.plot(l, "o-")
+    ax.plot(l, "-", label="supervised")
+    ax.plot(ss_loss, "--", label="semisupervised")
+    if (testloss is not None)&(testlossstep is not None):
+        ax.plot(testlossstep, testloss, "o-", label="validation")
     ax.set_xlabel("step", fontsize=14)
     ax.set_ylabel("loss", fontsize=14)
     ax.grid(True)
+    ax.legend(loc="upper right")
     plt.close(fig)
     return fig
 
@@ -114,9 +118,13 @@ class TrainManager():
         """
         self.pw = pw
         self._header = pn.pane.Markdown("#### Train model on current set of labeled patches")
-        self._learn_rate =  pn.widgets.LiteralInput(name="Learning rate", value=1e-3, type=float)                               
+        self._opt_chooser = pn.widgets.Select(name="Optimizer", options=["adam", "momentum"],
+                                              value="adam")
+        self._learn_rate =  pn.widgets.LiteralInput(name="Initial learning rate", value=1e-3, type=float)                               
+        self._lr_decay = pn.widgets.Select(name="Learning rate decay", options=["none", "cosine"],
+                                             value="none")
         self._batch_size = pn.widgets.LiteralInput(name='Batch size', value=16, type=int)
-        self._samples_per_epoch = pn.widgets.LiteralInput(name='Samples per epoch', value=1000, type=int)
+        self._batches_per_epoch = pn.widgets.LiteralInput(name='Batches per epoch', value=1000, type=int)
         self._epochs = pn.widgets.LiteralInput(name='Epochs', value=10, type=int)
         
         self._eval_after_training = pn.widgets.Checkbox(name="Update predictions after training?", value=True)
@@ -138,9 +146,11 @@ class TrainManager():
         Return code for a training panel
         """
         controls =  pn.Column(self._header,
+                        self._opt_chooser,
                         self._learn_rate,
+                        self._lr_decay,
                          self._batch_size, 
-                         self._samples_per_epoch,
+                         self._batches_per_epoch,
                          self._epochs,
                         self._eval_after_training,
                         self._compute_badge_gradients,
@@ -157,18 +167,36 @@ class TrainManager():
     
     def _train_callback(self, *event):
         # update the training function
-        self.pw.build_training_step(self._learn_rate.value)
+        lr = self._learn_rate.value
+        opt_type = self._opt_chooser.value
+        if self._lr_decay.value == "cosine":
+            # decay to 0 over the course of the experiment
+            lr_decay = self._batch_size.value*self._batches_per_epoch.value*self._epochs.value
+        else:
+            lr_decay = 0
+        self.pw.build_training_step(opt_type=opt_type, lr=lr, lr_decay=lr_decay, 
+                                    decay_type="cosine", weight_decay=self.pw._model_params["weight_decay"])
         self.pw._model_params["training"] = {"learn_rate":self._learn_rate.value,
                                              "batch_size":self._batch_size.value,
-                                             "samples_per_epoch":self._samples_per_epoch.value,
+                                             "batches_per_epoch":self._batches_per_epoch.value,
                                              "epochs":self._epochs.value}
+        
+        # tensorflow function for computing test loss
+        meanloss = self.pw._build_loss_tf_fn()
+        val_ds = self.pw._val_dataset(self._batch_size.value)[0]
+        
         # for each epoch
         epochs = self._epochs.value
         for e in range(epochs):
             self._footer.object = "### TRAININ (%s / %s)"%(e+1, epochs)
-            self.pw._run_one_training_epoch(self._batch_size.value,
-                                            self._samples_per_epoch.value)
+            N = self._batch_size.value * self._batches_per_epoch.value
+            self.pw._run_one_training_epoch(self._batch_size.value, N)
             self.loss = self.pw.training_loss
+            
+            # at the end of each epoch compute test loss
+            testloss = np.mean([meanloss(x,y).numpy() for x,y in val_ds])
+            self.pw.test_loss.append(testloss)
+            self.pw.test_loss_step.append(len(self.pw.training_loss))
             
         if self._eval_after_training.value:
             self._footer.object = "### EVALUATING"
@@ -179,7 +207,10 @@ class TrainManager():
             self._footer.object = "### COMPUTING BADGE GRADIENTS"
             self.pw.compute_badge_embeddings()
         
-        self._loss_fig.object = _loss_fig(self.loss)
+        self._loss_fig.object = _loss_fig(self.loss,
+                                          self.pw.semisup_loss,
+                                          self.pw.test_loss,
+                                          self.pw.test_loss_step)
         self._hist_callback()
         self._footer.object = "### DONE"
         self.pw.save()
