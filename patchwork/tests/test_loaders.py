@@ -5,6 +5,7 @@ from patchwork.loaders import _image_file_dataset, dataset, stratified_training_
 from patchwork.loaders import _build_load_function
 from patchwork.loaders import _get_features, _get_rotation_features
 from patchwork.loaders import _build_rotation_dataset
+from patchwork.loaders import _fixmatch_unlab_dataset
 
 
 
@@ -384,3 +385,22 @@ def test_get_rotation_features_from_filepaths(test_png_path):
     assert len(features.shape) == 2
     assert isinstance(labels, np.ndarray)
     assert features.shape[0] == len(labels)
+    
+    
+    
+def test_fixmatch_dataset(test_png_path):
+    imfiles = [test_png_path]*10
+    weak_aug = {"flip_left_right":True}
+    str_aug = {"flip_left_right":True, "zoom_scale":0.1}
+    
+    ds = _fixmatch_unlab_dataset(imfiles, weak_aug, str_aug, 
+                                 imshape=(20,20), batch_size=5)
+    
+    for x,y in ds:
+        x = x.numpy()
+        y = y.numpy()
+        break
+    
+    assert len(x.shape) == 4
+    assert x.shape == y.shape
+    
