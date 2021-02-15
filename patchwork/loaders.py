@@ -419,3 +419,30 @@ def _get_rotation_features(fcn, imfiles, avpool=True, **input_config):
         features = features.reshape(features.shape[0], -1)   
         
     return features, labels
+
+
+
+def _fixmatch_unlab_dataset(fps, weak_aug, str_aug, imshape=(256,256),
+                            num_parallel_calls=None, norm=255, 
+                            num_channels=3, single_channel=False,
+                            batch_size=64):
+    """
+    Macro to build the weak/strong augmented pairs for FixMatch
+    semisupervised learning
+    """
+    _weakaug = augment_function(imshape, weak_aug)
+    _strongaug = augment_function(imshape, str_aug)
+    def aug_pair(x):
+        return _weakaug(x), _strongaug(x)
+    
+    
+    ds = _image_file_dataset(fps, imshape=imshape, 
+                             num_parallel_calls=num_parallel_calls, 
+                             norm=norm, num_channels=num_channels,
+                             shuffle=False, 
+                             single_channel=single_channel, 
+                             augment=False)
+    ds = ds.map(aug_pair, num_parallel_calls=num_parallel_calls)
+    ds = ds.batch(batch_size)
+    ds = ds.prefetch(1)
+    return ds

@@ -39,18 +39,20 @@ def _empty_fig():
     plt.close(fig)
     return fig
 
-def _loss_fig(l, testloss=None, testlossstep=None):
+def _loss_fig(l, ss_loss, testloss=None, testlossstep=None):
     """
     Generate matplotlib figure for a line plot of the 
     training loss
     """
     fig, ax = plt.subplots()
-    ax.plot(l, "o-")
+    ax.plot(l, "-", label="supervised")
+    ax.plot(ss_loss, "--", label="semisupervised")
     if (testloss is not None)&(testlossstep is not None):
-        ax.plot(testlossstep, testloss, "o-")
+        ax.plot(testlossstep, testloss, "o-", label="validation")
     ax.set_xlabel("step", fontsize=14)
     ax.set_ylabel("loss", fontsize=14)
     ax.grid(True)
+    ax.legend(loc="upper_right")
     plt.close(fig)
     return fig
 
@@ -116,7 +118,11 @@ class TrainManager():
         """
         self.pw = pw
         self._header = pn.pane.Markdown("#### Train model on current set of labeled patches")
-        self._learn_rate =  pn.widgets.LiteralInput(name="Learning rate", value=1e-3, type=float)                               
+        self._opt_chooser = pn.widgets.Select(name="Optimizer", options=["adam", "momentum"],
+                                              value="adam")
+        self._learn_rate =  pn.widgets.LiteralInput(name="Initial learning rate", value=1e-3, type=float)                               
+        self._lr_decay = pn.widgets.Select(name="Learning rate decay", options=["none", "cosine"],
+                                             value="none")
         self._batch_size = pn.widgets.LiteralInput(name='Batch size', value=16, type=int)
         self._batches_per_epoch = pn.widgets.LiteralInput(name='Batches per epoch', value=1000, type=int)
         self._epochs = pn.widgets.LiteralInput(name='Epochs', value=10, type=int)
@@ -140,7 +146,9 @@ class TrainManager():
         Return code for a training panel
         """
         controls =  pn.Column(self._header,
+                        self._opt_chooser,
                         self._learn_rate,
+                        self._lr_decay,
                          self._batch_size, 
                          self._batches_per_epoch,
                          self._epochs,
@@ -159,7 +167,15 @@ class TrainManager():
     
     def _train_callback(self, *event):
         # update the training function
-        self.pw.build_training_step(self._learn_rate.value)
+        lr = self._learn_rate.value
+        opt_type = self._opt_chooser.value
+        if self._lr_decay.value == "cosine":
+            # decay to 0 over the course of the experiment
+            lr_decay = self._batch_size.value*self._batches_per_epoch.value*self._epochs.value
+        else:
+            lr_decay = 0
+        self.pw.build_training_step(opt_type=opt_type, lr=lr, lr_decay=lr_decay, 
+                                    decay_type="cosine", weight_decay=self.pw._model_params["weight_decay"])
         self.pw._model_params["training"] = {"learn_rate":self._learn_rate.value,
                                              "batch_size":self._batch_size.value,
                                              "batches_per_epoch":self._batches_per_epoch.value,
@@ -192,6 +208,7 @@ class TrainManager():
             self.pw.compute_badge_embeddings()
         
         self._loss_fig.object = _loss_fig(self.loss,
+                                          self.pw.semisup_loss,
                                           self.pw.test_loss,
                                           self.pw.test_loss_step)
         self._hist_callback()
