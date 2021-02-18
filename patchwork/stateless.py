@@ -23,6 +23,7 @@ from patchwork._util import shannon_entropy
 
 import sklearn.preprocessing, sklearn.decomposition, sklearn.cluster
 from sklearn.metrics import roc_auc_score
+from requests.exceptions import ConnectionError
 
 
 def _mlflow(server_uri, experiment_name, params=None, metrics=None, 
@@ -45,7 +46,13 @@ def _mlflow(server_uri, experiment_name, params=None, metrics=None,
         return None
     import mlflow
     mlflow.set_tracking_uri(server_uri)
-    mlflow.set_experiment(experiment_name)
+    
+    try:
+        mlflow.set_experiment(experiment_name)
+    except ConnectionError:
+        print('Failed to connect to MLFlow server.  Unable to save run.')
+        return None
+      
     run = mlflow.start_run(run_id)
     
     if params is not None:
