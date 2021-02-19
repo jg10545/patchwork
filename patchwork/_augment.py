@@ -123,6 +123,20 @@ def _sobelize(x, prob=0.1, **kwargs):
     return x
 
 
+def _random_solarize(x, prob=0.1, **kwargs):
+    if _choose(prob):
+        x = tf.where(x < 0.5, x, 1-x)
+    return x
+
+
+def _random_autocontrast(x, prob=0.1, **kwargs):
+    if _choose(prob):
+        channel_mins = tf.expand_dims(tf.expand_dims(tf.reduce_min(x, (0,1)),0),0)
+        shifted = x - channel_mins
+        channel_maxs = tf.expand_dims(tf.expand_dims(tf.reduce_max(shifted, (0,1)),0),0)
+        x = tf.clip_by_value(shifted/(channel_maxs + 0.01), 0, 1)
+    return x
+
 def _random_zoom(x, scale=0.1, imshape=(256,256), **kwargs):
     """
     Randomly zoom in on the image- augmented image will be between
@@ -193,29 +207,6 @@ def _random_mask(x, prob=0.25,  **kwargs):
         x =  x*(1-mask) + 0.5*mask
     return x
 
-def _gaussian_blur_DEPRECATED(x, prob=0.25, **kwargs):
-    if _choose(prob):
-        kernel = np.array([[0.00000067, 0.00002292, 0.00019117, 0.00038771, 0.00019117, 0.00002292, 0.00000067],
-                       [0.00002292, 0.00078633, 0.00655965, 0.01330373, 0.00655965, 0.00078633, 0.00002292],
-                       [0.00019117, 0.00655965, 0.05472157, 0.11098164, 0.05472157, 0.00655965, 0.00019117],
-                       [0.00038771, 0.01330373, 0.11098164, 0.22508352, 0.11098164, 0.01330373, 0.00038771],
-                       [0.00019117, 0.00655965, 0.05472157, 0.11098164, 0.05472157, 0.00655965, 0.00019117],
-                       [0.00002292, 0.00078633, 0.00655965, 0.01330373, 0.00655965, 0.00078633, 0.00002292],
-                       [0.00000067, 0.00002292, 0.00019117, 0.00038771, 0.00019117, 0.00002292, 0.00000067]])
-        zeros = np.zeros((7,7))
-        kernel = np.sqrt(kernel)
-        kernel /=kernel.sum()
-        kernel = np.stack([
-            np.stack([kernel, zeros, zeros], -1),
-            np.stack([zeros, kernel, zeros], -1),
-            np.stack([zeros, zeros, kernel], -1)
-        ], -1)
-        conv = tf.nn.conv2d(tf.expand_dims(x,0), kernel, strides=[1, 1, 1, 1], padding="SAME")
-        # add a chance to blur again
-        if _choose(prob):
-            conv = tf.nn.conv2d(conv, kernel, strides=[1, 1, 1, 1], padding="SAME")
-        x = tf.squeeze(conv, 0)
-    return x
 
 def _gaussian_blur(x, prob=0.25, imshape=(256,256), **kwargs):
     """
@@ -283,6 +274,28 @@ def _random_jpeg_degrade(x, prob=0.25, **kwargs):
             x = tf.image.adjust_jpeg_quality(x, 5)
     return x
 
+
+def _random_shear(x, shear=0.3, **kwargs):#, outputshape=(128,128)):
+    """
+    Wrapper for tf.raw_ops.ImageProjectiveTransform
+    
+    :x: (H,W,3) tensor for the input image
+    :outputshape: tuple for image output size
+    """
+    shape = x.shape
+    shear_x = tf.random.uniform((), minval=-1*shear, maxval=shear)
+    shear_y = tf.random.uniform((), minval=-1*shear, maxval=shear)
+    dx = -1*shape[1]*shear_x/2
+    dy = -1*shape[0]*shear_y/2
+    
+    tfm = tf.stack([1, shear_x, dx, shear_y, 1, dy, 
+                     tf.constant(0.0, dtype=tf.float32), 
+                     tf.constant(0.0, dtype=tf.float32)], axis=0)
+    tfm = tf.reshape(tfm, [1,8])
+    distorted = tf.raw_ops.ImageProjectiveTransformV2(images=tf.expand_dims(x,0), transforms=tfm, 
+                                      output_shape=shape[:2], interpolation="BILINEAR")[0]
+    return tf.reshape(distorted, shape)
+
 SINGLE_AUG_FUNC = {
     "gaussian_blur":_gaussian_blur,
     "drop_color":_drop_color,
@@ -299,14 +312,18 @@ SINGLE_AUG_FUNC = {
     "center_zoom_scale":_center_crop,
     "mask":_random_mask,
     "jitter":_jitter,
-    "jpeg_degrade":_random_jpeg_degrade
+    "jpeg_degrade":_random_jpeg_degrade,
+    "solarize":_random_solarize,
+    "autocontrast":_random_autocontrast,
+    "shear":_random_shear
 }
 
 
-AUGMENT_ORDERING = ["flip_left_right", "flip_up_down", "rot90", 
-                    "zoom_scale", "center_zoom_scale", "jitter", "brightness_delta",
+AUGMENT_ORDERING = ["flip_left_right", "flip_up_down", "rot90", "shear",
+                    "zoom_scale", "center_zoom_scale", "solarize",
+                    "jitter", "brightness_delta",
                     "contrast_delta", "saturation_delta", "hue_delta",
-                    "gaussian_blur", "gaussian_noise", 
+                    "gaussian_blur", "gaussian_noise", "autocontrast",
                     "drop_color", "sobel_prob", "jpeg_degrade", "mask"]
 
 def _augment(im, aug_dict, imshape=None):
