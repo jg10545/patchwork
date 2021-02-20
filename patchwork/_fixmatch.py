@@ -24,7 +24,14 @@ DEFAULT_STRONG_AUG = {'zoom_scale': 0.5, 'jitter': 1.0, 'flip_left_right': True,
                       "gaussian_blur":0.4, "gaussian_noise":0.4}
 
 
-            
+def _build_mask(x, tau):
+    # helper to generate mask for FixMatch. slightly different from
+    # the paper since we're doing sigmoid multilabel learning
+    confident_high = x >= tau
+    confident_low = x <= (1-tau)
+    mask = tf.math.logical_or(confident_high, confident_low)
+    return tf.cast(mask, tf.float32)
+                
             
 def _build_fixmatch_training_step(model, optimizer, lam=0, 
                             tau=0.95, weight_decay=0):
@@ -33,13 +40,6 @@ def _build_fixmatch_training_step(model, optimizer, lam=0,
     """
     trainvars = model.trainable_variables
     
-    def build_mask(x):
-        # helper to generate mask for FixMatch. slightly different from
-        # the paper since we're doing sigmoid multilabel learning
-        confident_high = x >= tau
-        confident_low = x <= (1-tau)
-        mask = tf.math.logical_or(confident_high, confident_low)
-        return tf.cast(mask, tf.float32)
     
     def train_step(lab, unlab):
         x,y = lab
@@ -56,8 +56,6 @@ def _build_fixmatch_training_step(model, optimizer, lam=0,
             else:
                 l2_loss = 0
             
-            total_loss = trainloss
-            
             # semi-supervised case- loss function for unlabeled data
             # entropy regularization
             if lam > 0:
@@ -72,7 +70,7 @@ def _build_fixmatch_training_step(model, optimizer, lam=0,
                     # since we only incorporate high-confidence cases,
                     # compute a mask that's 1 every place that's close
                     # to 1 or 0
-                    mask = build_mask(unlab_preds)
+                    mask = _build_mask(unlab_preds, tau)
                 
                 # MAKE PREDICTIONS FROM STRONG AUGMENTATION
                 str_preds = model(x_unlab_str, True)
@@ -195,7 +193,7 @@ class FixMatchTrainer(GenericExtractor):
                                 imshape=imshape, num_parallel_calls=num_parallel_calls,
                                  norm=norm, num_channels=num_channels,
                                  single_channel=single_channel,
-                                 augment=weak_aug, shuffle=True)[0]
+                                 augment=weak_aug, shuffle=False)[0]
         
         # build training step
         trainstep = _build_fixmatch_training_step(model, self._optimizer,
