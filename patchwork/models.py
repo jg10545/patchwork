@@ -45,7 +45,7 @@ def build_wide_resnet(n=16, k=1, num_channels=3, dropout=0.5, inputshape=None):
                 net = tf.keras.layers.Conv2D(b*k, 3, padding="same")(net)
             
             if dropout > 0:
-                net = tf.keras.layers.Dropout(dropout)(net)
+                net = tf.keras.layers.SpatialDropout2D(dropout)(net)
             
             net = tf.keras.layers.BatchNormalization()(net)
             net = tf.keras.layers.Activation("relu")(net)
