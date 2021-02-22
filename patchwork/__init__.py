@@ -14,3 +14,4 @@ from patchwork._distill import distill
 import patchwork.feature
 import patchwork.viz
 import patchwork.loaders
+import patchwork.models
