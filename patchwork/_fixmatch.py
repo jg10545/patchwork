@@ -1,12 +1,8 @@
 # -*- coding: utf-8 -*-
 import numpy as np
-import pandas as pd
 import tensorflow as tf
 from tensorflow.keras import backend as K
-from sklearn.preprocessing import LabelEncoder
-import warnings
 import os
-import yaml
 
 from patchwork.loaders import dataset, _fixmatch_unlab_dataset
 from patchwork.feature._generic import GenericExtractor
@@ -21,7 +17,8 @@ INPUT_PARAMS = ["imshape", "num_channels", "norm", "batch_size",
 DEFAULT_WEAK_AUG = {"flip_left_right":True}
 DEFAULT_STRONG_AUG = {'zoom_scale': 0.5, 'jitter': 1.0, 'flip_left_right': True, 
                       'drop_color': 0.25, 'mask': 1.,
-                      "gaussian_blur":0.4, "gaussian_noise":0.4}
+                      "gaussian_blur":0.4, "gaussian_noise":0.4,
+                      "shear":0.3, "solarize":0.25, "autocontrast":0.25}
 
 
 def _build_mask(x, tau):
@@ -36,7 +33,13 @@ def _build_mask(x, tau):
 def _build_fixmatch_training_step(model, optimizer, lam=0, 
                             tau=0.95, weight_decay=0):
     """
+    Generate the training step function
     
+    :model: Keras model
+    :optimizer: Keras optimizer
+    :lam: float; fixmatch loss weight
+    :tau: float between 0 and 1; fixmatch threshold
+    :weight_decay: float; L2 loss weight
     """
     trainvars = model.trainable_variables
     
@@ -44,6 +47,20 @@ def _build_fixmatch_training_step(model, optimizer, lam=0,
     def train_step(lab, unlab):
         x,y = lab
         x_unlab_wk, x_unlab_str = unlab
+        
+        if lam > 0:
+            # GENERATE FIXMATCH PSEUDOLABELS
+            # make predictions on the weakly-augmented batch
+            unlab_preds = model(x_unlab_wk, training=False)
+            # round predictions to pseudolabels
+            pseudolabels = tf.cast(unlab_preds > 0.5, 
+                                           tf.float32)
+            # also compute a mask from the predictions,
+            # since we only incorporate high-confidence cases,
+            # compute a mask that's 1 every place that's close
+            # to 1 or 0
+            mask = _build_mask(unlab_preds, tau)
+        
         with tf.GradientTape() as tape:
             preds = model(x, training=True)
             
@@ -58,35 +75,30 @@ def _build_fixmatch_training_step(model, optimizer, lam=0,
             
             # semi-supervised case- loss function for unlabeled data
             # entropy regularization
-            if lam > 0:
-                with tape.stop_recording():
-                    # GENERATE FIXMATCH PSEUDOLABELS
-                    # make predictions on the weakly-augmented batch
-                    unlab_preds = model(x_unlab_wk, False)
-                    # round predictions to pseudolabels
-                    pseudolabels = tf.cast(unlab_preds > 0.5, 
-                                           tf.float32)
-                    # also compute a mask from the predictions,
-                    # since we only incorporate high-confidence cases,
-                    # compute a mask that's 1 every place that's close
-                    # to 1 or 0
-                    mask = _build_mask(unlab_preds, tau)
-                
+            if lam > 0:                
                 # MAKE PREDICTIONS FROM STRONG AUGMENTATION
-                str_preds = model(x_unlab_str, True)
+                str_preds = model(x_unlab_str, training=True)
+                # let's try keeping track of how accurate these
+                # predictions are
+                ssl_acc = tf.reduce_mean(tf.cast(
+                    tf.cast(str_preds > 0.5, tf.float32)==pseudolabels,
+                                                 tf.float32))
+                
                 crossent_tensor = K.binary_crossentropy(pseudolabels,
                                                         str_preds)
                 fixmatch_loss = tf.reduce_mean(mask*crossent_tensor)
                 total_loss += lam*fixmatch_loss
             else:
                 fixmatch_loss = 0
+                ssl_acc = -1
                 
         # compute and apply gradients
         gradients = tape.gradient(total_loss, trainvars)
         optimizer.apply_gradients(zip(gradients, trainvars))
 
-        return {"total_loss":total_loss, "training_loss":trainloss,
-                "fixmatch_loss":fixmatch_loss, "l2_loss":l2_loss}
+        return {"total_loss":total_loss, "supervised_loss":trainloss,
+                "fixmatch_loss":fixmatch_loss, "l2_loss":l2_loss,
+                "fixmatch_prediction_accuracy":ssl_acc}
     return train_step
             
 
@@ -95,6 +107,14 @@ def _fixmatch_dataset(labeled_filepaths, labels, unlabeled_filepaths,
                       imshape, num_parallel_calls, norm,
                       num_channels, single_channel, batch_size,
                       weak_aug, strong_aug, mu):
+    """
+    Build the training dataset. We're going to be zipping together two
+    datasets:
+        -a conventional supervised dataset generating weakly-augmented
+        (image, label) pairs
+        -a dataset generating unabeled pairs of the same image, one weakly-augmented
+        and the other strongly-augmented, for the semisupervised training component
+    """
     # dataset for supervised task
     sup_ds = dataset(labeled_filepaths, ys=labels, imshape=imshape, 
                              num_parallel_calls=num_parallel_calls,
@@ -113,12 +133,19 @@ def _fixmatch_dataset(labeled_filepaths, labels, unlabeled_filepaths,
     ds = ds.prefetch(1)
     return ds
 
-# HERE'S HOW FAR I GOT
 
 
 class FixMatchTrainer(GenericExtractor):
     """
-    Class for managing 
+    Class for managing semisupervised multlabel training with FixMatch.
+    
+    The training and validation data should be pandas dataframes each containing
+    a "filepath" column (giving location of the image), as well as one column
+    for each binary category (with values 0 or 1). Unlike some of the other
+    tools in this repo, this trainer assumes no missing labels.
+    
+    The model should be a Keras model with sigmoid outputs (one per category
+    column in your data)
     """
     
     
@@ -136,13 +163,15 @@ class FixMatchTrainer(GenericExtractor):
         :trainingdata: pandas dataframe of training data
         :unlabeled_filepaths:
         :valdata: pandas dataframe of validation data
-        :model:
-        :weak_aug:
-        :strong_aug:
+        :model: Keras model to be trained
+        :weak_aug: dictionary of weak augmentation parameters- usually just flipping. This
+            will be used for FixMatch pseudolabels as well as supervised training
+        :strong_aug: dictionary of strong augmentation parameters, for FixMatch predictions
         :lam: FixMatch lambda parameter; semisupervised loss weight
         :tau: FixMatch threshold parameter
         :mu: FixMatch batch size multiplier
-        :passes_per_epoch:
+        :passes_per_epoch: for small labeled datasets- run through the data this many times 
+            per epoch
         :weight_decay: (float) coefficient for L2-norm loss.
         :lr: learning rate
         :lr_decay: learning rate decay (set to 0 to disable)
@@ -275,7 +304,7 @@ class FixMatchTrainer(GenericExtractor):
             self._hparams_config = hp.hparams_config(
                         hparams=list(hparams.keys()), 
                         metrics=[hp.Metric(m) for m in metrics])
-            # record hyperparamters
+            # record hyperparameters
             base_dir, run_name = os.path.split(self.logdir)
             if len(run_name) == 0:
                 base_dir, run_name = os.path.split(base_dir)
