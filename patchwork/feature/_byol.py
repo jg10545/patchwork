@@ -11,11 +11,11 @@ import tensorflow as tf
 from tqdm import tqdm
 
 from patchwork.feature._generic import GenericExtractor
-from patchwork.feature._moco import exponential_model_update
+from patchwork.feature._moco import exponential_model_update, _build_augment_pair_dataset
 
 from patchwork._augment import augment_function
 from patchwork.loaders import _image_file_dataset
-from patchwork._util import compute_l2_loss
+from patchwork._util import compute_l2_loss, _compute_alignment_and_uniformity
 
 
 _DESCRIPTIONS = {
@@ -148,7 +148,7 @@ def _build_byol_training_step(online, prediction, target, optimizer,
         gradients = tape.gradient(lossdict["loss"], trainvars)
         optimizer.apply_gradients(zip(gradients, trainvars))
         # UPDATE WEIGHTS OF TARGET MODEL
-        lossdict["target_online_avg_weight_diff"] = exponential_model_update(target, online, tau)
+        #lossdict["target_online_avg_weight_diff"] = exponential_model_update(target, online, tau)
         
         return lossdict
     return training_step
@@ -287,6 +287,16 @@ class BYOLTrainer(GenericExtractor):
                                     tau, weight_decay)
         self._training_step = self._distribute_training_function(step_fn)
         
+        # weight update step - initially had this inside the training step, but
+        # it gave some issues with multigpu training since I hadn't explicitly set
+        # tf.VariableAggregation and tf.VariableSynchronization for each variable
+        # in the network.
+        @tf.function
+        def weight_update_step():
+            return exponential_model_update(self._models["target"], self._models["online"],
+                                            self.config["tau"])
+        self._weight_update_step = weight_update_step
+        
         # THIS IS NOT THE MOST EFFICIENT WAY TO IMPLEMENT THIS
         # in the momentum^2 paper they subclass the pytorch batchnorm layer
         # to do what they want- in the name of easy compatibility, for now, 
@@ -299,7 +309,7 @@ class BYOLTrainer(GenericExtractor):
         
         if testdata is not None:
             
-            self._test_ds = _build_byol_dataset(testdata, 
+            self._test_ds = _build_augment_pair_dataset(testdata, 
                                         imshape=imshape, batch_size=batch_size,
                                         num_parallel_calls=num_parallel_calls, 
                                         norm=norm, num_channels=num_channels, 
@@ -310,24 +320,7 @@ class BYOLTrainer(GenericExtractor):
                 return _compare_model_weights(self._models["online"], 
                                               self._models["target"])
             self._compare_model_weights = cmw
-            """
-            
-            @tf.function
-            def test_loss(x,y):
-                eye = tf.linalg.eye(y.shape[0])
-                index = tf.range(0, y.shape[0])
-                labels = index+y
 
-                embeddings = self._models["full"](x)
-                embeds_norm = tf.nn.l2_normalize(embeddings, axis=1)
-                sim = tf.matmul(embeds_norm, embeds_norm, transpose_b=True)
-                logits = (sim - BIG_NUMBER*eye)/self.config["temperature"]
-            
-                loss = tf.reduce_mean(
-                    tf.nn.sparse_softmax_cross_entropy_with_logits(labels, logits))
-                return loss, sim
-            self._test_loss = test_loss
-            """
             self._test = True
         else:
             self._test = False
@@ -367,8 +360,8 @@ class BYOLTrainer(GenericExtractor):
             lossdict = self._training_step(x,y)
             self._record_scalars(**lossdict)
             # update the target model
-            #with self.scope():
-            #    self._record_scalars(**self._weight_update_step())
+            self._record_scalars(target_online_avg_weight_diff=self._weight_update_step())
+            
             self.step += 1
              
     def evaluate(self):
@@ -389,6 +382,14 @@ class BYOLTrainer(GenericExtractor):
             # space but doesn't seem to add much
             #self._record_images(scalar_products=tf.expand_dims(tf.expand_dims(sim,-1), 0))
             """
+            # if the user passed out-of-sample data to test- compute
+            # alignment and uniformity measures
+            alignment, uniformity = _compute_alignment_and_uniformity(
+                                            self._test_ds, self._models["online"])
+            
+            self._record_scalars(alignment=alignment,
+                             uniformity=uniformity, metric=True)
+            
         if self._downstream_labels is not None:
             # choose the hyperparameters to record
             if not hasattr(self, "_hparams_config"):
