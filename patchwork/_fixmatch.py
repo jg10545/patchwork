@@ -307,8 +307,21 @@ class FixMatchTrainer(GenericExtractor):
             base_dir, run_name = os.path.split(self.logdir)
             if len(run_name) == 0:
                 base_dir, run_name = os.path.split(base_dir)
-            self._hparams_success_check = hp.hparams(hparams, trial_id=run_name)
                 
+                
+    def log_model(self, model_name="fixmatch_model"):
+        """
+        Log the feature extractor to an MLflow server. Assumes you've
+        already run track_with_mflow()
+        
+        Overwriting the generic version of this function because we're not
+        building an FCN here.
+        """
+            
+        assert hasattr(self, "_mlflow"), "need to run track_with_mlflow() first"
+        from mlflow.keras import log_model
+        log_model(self._models["full"], model_name)
+        
   
             
             
