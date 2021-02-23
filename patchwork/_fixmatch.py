@@ -241,7 +241,7 @@ class FixMatchTrainer(GenericExtractor):
                             opt_type=opt_type, imshape=imshape, 
                             num_channels=num_channels, norm=norm, batch_size=batch_size,
                             num_parallel_calls=num_parallel_calls, single_channel=single_channel,
-                            notes=notes, strategy=strategy,
+                            notes=notes, 
                             trainer="fixmatch")
         
         
@@ -277,7 +277,7 @@ class FixMatchTrainer(GenericExtractor):
 
             auc = roc_auc_score(y_true, preds)
             self._record_scalars(**{f"val_accuracy_{category}":acc,
-                                    f"val_auc_{category}":auc})
+                                    f"val_auc_{category}":auc}, metric=True)
             
         # choose the hyperparameters to record
         if not hasattr(self, "_hparams_config"):
@@ -296,10 +296,9 @@ class FixMatchTrainer(GenericExtractor):
                     hp.HParam("lr", hp.RealInterval(0., 10000.)):self.config["lr"],
                     hp.HParam("lr_decay", hp.RealInterval(0., 10000.)):self.config["lr_decay"],
                     hp.HParam("decay_type", hp.Discrete(["cosine", "exponential", "staircase"])):self.config["decay_type"],
-                    hp.HParam("opt_type", hp.Discrete(["sgd", "adam", "momentum"])):self.config["decay_type"],
+                    hp.HParam("opt_type", hp.Discrete(["sgd", "adam", "momentum"])):self.config["opt_type"],
                     hp.HParam("weight_decay", hp.RealInterval(0., 10000.)):self.config["weight_decay"]
                     }
-
             
             self._hparams_config = hp.hparams_config(
                         hparams=list(hparams.keys()), 
@@ -308,7 +307,7 @@ class FixMatchTrainer(GenericExtractor):
             base_dir, run_name = os.path.split(self.logdir)
             if len(run_name) == 0:
                 base_dir, run_name = os.path.split(base_dir)
-            hp.hparams(hparams, trial_id=run_name)
+            self._hparams_success_check = hp.hparams(hparams, trial_id=run_name)
                 
   
             
