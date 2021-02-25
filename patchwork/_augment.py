@@ -186,8 +186,8 @@ def _random_mask(x, prob=0.25,  **kwargs):
     if _choose(prob):
         H,W,C = x.shape
     
-        dh = tf.random.uniform([], minval=int(H/4), maxval=int(H/2), dtype=tf.int32)
-        dw = tf.random.uniform([], minval=int(H/4), maxval=int(W/2), dtype=tf.int32)
+        dh = tf.random.uniform([], minval=int(H/20), maxval=int(H/2), dtype=tf.int32)
+        dw = tf.random.uniform([], minval=int(H/20), maxval=int(W/2), dtype=tf.int32)
     
         xmin = tf.random.uniform([], minval=0, maxval=W-dw, dtype=tf.int32)
         ymin = tf.random.uniform([], minval=0, maxval=H-dh, dtype=tf.int32)
