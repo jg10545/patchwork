@@ -125,7 +125,8 @@ def _sobelize(x, prob=0.1, **kwargs):
 
 def _random_solarize(x, prob=0.1, **kwargs):
     if _choose(prob):
-        x = tf.where(x < 0.5, x, 1-x)
+        threshold = tf.random.uniform((()))
+        x = tf.where(x < threshold, x, 1-x)
     return x
 
 
