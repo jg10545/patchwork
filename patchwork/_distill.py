@@ -154,7 +154,6 @@ def distill(filepaths, ys, student, epochs=5, testfiles=None, testlabels=None,
                                 batch_size=batch_size, 
                                 num_parallel_calls=num_parallel_calls,
                                 augment=False)
-        test_ds = strategy.experimental_distribute_dataset(test_ds)
         #for c in range(output_dim):
         for c in class_names:
             outputs["auc_%s"%c] = []
