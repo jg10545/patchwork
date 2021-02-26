@@ -128,9 +128,12 @@ class TrainManager():
         self._epochs = pn.widgets.LiteralInput(name='Epochs', value=10, type=int)
         
         self._eval_after_training = pn.widgets.Checkbox(name="Update predictions after training?", value=True)
-        self._compute_badge_gradients = pn.widgets.Checkbox(name="Update BADGE gradients?", value=False)
+        #self._compute_badge_gradients = pn.widgets.Checkbox(name="Update BADGE gradients?", value=False)
         self._train_button = pn.widgets.Button(name="Make it so")
         self._train_button.on_click(self._train_callback)
+        
+        self._compute_badge_gradients = pn.widgets.Button(name="Update BADGE gradients")
+        self._compute_badge_gradients.on_click(self._badge_callback)
         
         self._footer = pn.pane.Markdown("")
         
@@ -153,8 +156,8 @@ class TrainManager():
                          self._batches_per_epoch,
                          self._epochs,
                         self._eval_after_training,
-                        self._compute_badge_gradients,
                         self._train_button,
+                        self._compute_badge_gradients,
                         self._footer)
         
         figures = pn.Column(pn.pane.Markdown("### Training Loss"),
@@ -202,11 +205,7 @@ class TrainManager():
             self._footer.object = "### EVALUATING"
             self.pw.predict_on_all(self._batch_size.value)
             self.pw._mlflow_track_run()
-            
-        if self._compute_badge_gradients.value:
-            self._footer.object = "### COMPUTING BADGE GRADIENTS"
-            self.pw.compute_badge_embeddings()
-        
+                                
         self._loss_fig.object = _loss_fig(self.loss,
                                           self.pw.semisup_loss,
                                           self.pw.test_loss,
@@ -214,6 +213,11 @@ class TrainManager():
         self._hist_callback()
         self._footer.object = "### DONE"
         self.pw.save()
+        
+    def _badge_callback(self, *events):
+        self._footer.object = "### COMPUTING BADGE GRADIENTS"
+        self.pw.compute_badge_embeddings()
+        self._footer.object = "### DONE"
         
         
     def _hist_callback(self, *events):
