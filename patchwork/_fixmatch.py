@@ -120,6 +120,7 @@ def _fixmatch_dataset(labeled_filepaths, labels, unlabeled_filepaths,
                              num_parallel_calls=num_parallel_calls,
                                  norm=norm, num_channels=num_channels,
                                  single_channel=single_channel,
+                                 batch_size=batch_size,
                                  augment=weak_aug, shuffle=True)[0]
     
     # dataset for unsupervised task
@@ -222,7 +223,7 @@ class FixMatchTrainer(GenericExtractor):
                                 imshape=imshape, num_parallel_calls=num_parallel_calls,
                                  norm=norm, num_channels=num_channels,
                                  single_channel=single_channel,
-                                 augment=weak_aug, shuffle=False)[0]
+                                 augment=False, shuffle=False)[0]
         
         # build training step
         trainstep = _build_fixmatch_training_step(model, self._optimizer,
@@ -258,19 +259,11 @@ class FixMatchTrainer(GenericExtractor):
             
     def evaluate(self, avpool=True):
         predictions = self._models["full"].predict(self._val_ds)
-        
-        # stupid hack- haven't figured out a better way to do
-        # this with keras API
-        if len(self.categories) == 1: 
-            predictions = [predictions]
-        else:
-            predictions = [predictions[:,i] for i in range(len(self.categories))]
-        
         num_categories = len(self.categories)
         
         for i in range(num_categories):
             category = self.categories[i]
-            preds = predictions[i]
+            preds = predictions[:,i]
             y_true = self._val_labels[:,i]
             
             acc = np.mean(y_true == (preds >= 0.5).astype(int))
