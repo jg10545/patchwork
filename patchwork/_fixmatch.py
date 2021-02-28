@@ -62,22 +62,15 @@ def _build_fixmatch_training_step(model, optimizer, lam=0,
             mask = _build_mask(unlab_preds, tau)
         
         with tf.GradientTape() as tape:
-            preds = model(x, training=True)
-            
-            trainloss = tf.reduce_mean(K.binary_crossentropy(y, preds))
-            total_loss = trainloss
-            
-            if weight_decay > 0:
-                l2_loss = compute_l2_loss(model)
-                total_loss += weight_decay*l2_loss
-            else:
-                l2_loss = 0
-            
-            # semi-supervised case- loss function for unlabeled data
-            # entropy regularization
-            if lam > 0:                
-                # MAKE PREDICTIONS FROM STRONG AUGMENTATION
-                str_preds = model(x_unlab_str, training=True)
+            # semisupervised case
+            if lam > 0:
+                # concatenate labeled/pseudolabeled batches
+                N = x.shape[0]
+                x_batch = tf.concat([x,x_unlab_str],0)
+                pred_batch = model(x_batch, training=True)
+                # then split the labeled/pseudolabeled pieces
+                preds = pred_batch[:N,:]
+                str_preds = pred_batch[N:,:]
                 # let's try keeping track of how accurate these
                 # predictions are
                 ssl_acc = tf.reduce_mean(tf.cast(
@@ -87,10 +80,20 @@ def _build_fixmatch_training_step(model, optimizer, lam=0,
                 crossent_tensor = K.binary_crossentropy(pseudolabels,
                                                         str_preds)
                 fixmatch_loss = tf.reduce_mean(mask*crossent_tensor)
-                total_loss += lam*fixmatch_loss
-            else:
+                
+            else:           
                 fixmatch_loss = 0
                 ssl_acc = -1
+                preds = model(x, training=True)
+            
+            trainloss = tf.reduce_mean(K.binary_crossentropy(y, preds))
+            
+            if weight_decay > 0:
+                l2_loss = compute_l2_loss(model)
+            else:
+                l2_loss = 0
+                
+            total_loss = trainloss + lam*fixmatch_loss + weight_decay*l2_loss
                 
         # compute and apply gradients
         gradients = tape.gradient(total_loss, trainvars)
