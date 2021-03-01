@@ -25,6 +25,14 @@ def test_student_model_without_premade_model():
     assert student.output_shape[-1] == 5
     
     
+    
+def test_student_model_with_wide_resnet():    
+    student = _build_student_model("WRN_16_1", 5, imshape=(32,32))
+    
+    assert isinstance(student, tf.keras.Model)
+    assert student.output_shape[-1] == 5
+    
+    
 def test_distill(test_png_path):
     inpt = tf.keras.layers.Input((None, None, 3))
     net = tf.keras.layers.GlobalMaxPool2D()(inpt)
