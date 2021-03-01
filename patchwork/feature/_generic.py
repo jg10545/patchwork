@@ -359,8 +359,7 @@ class GenericExtractor(object):
         else:
             @tf.function
             def training_step(x,y):
-                per_example_losses = self.strategy.experimental_run_v2(
-                                        step_fn, args=(x,y))
+                per_example_losses = self.strategy.run(step_fn, args=(x,y))
 
                 lossdict = {k:self.strategy.reduce(
                     tf.distribute.ReduceOp.MEAN, 
