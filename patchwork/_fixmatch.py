@@ -48,29 +48,30 @@ def _build_fixmatch_training_step(model, optimizer, lam=0,
         x,y = lab
         x_unlab_wk, x_unlab_str = unlab
         
-        if lam > 0:
-            # GENERATE FIXMATCH PSEUDOLABELS
-            # make predictions on the weakly-augmented batch
-            unlab_preds = model(x_unlab_wk, training=False)
-            # round predictions to pseudolabels
-            pseudolabels = tf.cast(unlab_preds > 0.5, 
-                                           tf.float32)
-            # also compute a mask from the predictions,
-            # since we only incorporate high-confidence cases,
-            # compute a mask that's 1 every place that's close
-            # to 1 or 0
-            mask = _build_mask(unlab_preds, tau)
         
         with tf.GradientTape() as tape:
             # semisupervised case
             if lam > 0:
                 # concatenate labeled/pseudolabeled batches
                 N = x.shape[0]
-                x_batch = tf.concat([x,x_unlab_str],0)
+                mu_N = x_unlab_str.shape[0]
+                x_batch = tf.concat([x,x_unlab_wk, x_unlab_str],0)
                 pred_batch = model(x_batch, training=True)
                 # then split the labeled/pseudolabeled pieces
                 preds = pred_batch[:N,:]
-                str_preds = pred_batch[N:,:]
+                wk_preds = pred_batch[N:N+mu_N,:]
+                str_preds = pred_batch[N+mu_N:,:]
+                # GENERATE FIXMATCH PSEUDOLABELS
+                # round predictions to pseudolabels
+                pseudolabels = tf.cast(wk_preds > 0.5, 
+                                           tf.float32)
+                # also compute a mask from the predictions,
+                # since we only incorporate high-confidence cases,
+                # compute a mask that's 1 every place that's close
+                # to 1 or 0
+                mask = _build_mask(wk_preds, tau)
+                
+                
                 # let's try keeping track of how accurate these
                 # predictions are
                 ssl_acc = tf.reduce_mean(tf.cast(
@@ -84,6 +85,7 @@ def _build_fixmatch_training_step(model, optimizer, lam=0,
             else:           
                 fixmatch_loss = 0
                 ssl_acc = -1
+                mask = -1
                 preds = model(x, training=True)
             
             trainloss = tf.reduce_mean(K.binary_crossentropy(y, preds))
@@ -101,7 +103,8 @@ def _build_fixmatch_training_step(model, optimizer, lam=0,
 
         return {"total_loss":total_loss, "supervised_loss":trainloss,
                 "fixmatch_loss":fixmatch_loss, "l2_loss":l2_loss,
-                "fixmatch_prediction_accuracy":ssl_acc}
+                "fixmatch_prediction_accuracy":ssl_acc, 
+                "fixmatch_mask_fraction":tf.reduce_mean(mask)}
     return train_step
             
 

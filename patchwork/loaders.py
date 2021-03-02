@@ -439,7 +439,7 @@ def _fixmatch_unlab_dataset(fps, weak_aug, str_aug, imshape=(256,256),
     ds = _image_file_dataset(fps, imshape=imshape, 
                              num_parallel_calls=num_parallel_calls, 
                              norm=norm, num_channels=num_channels,
-                             shuffle=False, 
+                             shuffle=True, 
                              single_channel=single_channel, 
                              augment=False)
     ds = ds.map(aug_pair, num_parallel_calls=num_parallel_calls)
