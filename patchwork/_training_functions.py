@@ -38,50 +38,56 @@ def build_training_function(loss_fn, opt, fine_tuning, output, feature_extractor
     
     @tf.function
     def training_step(x, y, x_unlab_wk=None, x_unlab_str=None):
+        # If we're using fixmatch we gotta concatenate everything into
+        # one big bad batch
+        if lam > 0:
+            assert (x_unlab_wk is not None)&(x_unlab_str is not None)
+            N = x.shape[0]
+            mu_N = x_unlab_wk.shape[0]
+            x = tf.concat([x, x_unlab_wk, x_unlab_str], 0)
+        
         # for dynamically-computed features, run images through the
         # feature extractor
         if feature_extractor is not None:
             x = feature_extractor(x)
-            if lam > 0:
-                x_unlab_wk = feature_extractor(x_unlab_wk)
-                x_unlab_str = feature_extractor(x_unlab_str)
             
         with tf.GradientTape() as tape:
             # compute outputs for training data
             y_pred = model(x, True)
             
-            # loss function between labels and predictions
-            training_loss = loss_fn(y, y_pred)
-            
-            if weight_decay > 0:
-                training_loss += weight_decay*compute_l2_loss(fine_tuning)
-            
-            total_loss = training_loss
-            
             # semi-supervised case- loss function for unlabeled data
-            # entropy regularization
             if lam > 0:
+                # separate out predictions from labeled batch,
+                # weakly-augmented unlabeled batch, and strongly augmented
+                # unlabeled batch
+                preds_wk = y_pred[N:N+mu_N,:]
+                preds_str = y_pred[N+mu_N:,:]
+                y_pred = y_pred[:N,:]
                 with tape.stop_recording():
-                    # GENERATE FIXMATCH PSEUDOLABELS
-                    # make predictions on the weakly-augmented batch
-                    unlab_preds = model(x_unlab_wk, False)
-                    # round predictions to pseudolabels
-                    pseudolabels = tf.cast(unlab_preds > 0.5, 
+                    # round weak predictions to pseudolabels
+                    pseudolabels = tf.cast(preds_wk > 0.5, 
                                            tf.float32)
                     # also compute a mask from the predictions,
                     # since we only incorporate high-confidence cases,
                     # compute a mask that's 1 every place that's close
                     # to 1 or 0
-                    mask = build_mask(unlab_preds)
-                
-                # MAKE PREDICTIONS FROM STRONG AUGMENTATION
-                str_preds = model(x_unlab_str, True)
+                    mask = build_mask(preds_wk)
+
                 crossent_tensor = K.binary_crossentropy(pseudolabels,
-                                                        str_preds)
+                                                        preds_str)
                 fixmatch_loss = tf.reduce_mean(mask*crossent_tensor)
-                total_loss += lam*fixmatch_loss
             else:
                 fixmatch_loss = 0
+            
+            # supervised loss function between labels and predictions
+            training_loss = loss_fn(y, y_pred)
+            
+            if weight_decay > 0:
+                l2_loss = compute_l2_loss(fine_tuning)
+            else:
+                l2_loss = 0
+            
+            total_loss = training_loss + weight_decay*l2_loss + lam*fixmatch_loss
                 
         # compute and apply gradients
         gradients = tape.gradient(total_loss, trainvars)
