@@ -283,7 +283,8 @@ class GUI(object):
         Build a dataset of just validation examples
         """
         val_df = self.df[self.df.validation]
-        ys = val_df[self.classes].values
+        ys = val_df[self.classes].values.copy()
+        ys[np.isnan(ys)] = -1
         
         if self.feature_vecs is None:
             files = val_df["filepath"].values

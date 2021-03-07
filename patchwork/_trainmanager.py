@@ -124,7 +124,7 @@ class TrainManager():
         self._lr_decay = pn.widgets.Select(name="Learning rate decay", options=["none", "cosine"],
                                              value="none")
         self._batch_size = pn.widgets.LiteralInput(name='Batch size', value=16, type=int)
-        self._batches_per_epoch = pn.widgets.LiteralInput(name='Batches per epoch', value=1000, type=int)
+        self._batches_per_epoch = pn.widgets.LiteralInput(name='Batches per epoch', value=100, type=int)
         self._epochs = pn.widgets.LiteralInput(name='Epochs', value=10, type=int)
         
         self._eval_after_training = pn.widgets.Checkbox(name="Update predictions after training?", value=True)
@@ -201,15 +201,16 @@ class TrainManager():
             self.pw.test_loss.append(testloss)
             self.pw.test_loss_step.append(len(self.pw.training_loss))
             
+            self._loss_fig.object = _loss_fig(self.loss,
+                                          self.pw.semisup_loss,
+                                          self.pw.test_loss,
+                                          self.pw.test_loss_step)
+            
         if self._eval_after_training.value:
             self._footer.object = "### EVALUATING"
             self.pw.predict_on_all(self._batch_size.value)
             self.pw._mlflow_track_run()
-                                
-        self._loss_fig.object = _loss_fig(self.loss,
-                                          self.pw.semisup_loss,
-                                          self.pw.test_loss,
-                                          self.pw.test_loss_step)
+
         self._hist_callback()
         self._footer.object = "### DONE"
         self.pw.save()
