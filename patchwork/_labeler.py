@@ -13,7 +13,6 @@ import panel as pn
 import os
 
 import warnings
-from collections import defaultdict
 
 
 
@@ -21,13 +20,6 @@ from patchwork._sample import find_subset
 from patchwork._util import shannon_entropy#, tiff_to_array
 
 
-
-_button_val_map = defaultdict(str)
-_button_val_map.setdefault("None")
-_button_val_map[0] = "0"
-_button_val_map["0"] = "0"
-_button_val_map[1] = "1"
-_button_val_map["1"] = "1"
 
 
 def _gen_figs(arrays, dim=3, lw=5):
@@ -160,7 +152,10 @@ class ButtonPanel(object):
         self._validation.value = bool(record["validation"])
         
         for c in self._classes:
-            self._selections[c].value = _button_val_map[record[c]]
+            if np.isnan(record[c]):
+                self._selections[c].value = "None"
+            else:
+                self._selections[c].value = str(int(record[c]))
         
     def select(self, i):
         """
