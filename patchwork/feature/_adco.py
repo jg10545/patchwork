@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 import tensorflow as tf
-import tensorflow.keras.backend as K
+#import tensorflow.keras.backend as K
 
 from patchwork.feature._generic import GenericExtractor
 from patchwork._util import compute_l2_loss, _compute_alignment_and_uniformity
@@ -22,9 +22,11 @@ def _compute_buffer_gradient(buffer, q, all_logits, adv_tau, weight_decay):
     # I initially misread this equation the paper- the distribution is
     # over query vectors, not negative vectors, so the softmax should be computed
     # along axis 0. [batch_size, K+1]
-    probs = tf.nn.softmax(all_logits[:,1:]/adv_tau, 0)
+    probs = tf.nn.softmax(all_logits/adv_tau, 0)
+    #probs = tf.nn.softmax(all_logits[:,1:]/adv_tau, 0)
     # just the negative probabilities [batch_size, K]
-    negprobs = probs[:,1:]
+    #negprobs = probs[:,1:]
+    negprobs = probs[:,batch_size:]
     # equation 6
     # negprobs^T x q = [K, batch_size] x [batch_size, d] = [K,d]
     adv_gradient = tf.matmul(negprobs, q, transpose_a=True)/(batch_size*adv_tau)
@@ -48,32 +50,42 @@ def _build_adco_training_step(model, mo_model, buffer, opt,
         buff = tf.nn.l2_normalize(buffer, axis=1)
         #buff = buffer
         # create labels ("correct" class is 0)- (N,)
-        labels = tf.zeros((batch_size,), dtype=tf.int32)
+        #labels = tf.zeros((batch_size,), dtype=tf.int32)
+        print("batch comparison labels")
+        labels = tf.range(batch_size, dtype=tf.int64)
         # START SHUFFLE STUFF
         print("EVERY DAY I'M SHUFFLING")
         # compute averaged embeddings. tensor is (N,d)
         # my shot at an alternative to shuffling BN
-        a = int(batch_size/4)
+        #a = int(batch_size/4)
         b = int(batch_size/2)
-        c = int(3*batch_size/4)
+        #c = int(3*batch_size/4)
         
-        print("computing key vectors outside of gradienttape with momentum encoder")
-        k1 = mo_model(tf.concat([img2[:a,:,:,:], img2[c:,:,:,:]], 0),
-                      training=True)
-        k2 = mo_model(img2[a:c,:,:,:], training=True)
-        k = tf.nn.l2_normalize(tf.concat([
-                    k1[:a,:], k2, k1[a:,:]], axis=0
-                ), axis=1)
+        k1 = mo_model(img2[:b,:,:,:], training=True)
+        k2 = mo_model(img2[b:,:,:,:], training=True)
+        #k = tf.nn.l2_normalize(tf.concat([k1,k2], 0), 1)
+        print("using batchnorm trick from momentum^2")
+        foo = tf.nn.l2_normalize(tf.concat([k1,k2], 0), 1)
+        k = tf.nn.l2_normalize(mo_model(img2, training=False), 1)
+        #k1 = mo_model(tf.concat([img2[:a,:,:,:], img2[c:,:,:,:]], 0),
+        #              training=True)
+        #k2 = mo_model(img2[a:c,:,:,:], training=True)
+        #k = tf.nn.l2_normalize(tf.concat([
+        #            k1[:a,:], k2, k1[a:,:]], axis=0
+        #        ), axis=1)
         with tf.GradientTape() as tape:
-            q1 = model(img1[:b,:,:,:], training=True)
-            q2 = model(img1[b:,:,:,:], training=True)
-            q = tf.nn.l2_normalize(tf.concat([q1,q2], 0), axis=1)
+            #q1 = model(img1[:b,:,:,:], training=True)
+            #q2 = model(img1[b:,:,:,:], training=True)
+            #q = tf.nn.l2_normalize(tf.concat([q1,q2], 0), axis=1)
+            # skip shuffle buffer with query network so we don't get any
+            # funny business passing gradients back through the batchnorms
+            q = model(img1, training=True)
+            q = tf.nn.l2_normalize(q, 1)
             # END SHUFFLE STUFF
             
             # compute logits
-            #all_logits = _build_logits(q, k, buff, tape)
-            all_logits = _build_logits(q, k, buff, None)
-            
+            print("including negative comparisons from within the batch")
+            all_logits = _build_logits(q, k, buff, compare_batch=True)
             # compute crossentropy loss
             loss = tf.reduce_mean(
                     tf.nn.sparse_softmax_cross_entropy_with_logits(
@@ -89,17 +101,32 @@ def _build_adco_training_step(model, mo_model, buffer, opt,
         opt.apply_gradients(zip(gradients, variables))
         # also compute the "accuracy"; what fraction of the batch has
         # the key as the largest logit. from figure 2b of the MoCHi paper
+        #nce_batch_accuracy = tf.reduce_mean(tf.cast(tf.argmax(all_logits, 
+        #                                                      axis=1)==0, tf.float32))
         nce_batch_accuracy = tf.reduce_mean(tf.cast(tf.argmax(all_logits, 
-                                                              axis=1)==0, tf.float32))
+                                                              axis=1)==labels, tf.float32))
         
         # ------------- UPDATE BUFFER ----------------
-        buffergrad = _compute_buffer_gradient(buffer, q, all_logits, adv_tau, 
-                                              weight_decay)
-        adv_opt.apply_gradients((buffergrad, buffer))
+        #buffergrad = _compute_buffer_gradient(buffer, q, all_logits, adv_tau, 
+        #                                      weight_decay)
+        print("using autograd for buffer update")
+        with tf.GradientTape() as advtape:
+            buff = tf.nn.l2_normalize(buffer, axis=1)
+            all_logits = _build_logits(q, k, buff, compare_batch=True)
+            adv_loss = -1*tf.reduce_mean(
+                    tf.nn.sparse_softmax_cross_entropy_with_logits(
+                            labels, all_logits/adv_tau))
+            adv_loss += weight_decay*tf.reduce_mean(buffer**2)
+        #adv_opt.apply_gradients(zip([buffergrad], [buffer]))
+        grad = advtape.gradient(adv_loss, [buffer])
+        adv_opt.apply_gradients(zip(grad, [buffer]))
+        #print("extra normalization step on buffer")
+        #buffer.assign(tf.nn.l2_normalize(buffer, axis=1))
         
         outdict["loss"] = loss
         outdict["nce_batch_accuracy"] = nce_batch_accuracy
-        outdict["rms_buffergrad"] = tf.math.sqrt(tf.reduce_mean(buffergrad**2))
+        outdict["foo"] = tf.reduce_mean(foo)
+        #outdict["rms_buffergrad"] = tf.math.sqrt(tf.reduce_mean(buffergrad**2))
         return outdict
     return training_step
 
@@ -168,8 +195,8 @@ class AdversarialContrastTrainer(GenericExtractor):
         
         # if no FCN is passed- build one
         with self.scope():
-            print("low variance initializer")
-            initializer = tf.random_normal_initializer(0., 0.02)
+            #print("low variance initializer")
+            #initializer = tf.random_normal_initializer(0., 0.02)
             if fcn is None:
                 fcn = tf.keras.applications.ResNet50V2(weights=None, include_top=False)
             self.fcn = fcn
@@ -179,13 +206,14 @@ class AdversarialContrastTrainer(GenericExtractor):
             features = fcn(inpt)
             pooled = tf.keras.layers.GlobalAvgPool2D()(features)
             # MoCoV2 paper adds a hidden layer
-            #dense = tf.keras.layers.Dense(num_hidden, activation="relu")(pooled)
-            dense = tf.keras.layers.Dense(num_hidden, kernel_initializer=initializer)(pooled)
+            dense = tf.keras.layers.Dense(num_hidden)(pooled)
+            #dense = tf.keras.layers.Dense(num_hidden, kernel_initializer=initializer)(pooled)
             #print("ADDING BATCHNORM TO PROJECTION HEAD")
             #dense = tf.keras.layers.BatchNormalization()(dense)
             dense = tf.keras.layers.Activation("relu")(dense)
             # end
-            outpt = tf.keras.layers.Dense(output_dim, kernel_initializer=initializer)(dense)
+            #outpt = tf.keras.layers.Dense(output_dim, kernel_initializer=initializer)(dense)
+            outpt = tf.keras.layers.Dense(output_dim)(dense)
             #print("ADDING ONE MORE GODDAMN BATCHNORM")
             #outpt = tf.keras.layers.BatchNormalization()(outpt)
             full_model = tf.keras.Model(inpt, outpt)
@@ -220,11 +248,12 @@ class AdversarialContrastTrainer(GenericExtractor):
         @tf.function
         def momentum_update_step():
             return exponential_model_update(mo_model, full_model, alpha)
+        self._momentum_update_step = momentum_update_step
         # build  and distribute both training steps
         step_fn = _build_adco_training_step(full_model, mo_model, self._buffer,
                                             self._optimizer,
                                             self._adv_optimizer,
-                                            self._buffer, tau=tau,
+                                            tau=tau,
                                             adv_tau=adv_tau,
                                             weight_decay=weight_decay)
         
@@ -277,27 +306,29 @@ class AdversarialContrastTrainer(GenericExtractor):
         """
         
         """
-        if self._adaptive:
-            self._run_adaptive_training_epoch(**kwargs)
+        #if self._adaptive:
+        #    self._run_adaptive_training_epoch(**kwargs)
             
-        else:
-            buffer_hist = np.zeros(self._buffer.shape[0])
-            buffer_hist_counter = 0
+        #else:
+        if True:
+            #buffer_hist = np.zeros(self._buffer.shape[0])
+            #buffer_hist_counter = 0
             for x, y in self._ds:
                 #if self.step % 2 == 0:
                 if True:
+                    self._record_scalars(moco_sq_diff=self._momentum_update_step())
                     losses = self._training_step(x,y)
                     self._record_scalars(**losses)
-                    self._record_scalars(learning_rate=self._get_current_learning_rate())
+                    #self._record_scalars(learning_rate=self._get_current_learning_rate())
                     #_ = self._adv_step(x,y) # REMEMBER TO DELETE THIS IF SWAPPING BACK
                 #else:
-                    losses = self._adv_step(x,y)
+                    #losses = self._adv_step(x,y)
                     #self._record_scalars(mean_adv_gradient_norms=tf.reduce_mean(tf.math.sqrt(tf.reduce_sum(losses["grads"]**2, 1))))
-                    buffer_hist += np.sqrt(tf.reduce_sum(losses["grads"]**2, 1).numpy()/self._buffer.shape[1])
-                    buffer_hist_counter += 1
+                    #buffer_hist += np.sqrt(tf.reduce_sum(losses["grads"]**2, 1).numpy()/self._buffer.shape[1])
+                    #buffer_hist_counter += 1
                     
                 self.step += 1
-            self._record_hists(buffer_log_gradients=np.log10(buffer_hist/buffer_hist_counter+1e-10))
+            #self._record_hists(buffer_log_gradients=np.log10(buffer_hist/buffer_hist_counter+1e-10))
                 
                 
     def pretrain(self, epochs=1, rebuild_buffer_every=1000):
@@ -317,6 +348,7 @@ class AdversarialContrastTrainer(GenericExtractor):
             self.evaluate()
                 
     def _run_adaptive_training_epoch(self, **kwargs):
+        assert False, "deprecated"
         if not hasattr(self, "_adaptive_rolling_mean"):
             self._adaptive_rolling_mean = 0
             

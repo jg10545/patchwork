@@ -66,13 +66,31 @@ def _build_augment_pair_dataset(imfiles, imshape=(256,256), batch_size=256,
     return ds
 
 
-def _build_logits(q, k, buffer, tape, N=0, s=0, s_prime=0, margin=0):
+def _build_logits(q, k, buffer, N=0, s=0, s_prime=0, margin=0, compare_batch=False):
     """
     Compute logits for momentum contrast, optionally including MoCHi
     hard negatives
+    
+    :q: [batch_size, embed_dim] embeddings from online model
+    :k: [batch_size, embed_dim] embeddings from momentum encoder
+    :buffer: [embed_dim, buffer_size] negative examples
+    :N: mochi N param
+    :s: mochi s param
+    :s_prime: mochi s_prime param
+    :margin: margin parameter from EqCo paper
+    :compare_batch: if True, include pairwise comparisons between q and k
+        across batch
+        
+    Returns
+    :logits: [batch_size, buffer_size+1] if compare_batch is False
+        [batch_size, batch_size+buffer_size] if compare_batch is True
     """
-    # compute positive logits- (batch_size,1)
-    positive_logits = tf.squeeze(
+    if compare_batch:
+        assert margin==0, "NOT IMPLEMENTED"
+        positive_logits = tf.matmul(q, k, transpose_b=True)
+    else:
+        # compute positive logits- (batch_size,1)
+        positive_logits = tf.squeeze(
                 tf.matmul(tf.expand_dims(q,1), 
                       tf.expand_dims(k,1), transpose_b=True),
                 axis=-1) - margin
