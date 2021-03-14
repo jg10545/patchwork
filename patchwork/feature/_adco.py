@@ -195,8 +195,6 @@ class AdversarialContrastTrainer(GenericExtractor):
         
         # if no FCN is passed- build one
         with self.scope():
-            #print("low variance initializer")
-            #initializer = tf.random_normal_initializer(0., 0.02)
             if fcn is None:
                 fcn = tf.keras.applications.ResNet50V2(weights=None, include_top=False)
             self.fcn = fcn
@@ -207,15 +205,8 @@ class AdversarialContrastTrainer(GenericExtractor):
             pooled = tf.keras.layers.GlobalAvgPool2D()(features)
             # MoCoV2 paper adds a hidden layer
             dense = tf.keras.layers.Dense(num_hidden)(pooled)
-            #dense = tf.keras.layers.Dense(num_hidden, kernel_initializer=initializer)(pooled)
-            #print("ADDING BATCHNORM TO PROJECTION HEAD")
-            #dense = tf.keras.layers.BatchNormalization()(dense)
             dense = tf.keras.layers.Activation("relu")(dense)
-            # end
-            #outpt = tf.keras.layers.Dense(output_dim, kernel_initializer=initializer)(dense)
             outpt = tf.keras.layers.Dense(output_dim)(dense)
-            #print("ADDING ONE MORE GODDAMN BATCHNORM")
-            #outpt = tf.keras.layers.BatchNormalization()(outpt)
             full_model = tf.keras.Model(inpt, outpt)
             mo_model = copy_model(full_model)
         
@@ -258,7 +249,6 @@ class AdversarialContrastTrainer(GenericExtractor):
                                             weight_decay=weight_decay)
         
         self._training_step = self._distribute_training_function(step_fn)
-        #self._adv_step = self._distribute_training_function(adv_step_fn)
         # build evaluation dataset
         if testdata is not None:
             self._test_ds = _build_augment_pair_dataset(testdata, 
@@ -292,12 +282,10 @@ class AdversarialContrastTrainer(GenericExtractor):
         i = 0
         bs = self.input_config["batch_size"]
         K = self.config["negative_examples"]
-        #print("normalizing buffer during prepopulate step")
         while i*bs < K:
             for x,y in self._ds:
                 k = self._models["full"](y, training=True)
                 _ = self._buffer[bs*i:bs*(i+1),:].assign(tf.nn.l2_normalize(k,1))
-                #_ = self._buffer[bs*i:bs*(i+1),:].assign(k,1)
                 i += 1
                 if i*bs >= K:
                     break
@@ -306,29 +294,12 @@ class AdversarialContrastTrainer(GenericExtractor):
         """
         
         """
-        #if self._adaptive:
-        #    self._run_adaptive_training_epoch(**kwargs)
-            
-        #else:
-        if True:
-            #buffer_hist = np.zeros(self._buffer.shape[0])
-            #buffer_hist_counter = 0
-            for x, y in self._ds:
-                #if self.step % 2 == 0:
-                if True:
-                    self._record_scalars(moco_sq_diff=self._momentum_update_step())
-                    losses = self._training_step(x,y)
-                    self._record_scalars(**losses)
-                    #self._record_scalars(learning_rate=self._get_current_learning_rate())
-                    #_ = self._adv_step(x,y) # REMEMBER TO DELETE THIS IF SWAPPING BACK
-                #else:
-                    #losses = self._adv_step(x,y)
-                    #self._record_scalars(mean_adv_gradient_norms=tf.reduce_mean(tf.math.sqrt(tf.reduce_sum(losses["grads"]**2, 1))))
-                    #buffer_hist += np.sqrt(tf.reduce_sum(losses["grads"]**2, 1).numpy()/self._buffer.shape[1])
-                    #buffer_hist_counter += 1
+        for x, y in self._ds:
+            self._record_scalars(moco_sq_diff=self._momentum_update_step())
+            losses = self._training_step(x,y)
+            self._record_scalars(**losses)
                     
-                self.step += 1
-            #self._record_hists(buffer_log_gradients=np.log10(buffer_hist/buffer_hist_counter+1e-10))
+            self.step += 1
                 
                 
     def pretrain(self, epochs=1, rebuild_buffer_every=1000):
