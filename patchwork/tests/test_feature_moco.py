@@ -86,7 +86,7 @@ def test_build_logits_no_mochi():
     q = tf.nn.l2_normalize(np.random.normal(0, 1, size=(batch_size, embed_dim)).astype(np.float32), axis=1)
     k = tf.nn.l2_normalize(np.random.normal(0, 1, size=(batch_size, embed_dim)).astype(np.float32), axis=1)
     buffer = tf.Variable(tf.nn.l2_normalize(np.random.normal(0, 1, size=(K,embed_dim)).astype(np.float32), axis=1))
-    all_logits = _build_logits(q, k, buffer, tf.GradientTape())
+    all_logits = _build_logits(q, k, buffer)
     assert len(all_logits.shape) == 2
     assert all_logits.shape[0] == batch_size
     assert all_logits.shape[1] == K +1
@@ -99,7 +99,7 @@ def test_build_logits_with_margin():
     q = tf.nn.l2_normalize(np.random.normal(0, 1, size=(batch_size, embed_dim)).astype(np.float32), axis=1)
     k = tf.nn.l2_normalize(np.random.normal(0, 1, size=(batch_size, embed_dim)).astype(np.float32), axis=1)
     buffer = tf.Variable(tf.nn.l2_normalize(np.random.normal(0, 1, size=(K,embed_dim)).astype(np.float32), axis=1))
-    all_logits = _build_logits(q, k, buffer, tf.GradientTape(), margin=100)
+    all_logits = _build_logits(q, k, buffer, margin=100)
     assert len(all_logits.shape) == 2
     assert all_logits.shape[0] == batch_size
     assert all_logits.shape[1] == K +1
@@ -115,8 +115,7 @@ def test_build_logits_with_mochi():
     q = tf.nn.l2_normalize(np.random.normal(0, 1, size=(batch_size, embed_dim)).astype(np.float32), axis=1)
     k = tf.nn.l2_normalize(np.random.normal(0, 1, size=(batch_size, embed_dim)).astype(np.float32), axis=1)
     buffer = tf.Variable(tf.nn.l2_normalize(np.random.normal(0, 1, size=(K,embed_dim)).astype(np.float32), axis=1))
-    with tf.GradientTape() as tape:
-        all_logits = _build_logits(q, k, buffer, tape, N, s)
+    all_logits = _build_logits(q, k, buffer, N, s)
     assert len(all_logits.shape) == 2
     assert all_logits.shape[0] == batch_size
     assert all_logits.shape[1] == K +1 + s
@@ -132,8 +131,7 @@ def test_build_logits_with_mochi_and_query_mixing():
     q = tf.nn.l2_normalize(np.random.normal(0, 1, size=(batch_size, embed_dim)).astype(np.float32), axis=1)
     k = tf.nn.l2_normalize(np.random.normal(0, 1, size=(batch_size, embed_dim)).astype(np.float32), axis=1)
     buffer = tf.Variable(tf.nn.l2_normalize(np.random.normal(0, 1, size=(K,embed_dim)).astype(np.float32), axis=1))
-    with tf.GradientTape() as tape:
-        all_logits = _build_logits(q, k, buffer, tape, N, s, s_prime)
+    all_logits = _build_logits(q, k, buffer, N, s, s_prime)
     assert len(all_logits.shape) == 2
     assert all_logits.shape[0] == batch_size
     assert all_logits.shape[1] == K +1 + s + s_prime
@@ -150,8 +148,23 @@ def test_build_logits_with_mochi_and_more_samples_than_N():
     q = tf.nn.l2_normalize(np.random.normal(0, 1, size=(batch_size, embed_dim)).astype(np.float32), axis=1)
     k = tf.nn.l2_normalize(np.random.normal(0, 1, size=(batch_size, embed_dim)).astype(np.float32), axis=1)
     buffer = tf.Variable(tf.nn.l2_normalize(np.random.normal(0, 1, size=(K,embed_dim)).astype(np.float32), axis=1))
-    with tf.GradientTape() as tape:
-        all_logits = _build_logits(q, k, buffer, tape, N, s, s_prime)
+    all_logits = _build_logits(q, k, buffer, N, s, s_prime)
     assert len(all_logits.shape) == 2
     assert all_logits.shape[0] == batch_size
     assert all_logits.shape[1] == K +1 + s + s_prime
+    
+    
+    
+def test_build_logits_with_batch_comparison():
+    batch_size = 7
+    embed_dim = 5
+    K = 13
+
+    q = tf.nn.l2_normalize(np.random.normal(0, 1, size=(batch_size, embed_dim)).astype(np.float32), axis=1)
+    k = tf.nn.l2_normalize(np.random.normal(0, 1, size=(batch_size, embed_dim)).astype(np.float32), axis=1)
+    buffer = tf.Variable(tf.nn.l2_normalize(np.random.normal(0, 1, size=(K,embed_dim)).astype(np.float32), axis=1))
+    all_logits = _build_logits(q, k, buffer, compare_batch=True)
+    assert len(all_logits.shape) == 2
+    assert all_logits.shape[0] == batch_size
+    assert all_logits.shape[1] == K + batch_size
+    

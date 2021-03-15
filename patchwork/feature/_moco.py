@@ -21,7 +21,7 @@ def copy_model(mod):
     return new_model
 
 
-def exponential_model_update(slow, fast, alpha=0.999):
+def exponential_model_update(slow, fast, alpha=0.999, update_bn=False):
     """
     Update the weights of a "slow" network as a single-exponential 
     average of a "fast" network. Return the sum of squared
@@ -36,6 +36,13 @@ def exponential_model_update(slow, fast, alpha=0.999):
     for s, f in zip(slow.trainable_variables, fast.trainable_variables):
         rolling_sum += tf.reduce_sum(tf.square(s-f))
         s.assign(alpha*s + (1-alpha)*f)
+        
+    if update_bn:
+        for s,f in zip(slow.variables, fast.variables):
+            # looking for names like 'conv5_block1_0_bn_1/moving_mean:0' and
+            # 'conv5_block3_3_bn_1/moving_variance:0'
+            if ("bn" in s.name)&("moving" in s.name):
+                s.assign(alpha*s + (1-alpha)*f)
     return rolling_sum
 
 

@@ -47,86 +47,52 @@ def _build_adco_training_step(model, mo_model, buffer, opt,
         print("tracing training step")
         batch_size = img1.shape[0]
         outdict = {}
-        buff = tf.nn.l2_normalize(buffer, axis=1)
-        #buff = buffer
-        # create labels ("correct" class is 0)- (N,)
-        #labels = tf.zeros((batch_size,), dtype=tf.int32)
-        print("batch comparison labels")
+        # batch comparison labels
         labels = tf.range(batch_size, dtype=tf.int64)
-        # START SHUFFLE STUFF
-        print("EVERY DAY I'M SHUFFLING")
-        # compute averaged embeddings. tensor is (N,d)
-        # my shot at an alternative to shuffling BN
-        #a = int(batch_size/4)
-        b = int(batch_size/2)
-        #c = int(3*batch_size/4)
-        
-        k1 = mo_model(img2[:b,:,:,:], training=True)
-        k2 = mo_model(img2[b:,:,:,:], training=True)
-        #k = tf.nn.l2_normalize(tf.concat([k1,k2], 0), 1)
-        print("using batchnorm trick from momentum^2")
-        foo = tf.nn.l2_normalize(tf.concat([k1,k2], 0), 1)
+        _ = mo_model(img2, training=True)
+        # Compute key vectors and normalize
         k = tf.nn.l2_normalize(mo_model(img2, training=False), 1)
-        #k1 = mo_model(tf.concat([img2[:a,:,:,:], img2[c:,:,:,:]], 0),
-        #              training=True)
-        #k2 = mo_model(img2[a:c,:,:,:], training=True)
-        #k = tf.nn.l2_normalize(tf.concat([
-        #            k1[:a,:], k2, k1[a:,:]], axis=0
-        #        ), axis=1)
-        with tf.GradientTape() as tape:
-            #q1 = model(img1[:b,:,:,:], training=True)
-            #q2 = model(img1[b:,:,:,:], training=True)
-            #q = tf.nn.l2_normalize(tf.concat([q1,q2], 0), axis=1)
-            # skip shuffle buffer with query network so we don't get any
-            # funny business passing gradients back through the batchnorms
+
+        # start recording gradients both for the query network and the 
+        # negative examples
+        with tf.GradientTape() as tape, tf.GradientTape() as adv_tape:
+            # pass query images through model and normalize
             q = model(img1, training=True)
             q = tf.nn.l2_normalize(q, 1)
-            # END SHUFFLE STUFF
-            
             # compute logits
-            print("including negative comparisons from within the batch")
+            buff = tf.nn.l2_normalize(buffer, axis=1) 
             all_logits = _build_logits(q, k, buff, compare_batch=True)
-            # compute crossentropy loss
+            # --------------- MODEL LOSS --------------------
             loss = tf.reduce_mean(
                     tf.nn.sparse_softmax_cross_entropy_with_logits(
                             labels, all_logits/tau))
-                        
+            # --------------- ADVERSARIAL LOSS --------------------
+            adv_loss = -1*tf.reduce_mean(
+                    tf.nn.sparse_softmax_cross_entropy_with_logits(
+                            labels, all_logits/adv_tau))
+            # --------------- WEIGHT DECAY --------------------          
             if weight_decay > 0:
                 l2_loss = compute_l2_loss(model)
                 outdict["l2_loss"] = l2_loss
                 loss += weight_decay*l2_loss
+                
+                adv_loss += weight_decay*tf.reduce_mean(buffer**2)
+                
         # ------------- UPDATE MODEL ----------------
         variables = model.trainable_variables
         gradients = tape.gradient(loss, variables)
         opt.apply_gradients(zip(gradients, variables))
         # also compute the "accuracy"; what fraction of the batch has
         # the key as the largest logit. from figure 2b of the MoCHi paper
-        #nce_batch_accuracy = tf.reduce_mean(tf.cast(tf.argmax(all_logits, 
-        #                                                      axis=1)==0, tf.float32))
         nce_batch_accuracy = tf.reduce_mean(tf.cast(tf.argmax(all_logits, 
                                                               axis=1)==labels, tf.float32))
         
         # ------------- UPDATE BUFFER ----------------
-        #buffergrad = _compute_buffer_gradient(buffer, q, all_logits, adv_tau, 
-        #                                      weight_decay)
-        print("using autograd for buffer update")
-        with tf.GradientTape() as advtape:
-            buff = tf.nn.l2_normalize(buffer, axis=1)
-            all_logits = _build_logits(q, k, buff, compare_batch=True)
-            adv_loss = -1*tf.reduce_mean(
-                    tf.nn.sparse_softmax_cross_entropy_with_logits(
-                            labels, all_logits/adv_tau))
-            adv_loss += weight_decay*tf.reduce_mean(buffer**2)
-        #adv_opt.apply_gradients(zip([buffergrad], [buffer]))
-        grad = advtape.gradient(adv_loss, [buffer])
-        adv_opt.apply_gradients(zip(grad, [buffer]))
-        #print("extra normalization step on buffer")
-        #buffer.assign(tf.nn.l2_normalize(buffer, axis=1))
+        adv_grad = adv_tape.gradient(adv_loss, [buffer])
+        adv_opt.apply_gradients(zip(adv_grad, [buffer]))
         
         outdict["loss"] = loss
         outdict["nce_batch_accuracy"] = nce_batch_accuracy
-        outdict["foo"] = tf.reduce_mean(foo)
-        #outdict["rms_buffergrad"] = tf.math.sqrt(tf.reduce_mean(buffergrad**2))
         return outdict
     return training_step
 
@@ -238,7 +204,7 @@ class AdversarialContrastTrainer(GenericExtractor):
         # build update step for momentum contrast update
         @tf.function
         def momentum_update_step():
-            return exponential_model_update(mo_model, full_model, alpha)
+            return exponential_model_update(mo_model, full_model, alpha, update_bn=False)
         self._momentum_update_step = momentum_update_step
         # build  and distribute both training steps
         step_fn = _build_adco_training_step(full_model, mo_model, self._buffer,
@@ -266,7 +232,7 @@ class AdversarialContrastTrainer(GenericExtractor):
         # parse and write out config YAML
         self._parse_configs(augment=augment, 
                             negative_examples=negative_examples,
-                            tau=tau, adv_tau=adv_tau, 
+                            tau=tau, adv_tau=adv_tau, alpha=alpha,
                             output_dim=output_dim, num_hidden=num_hidden,
                             weight_decay=weight_decay,
                             lr=lr, adv_lr=adv_lr,  lr_decay=lr_decay,
@@ -295,58 +261,16 @@ class AdversarialContrastTrainer(GenericExtractor):
         
         """
         for x, y in self._ds:
+            # forward pass to update batchnorms
+            #_ = self._models["momentum_encoder"](tf.concat([x,y],0), training=True)
             self._record_scalars(moco_sq_diff=self._momentum_update_step())
             losses = self._training_step(x,y)
             self._record_scalars(**losses)
+            self._record_scalars(learning_rate=self._get_current_learning_rate())
                     
             self.step += 1
                 
-                
-    def pretrain(self, epochs=1, rebuild_buffer_every=1000):
-        """
-        EXPERIMENTAL
-        """
-        for e in tqdm(range(epochs)):
-            # run only main training step
-            for x,y in self._ds:
-                losses = self._training_step(x,y)
-                self._record_scalars(**losses)
-                self._record_scalars(learning_rate=self._get_current_learning_rate())
-                self.step += 1
-                
-                if self.step % rebuild_buffer_every == 0:
-                    self._prepopulate_buffer()
-            self.evaluate()
-                
-    def _run_adaptive_training_epoch(self, **kwargs):
-        assert False, "deprecated"
-        if not hasattr(self, "_adaptive_rolling_mean"):
-            self._adaptive_rolling_mean = 0
-            
-        buffer_hist = np.zeros(self._buffer.shape[0])
-        buffer_hist_counter = 0
-        for x,y in self._ds:
-            # if the accuracy is too low, update the feature extractor
-            if self._adaptive_rolling_mean < self._adaptive:
-                losses = self._training_step(x,y)
-                self._record_scalars(**losses)
-                self._record_scalars(update_buffer=0)
-            # if the accuracy is too high, update the buffer of negatives
-            else:
-                losses = self._adv_step(x,y)
-                self._record_scalars(update_buffer=1,
-                                     nce_batch_accuracy=losses["nce_batch_accuracy"])
-                buffer_hist += np.sqrt(tf.reduce_sum(losses["grads"]**2, 1).numpy()/self._buffer.shape[1])
-                buffer_hist_counter += 1
-            nce_acc = losses["nce_batch_accuracy"].numpy()
-            self._adaptive_rolling_mean = 0.9*self._adaptive_rolling_mean +\
-                                            0.1*nce_acc
-            self._record_scalars(adaptive_rolling_mean=self._adaptive_rolling_mean)
-            self._record_hists(buffer_log_gradients=np.log10(buffer_hist/buffer_hist_counter+1e-10))
-            self.step += 1
-                
-            
-            
+
  
     def evaluate(self):
         if self._test:
@@ -368,6 +292,7 @@ class AdversarialContrastTrainer(GenericExtractor):
             if not hasattr(self, "_hparams_config"):
                 from tensorboard.plugins.hparams import api as hp
                 hparams = {
+                    hp.HParam("alpha", hp.RealInterval(0., 10000.)):self.config["alpha"],
                     hp.HParam("tau", hp.RealInterval(0., 10000.)):self.config["tau"],
                     hp.HParam("adv_tau", hp.RealInterval(0., 10000.)):self.config["adv_tau"],
                     hp.HParam("negative_examples", hp.IntInterval(1, 1000000)):self.config["negative_examples"],
