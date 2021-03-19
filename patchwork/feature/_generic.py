@@ -12,7 +12,8 @@ import numpy as np
 
 import tensorflow as tf
 from tqdm import tqdm
-from sklearn.svm import LinearSVC
+#from sklearn.svm import LinearSVC
+from sklearn.linear_model import SGDClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import accuracy_score, confusion_matrix
 from tensorboard.plugins.hparams import api as hp
@@ -73,7 +74,7 @@ def linear_classification_test(fcn, downstream_labels, avpool=True, rotation_tas
     trainvecs = scaler.transform(trainvecs)
     testvecs = scaler.transform(testvecs)
     # train a multinomial linear classifier
-    logreg = LinearSVC()
+    logreg = SGDClassifier()
     logreg.fit(trainvecs, labels[~split])
     # make predictions on test set
     preds = logreg.predict(testvecs)
