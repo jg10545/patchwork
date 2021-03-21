@@ -82,7 +82,7 @@ def build_training_function(loss_fn, opt, fine_tuning, output, feature_extractor
             # supervised loss function between labels and predictions
             training_loss = loss_fn(y, y_pred)
             
-            if weight_decay > 0:
+            if (weight_decay > 0)&(len(fine_tuning.trainable_variables)>0):
                 l2_loss = compute_l2_loss(fine_tuning)
             else:
                 l2_loss = 0

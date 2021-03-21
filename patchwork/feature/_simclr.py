@@ -105,7 +105,7 @@ def _build_embedding_model(fcn, imshape, num_channels, num_hidden, output_dim):
     net = tf.keras.layers.BatchNormalization()(net)
     net = tf.keras.layers.Activation("relu")(net)
     net = tf.keras.layers.Dense(output_dim, use_bias=False)(net)
-    net = tf.keras.layers.BatchNormalization()(net)
+    #net = tf.keras.layers.BatchNormalization()(net)
     embedding_model = tf.keras.Model(inpt, net)
     return embedding_model
 

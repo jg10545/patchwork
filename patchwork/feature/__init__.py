@@ -6,3 +6,4 @@ from patchwork.feature._autoencoder import AutoEncoderTrainer
 from patchwork.feature._multitask import MultiTaskTrainer
 from patchwork.feature._moco import MomentumContrastTrainer
 from patchwork.feature._byol import BYOLTrainer
+from patchwork.feature._hcl import HCLTrainer
