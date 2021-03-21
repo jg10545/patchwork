@@ -34,7 +34,7 @@ def _run_this_epoch(flag, e):
         return flag
     else:
         if e > 0:
-            return flag%e ==0 
+            return e%flag == 0  
         else:
             return False
 
@@ -185,21 +185,25 @@ class GenericExtractor(object):
         # REPLACE THIS WHEN SUBCLASSING
         return True
     
-    def fit(self, epochs=1, save=True, evaluate=True, save_projections=False,
-            visualize_kernels=False, avpool=True):
+    def fit(self, epochs=1, avpool=True, save=True, evaluate=True, 
+            save_projections=False,
+            visualize_kernels=False, log_fcn=False):
         """
-        Train the feature extractor. All kwargs after "epochs" can either be
+        Train the feature extractor. All kwargs after "avpool" can either be
         Boolean (whether to run after every epoch) or an integer (run after
         every N epochs)
         
         :epochs: number of epochs to train for
+        :avpool: if True, use average-pooled features for linear classifications
+            during the evaluation step. if False, flatten the features.
         :save: save every model in the trainer
         :evaluate: run eval metrics
         :save_projections: record projections from labeldict
         :visualize_kernels: record a visualization of the first convolutional
             layer's kernels
-        :avpool: if True, use average-pooled features for linear classifications
-            during the evaluation step. if False, flatten the features.
+        :log_fcn: log a copy of the FCN with the epoch number so it won't be 
+            overwritten
+        
         """
         for e in tqdm(range(epochs)):
             self._run_training_epoch()
@@ -212,6 +216,8 @@ class GenericExtractor(object):
                 self.save_projections()
             if _run_this_epoch(visualize_kernels,e):
                 self.visualize_kernels()
+            if _run_this_epoch(log_fcn, e):
+                self._log_fcn(e)
     
     def save(self):
         """
@@ -225,6 +231,13 @@ class GenericExtractor(object):
         for m in self._models:
             path = os.path.join(self.logdir, m+".h5")
             self._models[m].save(path, overwrite=True, save_format="h5")
+            
+    def _log_fcn(self, e):
+        """
+        Write the FCN to disk with 'e' appended
+        """
+        path = os.path.join(self.logdir, f"fcn_{e}.h5")
+        self._models["fcn"].save(path, save_format="h5")
             
     def evaluate(self):
         # REPLACE THIS WHEN SUBCLASSING
