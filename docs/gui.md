@@ -93,13 +93,12 @@ Once you've got some images labeled, design a model.
   * Convnet: a configurable convolutional neural network with ReLU activations and a global max or average pool at the end.
 * **Output-model:**  inputs feature vector and returns class probabilities.
   * Sigmoid: Output a logistic function and train with (masked) cross-entropy loss. Label smoothing is a standard cheap regularization technique- using a value of 0.1 will change a label of 1 to a label of 0.95 for training purposes.
-  * Cosine outputs are also available- while they've produced impressive results in low-shot multiclass problems, I don't find that I'm getting impressive results on single-class multilabel problems. Your mileage may vary. Trains with (masked) mean average error loss.
   * Focal Loss: still using sigmoid outputs, but training under [focal loss](https://arxiv.org/abs/1708.02002) to place more emphasis on hard examples.
-* **Semi-supervised learning:** during training, these techniques will add an additional loss on batches of unlabeled images. **Right now patchwork can only apply one at a time. So your value for the other should be zero.**
-  * Entropy regularization: (excellent review paper [here](http://papers.nips.cc/paper/7585-realistic-evaluation-of-de))Bias the decision boundary toward confident predictions by penalizing the output entropy on unlabeled images. 
-  * Mean Teacher: ([paper here](https://arxiv.org/abs/1703.01780)) this is *consistency regularization;* it penalizes differing outputs from different runs through a stochastic network (so make sure you're using this with dropout).
+* **Semi-supervised learning:** during training, these techniques will add an additional loss on batches of unlabeled images. The [FixMatch algorithm](https://arxiv.org/abs/2001.07685) is used for semi-supervised training (modified for multihot outputs).
+  * FixMatch applies strong regularization- the GUI object has a `strong_aug` kwarg you can use to customize this.
+  * There are three hyperparameters to set- `lambda` is the weight applied to FixMatch loss (0 to disable), `tau` sets the confidence that the model has to have on an example before it applies the loss (so for `tau=0.95` only model predictions above 0.95 or below 0.05 are applied), and `mu` is a batch size multiplier (so for `batch_size=32` and `mu=4`, each step will include a minibatch of 128 unlabeled patches).
 
-I recommend starting with Global Pooling/maxpool for the fine-tuning network, sigmoid output with label smoothing, and no semi-supervised learning to build a quick benchmark model- then iterate using the model's weak points.
+I recommend starting with Global Pooling/maxpool for the fine-tuning network, sigmoid output with normalization or label smoothing, and no semi-supervised learning to build a quick benchmark model- then iterate using the model's weak points.
 
 ![](gui_model.png)
 
