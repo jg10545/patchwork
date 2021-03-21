@@ -9,14 +9,16 @@ The `patchwork.feature` module has several models implemented for unsupervised o
   * nonlinear projection head from [MocoV2](https://arxiv.org/abs/2003.04297)
   * option to modify noise-contrastive loss function using margin term from [EqCo](https://arxiv.org/abs/2010.01929)
   * option to generate synthetic hard examples on-the-fly using [MoCHi](https://arxiv.org/abs/2010.01028)
+* [HCL](https://arxiv.org/abs/2010.04592) (along with multi-GPU implementation)
 
-The module has a class to manage the training of each model. You can initialize the trainer with a fully-convolutional `keras` model for it to train (otherwise it will use a default model). The trainers are meant to be as similar as possible, to make it easy to throw different self-supervision approches at your problem and see how they compare. Here's what they have in common:
+The module has a class to manage the training of each model. The trainers are meant to be as similar as possible, to make it easy to throw different self-supervision approches at your problem and see how they compare. Here's what they have in common:
 
 ### Building
 
 * Each feature extractor training class shares common [input pipeline and augmentation parameters](input_aug.md).
 * Choose between `adam` and `momentum` optimizers, with no learning rate decay, or `exponential` (smooth exponential decay), `staircase` (LR cut in half every `lr_decay` steps), or `cosine` decay.
 * Call `trainer.load_weights()` to import weights of all the training components from a previous run
+* Each is initialized with a fully-convolutional `tf.keras.Model` object (some come with a default model)
 
 ### Benchmarking
 
@@ -74,9 +76,12 @@ trainfiles = [x.strip() for x in open("mytrainfiles.txt").readlines()]
 testfiles = [x.strip() for x in open("mytestfiles.txt").readlines()]
 labeldict = json.load(open("dictionary_mapping_some_images_to_labels.json"))
 
+# pick a place to save models and tensorboard logs
+log_dir = "/path/to/my/log_dir/"
+
 # initialize trainer and train
 trainer = pw.feature.ContextEncoderTrainer(
-    "logs/",
+    log_dir,
     trainfiles,
     testdata=testfiles,
     num_parallel_calls=6,
@@ -121,9 +126,12 @@ labeldict = json.load(open("dictionary_mapping_some_images_to_labels.json"))
 # initialize a feature extractor
 fcn = patchwork.feature.BNAlexNetFCN()
 
+# pick a place to save models and tensorboard logs
+log_dir = "/path/to/my/log_dir/"
+
 # train
 dctrainer = pw.feature.DeepClusterTrainer(
-        "logs/",
+        log_dir,
         fcn=fcn,
         trainingdata=trainfiles,
         augment=True, # or pass a dict of aug parameters here
@@ -147,6 +155,8 @@ dctrainer.fit(10)
         
 
 ## SimCLR
+
+*Note: this trainer is redundant with the `HCLTrainer` so I plan on deprecating it.*
 
 `patchwork` contains a TensorFlow implementation of the algorithm in Chen *et al*'s [A Simple Framework for Contrastive Learning of Visual Representations](https://arxiv.org/abs/2002.05709). 
 
@@ -184,6 +194,8 @@ aug_params = {'gaussian_blur': 0.25,
 # generally a good idea to visualize what your augmentation is doing
 pw.viz.augplot(trainfiles, aug_params)   
 
+# pick a place to save models and tensorboard logs
+log_dir = "/path/to/my/log_dir/"
 
 # train
 trainer = pw.feature.SimCLRTrainer(
@@ -214,50 +226,7 @@ Note that SimCLR is much more critically dependent on image augmentation for its
     
 ## Distributed Training
 
-I've started adding multi-GPU support; this part of TensorFlow is still evolving so the details may change. The changes to your workflow are pretty minimal:
-
-1. Initialize a "strategy" object from `tf.distribute`
-* Define or load your base feature extractor within `strategy.scope()`
-* Pass the strategy object to the Trainer object
-
-Everything else should work the same. The batch size specified is the **global** batch size. I've only tested with the `MirroredStrategy()` so far.
-
-This functionality is currently only implemented for `SimCLRTrainer` and
-`MultiTaskTrainer`.
-
-```
-# same basic setup as before, but....
-
-strat = tf.distribute.MirroredStrategy()
-
-# check this- it should return the number of GPUs if it's working correctly
-assert strat.num_replicas_in_sync == number_of_gpus_i_was_expecting
-
-with strat.scope():
-    # initialize a new model
-    fcn = tf.keras.applications.ResNet50V2(weights=None, include_top=False)
-    # and/or transfer learn from your last one
-    fcn.load_weights("my_previous_model.h5")
-
-trainer = pw.feature.SimCLRTrainer(
-    logdir,
-    trainfiles,
-    testdata=testfiles,
-    fcn=fcn,
-    num_parallel_calls=6,
-    augment=aug_params,
-    lr=1e-4,
-    lr_decay=0,
-    temperature=0.1,
-    num_hidden=128,
-    output_dim=64,
-    batch_size=32,
-    imshape=(256,256),
-    downstream_labels=downstream_labels,
-    strategy=strat
-)  
-trainer.fit(10) 
-```
+**Update:** don't do distributed training with this trainer. It does not give the full benefit of larger batches for SimCLR (e.g. increased number of negative examples) because each replica only compares against negative examples from within that replica. Use `HCLTrainer` to train SimCLR on a multi-GPU system.
     
               
 ## Momentum Contrast
@@ -294,6 +263,8 @@ aug_params = {'jitter':1,
 # generally a good idea to visualize what your augmentation is doing
 pw.viz.augplot(trainfiles, aug_params)   
 
+# pick a place to save models and tensorboard logs
+log_dir = "/path/to/my/log_dir/"
 
 # train
 trainer = pw.feature..MomentumContrastTrainer(
@@ -318,3 +289,128 @@ trainer = pw.feature..MomentumContrastTrainer(
 
 trainer.fit(10)
 ```
+
+
+
+   
+## HCL
+
+**This trainer requires TensorFlow >= 2.4**
+
+The paper [Contrastive Learning with Hard Negative Samples](https://arxiv.org/abs/2010.04592) modifies SimCLR to better-handle negative examples by attempting to suppress both trivial negatives and false negatives. Their paper reports results on smaller batch sizes than the SimCLR paper, which is great for those of us not working on TPUs. It definitely benefits from bigger batches, however.
+
+### Differences between the paper and `patchwork`
+
+So far I think this one is pretty close to the paper and Robinson *et al*'s [PyTorch code](https://github.com/joshr17/HCL).
+
+### SimCLR is a special case of HCL
+
+The two methods are identical when `beta = 0` and `tau_plus = 0`. My plan is to deprecate the `SimCLRTrainer`.
+
+### Example code
+
+
+```{python}
+import tensorflow as tf
+import patchwork as pw
+
+# load paths to train files
+trainfiles = [x.strip() for x in open("mytrainfiles.txt").readlines()]
+labeldict = json.load(open("dictionary_mapping_some_images_to_labels.json"))
+
+# initialize a feature extractor
+fcn = tf.keras.applications.ResNet50(weights=None, include_top=False)
+
+# choose augmentation parameters
+aug_params = {'jitter':1,
+             'gaussian_blur': 0.25,
+             'flip_left_right': True,
+             'zoom_scale': 0.1,}
+# generally a good idea to visualize what your augmentation is doing
+pw.viz.augplot(trainfiles, aug_params)   
+
+# pick a place to save models and tensorboard logs
+log_dir = "/path/to/my/log_dir/"
+
+# train
+trainer = pw.feature.HCLTrainer(
+        log_dir,
+        trainfiles,
+        testdata=testfiles,
+        fcn=fcn,
+        num_parallel_calls=6,
+        augment=aug_params,
+        opt_type="adam",
+        lr=1e-3,
+        lr_decay=0,
+        weight_decay=1e-6,
+        num_hidden=128,
+        output_dim=64,
+        temperature=0.1,
+        beta=0.5,
+        tau_plus=0.1,
+        batch_size=128, 
+        imshape=(128,128),
+        downstream_labels=labeldict
+    )
+
+trainer.fit(10)
+```
+
+
+## Distributed Training
+
+The `HCLTrainer` always wraps the pieces in a `tf.distribute.Strategy` object, using the default strategy if none is passed to the trainer. The changes to your workflow are pretty minimal:
+
+1. Initialize a "strategy" object from `tf.distribute`
+* Define or load your base feature extractor within `strategy.scope()`
+* Pass the strategy object to the Trainer object
+
+Everything else should work the same. The batch size specified is the **global** batch size. I've only tested with the `MirroredStrategy()` and `OneDeviceStrategy()` so far. 
+
+During training, after embeddings are computed on each GPU's subset of the batch, those embeddings are gathered so that each GPU's subset can contrast with negative samples from the others. This uses `ReplicaContex.all_gather()` which requires TensorFlow 2.4.
+
+```
+# same basic setup as before, but....
+
+strat = tf.distribute.MirroredStrategy()
+
+# check this- it should return the number of GPUs if it's working correctly
+assert strat.num_replicas_in_sync == number_of_gpus_i_was_expecting
+
+with strat.scope():
+    # initialize a new model
+    fcn = tf.keras.applications.ResNet50(weights=None, include_top=False)
+    # and/or transfer learn from your last one
+    fcn.load_weights("my_previous_model.h5")
+
+
+# pick a place to save models and tensorboard logs
+log_dir = "/path/to/my/log_dir/"
+
+# train
+trainer = pw.feature.HCLTrainer(
+        log_dir,
+        trainfiles,
+        testdata=testfiles,
+        fcn=fcn,
+        num_parallel_calls=6,
+        augment=aug_params,
+        opt_type="adam",
+        lr=1e-3,
+        lr_decay=0,
+        weight_decay=1e-6,
+        num_hidden=128,
+        output_dim=64,
+        temperature=0.1,
+        beta=0.5,
+        tau_plus=0.1,
+        batch_size=128, # THIS IS THE GLOBAL BATCH SIZE!
+        imshape=(128,128),
+        downstream_labels=labeldict,
+        strategy=strat
+    )
+
+trainer.fit(10)
+```
+    
