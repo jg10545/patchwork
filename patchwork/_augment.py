@@ -132,10 +132,13 @@ def _random_solarize(x, prob=0.1, **kwargs):
 
 def _random_autocontrast(x, prob=0.1, **kwargs):
     if _choose(prob):
-        channel_mins = tf.expand_dims(tf.expand_dims(tf.reduce_min(x, (0,1)),0),0)
-        shifted = x - channel_mins
-        channel_maxs = tf.expand_dims(tf.expand_dims(tf.reduce_max(shifted, (0,1)),0),0)
-        x = tf.clip_by_value(shifted/(channel_maxs + 0.01), 0, 1)
+        shifted = x - tf.reduce_mean(x)
+        maxval = tf.reduce_max(shifted)
+        x = tf.clip_by_value(shifted/(maxval+0.01), 0, 1)
+        #channel_mins = tf.expand_dims(tf.expand_dims(tf.reduce_min(x, (0,1)),0),0)
+        #shifted = x - channel_mins
+        #channel_maxs = tf.expand_dims(tf.expand_dims(tf.reduce_max(shifted, (0,1)),0),0)
+        #x = tf.clip_by_value(shifted/(channel_maxs + 0.01), 0, 1)
     return x
 
 def _random_zoom(x, scale=0.1, imshape=(256,256), **kwargs):
