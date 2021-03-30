@@ -20,6 +20,24 @@ def _build_negative_indices(batch_size):
         
     return indices
 
+
+def _compute_hcl_softmax_probs(pos_exp, neg, temp, beta, tau_plus):
+    gbs = neg.shape[0]
+    N = 2*gbs - 2
+    # importance sampling weights: shape (gbs, gbs-2)
+    imp = tf.exp(beta*neg)
+    # partition function: shape (gbs,)
+    Z = tf.reduce_mean(imp, -1)
+    # reweighted negative logits using importance sampling: shape (gbs,)
+    reweight_neg = tf.reduce_sum(imp*tf.exp(neg),-1)/Z
+    #
+    Ng = (reweight_neg - tau_plus*N*pos_exp)/(1-tau_plus)
+    # constrain min value
+    Ng = tf.maximum(Ng, N*tf.exp(-1/temp))
+    # manually compute softmax
+    softmax_prob = pos_exp/(pos_exp+Ng)
+    return softmax_prob
+
 def _build_trainstep(model, optimizer, strategy, temp=1, tau_plus=0, beta=0, weight_decay=0):
     """
     Build a distributed training step for SimCLR or HCL.
@@ -55,8 +73,11 @@ def _build_trainstep(model, optimizer, strategy, temp=1, tau_plus=0, beta=0, wei
         
             # positive logits: just the dot products between corresponding pairs
             # shape (gbs,)
-            pos = tf.exp(tf.reduce_sum(z1*z2, -1)/temp)
+            # CHANGING FOR CONSISTENCY
+            #pos = tf.exp(tf.reduce_sum(z1*z2, -1)/temp)
+            pos = tf.reduce_sum(z1*z2, -1)/temp
             pos = tf.concat([pos,pos], 0) # from HCL code- line 38 in main.py. shape (2gbs,)
+            pos_exp = tf.exp(pos)
             #print("pos:", pos.shape)
             z = tf.concat([z1,z2],0)
             # negative samples- first find all pairwise combinations
@@ -68,25 +89,27 @@ def _build_trainstep(model, optimizer, strategy, temp=1, tau_plus=0, beta=0, wei
             gbs = z1.shape[0]
             #print("global batch size:", gbs)
             neg_indices = _build_negative_indices(gbs)
-            neg = tf.gather_nd(s, neg_indices)
+            # not in paper pseudocode or equation, but actual code includes
+            # temperature scaling in importance-sampled sum
+            neg = tf.gather_nd(s, neg_indices)/temp
+            # convert negatives to logits
+            # shape (gbs, gbs-2)
+            neg_exp = tf.exp(neg)
             #print("neg:", neg.shape)
             
             # COMPUTE BATCH ACCURACY
-            biggest_neg = tf.reduce_max(tf.exp(neg/temp), -1)
-            nce_batch_acc = tf.reduce_mean(tf.cast(pos > biggest_neg, tf.float32))
+            biggest_neg = tf.reduce_max(neg_exp, -1)
+            nce_batch_acc = tf.reduce_mean(tf.cast(pos_exp > biggest_neg, tf.float32))
             
             # SIMCLR CASE
             if (tau_plus == 0)&(beta == 0):
-                # convert negatives to logits
-                # shape (gbs, gbs-2)
-                neg = tf.exp(neg/temp)
-                #print("neg:", neg.shape)
                 # manually compute softmax. shape (gbs,)
-                softmax_prob = pos/(pos + tf.reduce_sum(neg, -1))
+                softmax_prob = pos_exp/(pos_exp + tf.reduce_sum(neg_exp, -1))
             # HCL CASE (M=1)
             else:
                 #N = 2*batch_size - 2
                 N = 2*gbs - 2
+                """
                 # importance sampling weights: shape (gbs, gbs-2)
                 imp = tf.exp(beta*neg)
                 # partition function: shape (gbs,)
@@ -99,6 +122,9 @@ def _build_trainstep(model, optimizer, strategy, temp=1, tau_plus=0, beta=0, wei
                 Ng = tf.maximum(Ng, N*tf.exp(-1/temp))
                 # manually compute softmax
                 softmax_prob = pos/(pos+Ng)
+                """
+                softmax_prob = _compute_hcl_softmax_probs(pos_exp, neg, temp, beta,
+                                                          tau_plus)
                 
             softmax_loss = tf.reduce_mean(-1*tf.math.log(softmax_prob))
             loss += softmax_loss

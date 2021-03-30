@@ -211,7 +211,7 @@ class GenericExtractor(object):
             if _run_this_epoch(save, e):
                 self.save()
             if _run_this_epoch(evaluate, e):
-                self.evaluate()
+                self.evaluate(avpool=avpool)
             if _run_this_epoch(save_projections, e):
                 self.save_projections()
             if _run_this_epoch(visualize_kernels,e):
