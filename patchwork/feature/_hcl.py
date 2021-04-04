@@ -415,6 +415,8 @@ class HCLTrainer(GenericExtractor):
                 from tensorboard.plugins.hparams import api as hp
                 hparams = {
                     hp.HParam("temperature", hp.RealInterval(0., 10000.)):self.config["temperature"],
+                    hp.HParam("beta", hp.RealInterval(0., 10000.)):self.config["beta"],
+                    hp.HParam("tau_plus", hp.RealInterval(0., 10000.)):self.config["tau_plus"],
                     hp.HParam("num_hidden", hp.IntInterval(1, 1000000)):self.config["num_hidden"],
                     hp.HParam("output_dim", hp.IntInterval(1, 1000000)):self.config["output_dim"],
                     hp.HParam("lr", hp.RealInterval(0., 10000.)):self.config["lr"],
