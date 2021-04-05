@@ -29,7 +29,7 @@ def test_get_grid_segments():
     
 def test_segment_aug_without_resize(test_png_path):
     num_samples = 5
-    augment = {"flip_left_right":True, "zoom_scale":0.1, "shear":0.2}
+    augment = {"flip_left_right":True, "zoom_scale":0.9, "shear":0.2}
     img = np.array(Image.open(test_png_path)).astype(np.float32)/255
     segs = _get_segments(img, 10, num_samples)
     
@@ -43,7 +43,7 @@ def test_segment_aug_without_resize(test_png_path):
 def test_segment_aug_with_resize(test_png_path):
     num_samples = 5
     outputsize = (7,11)
-    augment = {"flip_left_right":True, "zoom_scale":0.1, "shear":0.2}
+    augment = {"flip_left_right":True, "zoom_scale":0.9, "shear":0.2}
     img = np.array(Image.open(test_png_path)).astype(np.float32)/255
     segs = _get_segments(img, 10, num_samples)
     

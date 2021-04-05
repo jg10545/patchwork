@@ -28,6 +28,9 @@ def detcon_input_pipeline(imfiles, augment, mean_scale=1000, num_samples=16,
     N = len(imfiles)
     not_enough_segs_count = 0
     skipped_for_bad_segmentation = 0
+    
+    aug2 = {k:augment[k] for k in augment if k not in SEG_AUG_FUNCTIONS}
+    _aug = augment_function(imshape, aug2)
 
     progressbar = tqdm(total=N)
     # for each image
@@ -55,8 +58,7 @@ def detcon_input_pipeline(imfiles, augment, mean_scale=1000, num_samples=16,
         
         else:
             # finally, augment images separately
-            aug2 = {k:augment[k] for k in augment if k not in SEG_AUG_FUNCTIONS}
-            _aug = augment_function(imshape, aug2)
+            
             img1 = _aug(img1).numpy()
             img2 = _aug(img2).numpy()
             seg1 = seg1.numpy()
