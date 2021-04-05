@@ -2,96 +2,19 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 import tensorflow as tf
-import skimage.segmentation
 
-import warnings
 
-from patchwork.feature._generic import GenericExtractor
 from patchwork._util import compute_l2_loss, _compute_alignment_and_uniformity
-
+from patchwork._augment import augment_function
 from patchwork.feature._hcl import _simclr_softmax_prob, _hcl_softmax_prob
-from patchwork._augment import SINGLE_AUG_FUNC, augment_function
+
 from patchwork.loaders import _image_file_dataset
 
-
-SEG_AUG_FUNCTIONS = ["flip_left_right", "flip_up_down", "rot90", "shear", "zoom_scale", "center_zoom_scale"]
-
-
-def _get_segments(img, mean_scale=1000, num_samples=16):
-    """
-    :img:
-    :mean_scale:
-    :num_samples:
-    """
-    # randomly choose the segmentation scale
-    scale = np.random.uniform(0.5*mean_scale, 1.5*mean_scale)
-    # run heuristic segmentation
-    segments = skimage.segmentation.felzenszwalb(img, scale=scale, 
-                                                 min_size=int(scale))
-    # sample a set of segmentations to use; bias toward larger ones
-    max_segment = segments.max()
-    indices = np.arange(max_segment+1)
-    seg_count = np.array([(segments == i).sum()+1 for i in indices])
-    p = seg_count/seg_count.sum()
-    # try this for error correction?
-    if num_samples <= max_segment:
-        sampled_indices = np.random.choice(indices, p=p, size=num_samples, 
-                                           replace=False)
-    else:
-        warnings.warn("not enough unique segments; sampling WITH replacement")
-        sampled_indices = np.random.choice(indices, size=num_samples, replace=True)
-    # build normalized segment occupancy masks for each segment we choose
-    seg_tensor = np.stack([(segments == i)/seg_count[i] for i in sampled_indices],
-                          -1).astype(np.float32)
-    return seg_tensor
-
-def _get_grid_segments(imshape, gridsize=4):
-    h,w = imshape
-    seg = np.zeros((h,w, gridsize**2), dtype=np.int64)
-
-    index = 0
-    dy = int(h/gridsize)
-    dx = int(w/gridsize)
-    for i in range(gridsize):
-        for j in range(gridsize):
-            seg[i*dy:(i+1)*dy, j*dx:(j+1)*dx,index] = 1
-            index += 1
-    return seg
-
-def _segment_aug(img, seg, aug, outputsize=None):
-    """
-    """
-    num_channels = img.shape[-1]
-    imshape = (img.shape[0], img.shape[1])
-    x = tf.concat([img, seg], -1)
-
-    for f in SEG_AUG_FUNCTIONS:
-        if f in aug:
-            x = SINGLE_AUG_FUNC[f](x, aug[f], imshape=imshape)
-        
-    img_aug = x[:,:,:num_channels]
-    seg_aug = x[:,:,num_channels:]
-    
-    if outputsize is not None:
-        seg_aug = tf.image.resize(seg_aug, outputsize, method="area")
-    # normalize segments
-    norm = tf.expand_dims(tf.expand_dims(tf.reduce_sum(seg_aug, [0,1]),0),0)
-    seg_aug /= (norm+1e-8)
-        
-    return img_aug, seg_aug
-
-def _filter_out_bad_segments(img1, seg1, img2, seg2):
-    """
-    It's possible for shearing or scaling augmentation to sample
-    one segment completely out of the image- use this function
-    to filter out those cases
-    """
-    minval = tf.reduce_min(tf.reduce_sum(seg1, [0,1])*tf.reduce_sum(seg2, [0,1]))
-    if minval < 0.5:
-        warnings.warn("filtering bad segment")
-        return False
-    else:
-        return True
+from patchwork.feature._generic import GenericExtractor
+from patchwork.feature._moco import _build_augment_pair_dataset
+from patchwork.feature._detcon_utils import _get_segments, _get_grid_segments
+from patchwork.feature._detcon_utils import _segment_aug, _filter_out_bad_segments
+from patchwork.feature._detcon_utils import _prepare_embeddings, SEG_AUG_FUNCTIONS
     
     
 def _build_segment_pair_dataset(imfiles, mean_scale=1000, num_samples=16, outputsize=None,
@@ -127,7 +50,7 @@ def _build_segment_pair_dataset(imfiles, mean_scale=1000, num_samples=16, output
             return x, segments
     # or using a grid
     else:
-        seg = _get_grid_segments(imshape, gridsize=4)
+        seg = _get_grid_segments(imshape, num_samples=num_samples)
         def _segment(x):
             return x, seg
         
@@ -160,22 +83,7 @@ def _build_segment_pair_dataset(imfiles, mean_scale=1000, num_samples=16, output
     return ds
 
 
-def _prepare_embeddings(h, m):
-    """
-    Combine FCN outputs with segmentation masks to build a batch of 
-    mask-pooled hidden vectors. Represents the calculation of h_{m}
-    in the first equation in Henaff et al's paper
-    
-    :h: batch of embeddings; (N,w,h,d)
-    :m: batch of NORMALIZED segmentation tensors; (N,w,h,num_samples)
-    
-    Returns a tensor of shape (N*num_samples, d)
-    """
-    d = h.shape[-1]
-    h = tf.expand_dims(h, 4)
-    m = tf.expand_dims(m, 3)
-    hm = tf.reduce_mean(h*m, [1,2])
-    return tf.reshape(hm, [-1, d])
+
 
 
 def _build_trainstep(fcn, projector, optimizer, strategy, temp=1, tau_plus=0, beta=0, weight_decay=0):
@@ -348,14 +256,14 @@ class DetConTrainer(GenericExtractor):
         
         self._models = {"fcn":fcn, 
                         "projector":projector,
-                        "full":net}
+                        "full":full}
         
         # build training dataset
         # we need to find the output size of the FCN
         mock_input = np.zeros((1,imshape[0], imshape[1], num_channels), dtype=np.float32)
         outshp = fcn(mock_input).shape # should be rank-4: (1,h,w,d)
         
-        ds = _build_segment_pair_dataset(imfiles, mean_scale=mean_scale, 
+        ds = _build_segment_pair_dataset(trainingdata, mean_scale=mean_scale, 
                                          num_samples=num_samples, 
                                          outputsize=(outshp[1], outshp[2]),
                                          imshape=imshape, batch_size=batch_size,

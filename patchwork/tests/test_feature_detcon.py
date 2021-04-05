@@ -2,10 +2,10 @@
 import numpy as np
 from PIL import Image
 
-from patchwork.feature._detcon import _get_segments, _get_grid_segments
-from patchwork.feature._detcon import _segment_aug, _filter_out_bad_segments
-from patchwork.feature._detcon import _build_segment_pair_dataset, _prepare_embeddings
-
+from patchwork.feature._detcon_utils import _get_segments, _get_grid_segments
+from patchwork.feature._detcon_utils import _segment_aug, _filter_out_bad_segments 
+from patchwork.feature._detcon_utils import _prepare_embeddings
+from patchwork.feature._detcon import _build_segment_pair_dataset
 
 
 def test_get_segments(test_png_path):
@@ -18,7 +18,7 @@ def test_get_segments(test_png_path):
 def test_get_grid_segments():
     H = 12
     W = 16
-    seg = _get_grid_segments((H,W), 4)
+    seg = _get_grid_segments((H,W), 16)
     # check that output has correct dimensions
     assert seg.shape == (H,W,16)
     # correct that all parts of the image are
