@@ -51,7 +51,6 @@ def _get_segments(img, mean_scale=1000, num_samples=16, return_enough_segments=F
     return seg_tensor
 
 def _get_grid_segments(imshape, num_samples=16):
-    assert np.sqrt(num_samples)**2 == num_samples, "num_samples must be a square number for grid segmentation"
     gridsize = int(np.sqrt(num_samples))
     h,w = imshape
     seg = np.zeros((h,w, gridsize**2), dtype=np.int64)
@@ -70,7 +69,7 @@ def _segment_aug(img, seg, aug, outputsize=None):
     """
     num_channels = img.shape[-1]
     imshape = (img.shape[0], img.shape[1])
-    x = tf.concat([img, seg], -1)
+    x = tf.concat([img, tf.cast(seg, tf.float32)], -1)
 
     for f in SEG_AUG_FUNCTIONS:
         if f in aug:

@@ -33,8 +33,6 @@ def _build_segment_pair_dataset(imfiles, mean_scale=1000, num_samples=16, output
     """
     print("to do: replace augment=True with a dictionary")
     assert augment, "don't you need to augment your data?"
-    if mean_scale == 0:
-        assert num_samples==16, "grid segmentation requires num_samples=16"
     # build the initial image loader. Dataset yields unbatched images
     ds = _image_file_dataset(imfiles, imshape=imshape, 
                              num_parallel_calls=num_parallel_calls,
@@ -157,8 +155,8 @@ def _build_trainstep(fcn, projector, optimizer, strategy, temp=1, tau_plus=0, be
                "nce_batch_accuracy":nce_batch_acc}
         
     @tf.function
-    def trainstep(x,y):
-        per_example_losses = strategy.run(_step, args=(x,y))
+    def trainstep(x1, m1, x2, m2):
+        per_example_losses = strategy.run(_step, args=(x1, m1, x2, m2))
         lossdict = {k:strategy.reduce(
                     tf.distribute.ReduceOp.MEAN, 
                     per_example_losses[k], axis=None)
