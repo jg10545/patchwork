@@ -13,7 +13,7 @@ from patchwork.loaders import _image_file_dataset
 from patchwork.feature._generic import GenericExtractor
 from patchwork.feature._moco import _build_augment_pair_dataset
 from patchwork.feature._detcon_utils import _get_segments, _get_grid_segments
-from patchwork.feature._detcon_utils import _segment_aug, _filter_out_bad_segments
+from patchwork.feature._detcon_utils import _segment_aug, _prepare_mask
 from patchwork.feature._detcon_utils import _prepare_embeddings, SEG_AUG_FUNCTIONS
 from patchwork._augment import DEFAULT_SIMCLR_PARAMS
     
@@ -66,7 +66,7 @@ def _build_segment_pair_dataset(imfiles, mean_scale=1000, num_samples=16, output
     ds = ds.map(_seg_aug, num_parallel_calls=num_parallel_calls)
     #print("3:", ds)
     # filter out cases where the previous augmentation step creates any empty segments
-    ds = ds.filter(_filter_out_bad_segments)
+    #ds = ds.filter(_filter_out_bad_segments)
     # finally, augment images separately
     aug2 = {k:augment[k] for k in augment if k not in SEG_AUG_FUNCTIONS}
     #print(aug2)
@@ -124,11 +124,17 @@ def _build_trainstep(fcn, projector, optimizer, strategy, temp=1, tau_plus=0, be
             hm2 = _prepare_embeddings(x2, m2)
             z2 = tf.nn.l2_normalize(projector(hm2, training=True), 1)
             
+            # mask out all positive pairs where one mask or the other
+            # is empty
+            mask = tf.stop_gradient(_prepare_mask(m1, m2))
+            
             # aggregate projections across replicas. z1 and z2 should
             # now correspond to the global batch size (gbs*num_samples, d)
             z1 = context.all_gather(z1, 0)
             z2 = context.all_gather(z2, 0)
             print("z1,z2:", z1.shape, z2.shape)
+            mask = context.all_gather(mask, 0)
+            print("mask:", mask.shape)
             
             # SimCLR loss case
             if (tau_plus == 0)&(beta == 0):
@@ -140,7 +146,7 @@ def _build_trainstep(fcn, projector, optimizer, strategy, temp=1, tau_plus=0, be
             else:
                 assert False, "both tau_plus and beta must be nonzero to run HCL"
             
-            softmax_loss = tf.reduce_mean(-1*tf.math.log(softmax_prob))
+            softmax_loss = tf.reduce_mean(-1*mask*tf.math.log(softmax_prob))
             loss += softmax_loss
             
             if weight_decay > 0:
@@ -154,7 +160,8 @@ def _build_trainstep(fcn, projector, optimizer, strategy, temp=1, tau_plus=0, be
         optimizer.apply_gradients(zip(grad, trainvars))
         return {"total_loss":loss, "softmax_loss":softmax_loss, 
                 "l2_loss":l2_loss,
-               "nce_batch_accuracy":nce_batch_acc}
+               "nce_batch_accuracy":nce_batch_acc,
+               "mask_avg":tf.reduce_mean(mask)}
         
     @tf.function
     def trainstep(x1, m1, x2, m2):

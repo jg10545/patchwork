@@ -116,3 +116,15 @@ def _prepare_embeddings(h, m):
     m = tf.expand_dims(m, 3)
     hm = tf.reduce_mean(h*m, [1,2])
     return tf.reshape(hm, [-1, d])
+
+
+def _prepare_mask(m1, m2):
+    """
+    :m1, m2: masks of segmentation tensors; (N,w,h,num_samples)
+    
+    Returns a mask of shape (N*num_samples, 1)
+    """
+    m1_sum = tf.reduce_sum(m1, [1,2])
+    m2_sum = tf.reduce_sum(m2, [1,2])
+    return tf.reshape(m1_sum*m2_sum, [-1,1])
+    

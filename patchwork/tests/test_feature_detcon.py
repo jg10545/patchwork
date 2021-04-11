@@ -4,7 +4,7 @@ from PIL import Image
 
 from patchwork.feature._detcon_utils import _get_segments, _get_grid_segments
 from patchwork.feature._detcon_utils import _segment_aug, _filter_out_bad_segments 
-from patchwork.feature._detcon_utils import _prepare_embeddings
+from patchwork.feature._detcon_utils import _prepare_embeddings, _prepare_mask
 from patchwork.feature._detcon import _build_segment_pair_dataset
 
 
@@ -91,4 +91,13 @@ def test_prepare_embeddings():
     s = np.zeros((N,w,h,num_samples), dtype=np.float32)
     embeds = _prepare_embeddings(x,s)
     assert embeds.shape == (N*num_samples, d)
+    
+def test_prepare_mask():
+    N = 3
+    w = 5
+    h = 7
+    num_samples = 13
+    s1 = np.zeros((N,w,h,num_samples), dtype=np.float32)
+    mask = _prepare_mask(s1,s1)
+    assert mask.shape == (N*num_samples, 1)
     
