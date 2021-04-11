@@ -15,6 +15,7 @@ from patchwork.feature._moco import _build_augment_pair_dataset
 from patchwork.feature._detcon_utils import _get_segments, _get_grid_segments
 from patchwork.feature._detcon_utils import _segment_aug, _filter_out_bad_segments
 from patchwork.feature._detcon_utils import _prepare_embeddings, SEG_AUG_FUNCTIONS
+from patchwork._augment import DEFAULT_SIMCLR_PARAMS
     
     
 def _build_segment_pair_dataset(imfiles, mean_scale=1000, num_samples=16, outputsize=None,
@@ -31,8 +32,9 @@ def _build_segment_pair_dataset(imfiles, mean_scale=1000, num_samples=16, output
     :num_samples: number of segments to sample from Felzenszwalb segmentation output
     :outputsize: (H,W) dimensions of output of FCN
     """
-    print("to do: replace augment=True with a dictionary")
     assert augment, "don't you need to augment your data?"
+    if augment == True:
+        augment = DEFAULT_SIMCLR_PARAMS
     # build the initial image loader. Dataset yields unbatched images
     ds = _image_file_dataset(imfiles, imshape=imshape, 
                              num_parallel_calls=num_parallel_calls,
@@ -220,7 +222,6 @@ class DetConTrainer(GenericExtractor):
         :strategy: if distributing across multiple GPUs, pass a tf.distribute
             Strategy object here
         """
-        assert augment is not False, "this method needs an augmentation scheme"
         self.logdir = logdir
         self.trainingdata = trainingdata
         self._downstream_labels = downstream_labels
