@@ -21,7 +21,8 @@ requirements = [
         "matplotlib",
         "tqdm",
         "sklearn",
-        "scipy"
+        "scipy",
+        "skimage"
         ]
 
 setup_requirements = [ ]

@@ -21,25 +21,6 @@ def _build_negative_indices(batch_size):
     return indices
 
 
-def _compute_hcl_softmax_probs(pos_exp, neg, temp, beta, tau_plus):
-    # DELETE THIS
-    gbs = neg.shape[0]
-    N = 2*gbs - 2
-    # importance sampling weights: shape (gbs, gbs-2)
-    imp = tf.exp(beta*neg)
-    # partition function: shape (gbs,)
-    Z = tf.reduce_mean(imp, -1)
-    # reweighted negative logits using importance sampling: shape (gbs,)
-    reweight_neg = tf.reduce_sum(imp*tf.exp(neg),-1)/Z
-    #
-    Ng = (reweight_neg - tau_plus*N*pos_exp)/(1-tau_plus)
-    # constrain min value
-    Ng = tf.maximum(Ng, N*tf.exp(-1/temp))
-    # manually compute softmax
-    softmax_prob = pos_exp/(pos_exp+Ng)
-    return softmax_prob
-
-
 def _simclr_softmax_prob(z1, z2, temp):
     """
     Compute SimCLR softmax probability for a pair of batches of normalized
@@ -167,7 +148,6 @@ def _build_trainstep(model, optimizer, strategy, temp=1, tau_plus=0, beta=0, wei
             # now correspond to the global batch size (gbs, d)
             z1 = context.all_gather(z1, 0)
             z2 = context.all_gather(z2, 0)
-            #print("z1,z2:", z1.shape, z2.shape)
         
             # SimCLR case
             if (tau_plus == 0)&(beta == 0):
@@ -178,63 +158,6 @@ def _build_trainstep(model, optimizer, strategy, temp=1, tau_plus=0, beta=0, wei
                                                                 beta, tau_plus)
             else:
                 assert False, "both tau_plus and beta must be nonzero to run HCL"
-            """
-            # positive logits: just the dot products between corresponding pairs
-            # shape (gbs,)
-            # CHANGING FOR CONSISTENCY
-            #pos = tf.exp(tf.reduce_sum(z1*z2, -1)/temp)
-            pos = tf.reduce_sum(z1*z2, -1)/temp
-            pos = tf.concat([pos,pos], 0) # from HCL code- line 38 in main.py. shape (2gbs,)
-            pos_exp = tf.exp(pos)
-            #print("pos:", pos.shape)
-            z = tf.concat([z1,z2],0)
-            # negative samples- first find all pairwise combinations
-            # shape (2gbs, 2gbs)
-            s = tf.matmul(z, z, transpose_b=True)
-            #print("s:", s.shape)
-            # then remove the comparisons between corresponding pairs
-            # shape (2gbs, 2gbs-2)
-            gbs = z1.shape[0]
-            #print("global batch size:", gbs)
-            neg_indices = _build_negative_indices(gbs)
-            # not in paper pseudocode or equation, but actual code includes
-            # temperature scaling in importance-sampled sum
-            neg = tf.gather_nd(s, neg_indices)/temp
-            # convert negatives to logits
-            # shape (gbs, gbs-2)
-            neg_exp = tf.exp(neg)
-            #print("neg:", neg.shape)
-            
-            # COMPUTE BATCH ACCURACY
-            biggest_neg = tf.reduce_max(neg_exp, -1)
-            nce_batch_acc = tf.reduce_mean(tf.cast(pos_exp > biggest_neg, tf.float32))
-            
-            # SIMCLR CASE
-            if (tau_plus == 0)&(beta == 0):
-                # manually compute softmax. shape (gbs,)
-                softmax_prob = pos_exp/(pos_exp + tf.reduce_sum(neg_exp, -1))
-            # HCL CASE (M=1)
-            else:
-                #N = 2*batch_size - 2
-                N = 2*gbs - 2
-                
-                # importance sampling weights: shape (gbs, gbs-2)
-                #imp = tf.exp(beta*neg)
-                # partition function: shape (gbs,)
-                #Z = tf.reduce_mean(imp, -1)
-                # reweighted negative logits using importance sampling: shape (gbs,)
-                #reweight_neg = tf.reduce_sum(imp*tf.exp(neg/temp),-1)/Z
-                #
-                #Ng = (reweight_neg - tau_plus*N*pos)/(1-tau_plus)
-                # constrain min value
-                #Ng = tf.maximum(Ng, N*tf.exp(-1/temp))
-                # manually compute softmax
-                #softmax_prob = pos/(pos+Ng)
-                
-                softmax_prob = _compute_hcl_softmax_probs(pos_exp, neg, temp, beta,
-                                                          tau_plus)
-            """
-            
                 
             softmax_loss = tf.reduce_mean(-1*tf.math.log(softmax_prob))
             loss += softmax_loss
@@ -244,7 +167,6 @@ def _build_trainstep(model, optimizer, strategy, temp=1, tau_plus=0, beta=0, wei
                 loss += weight_decay*l2_loss
             else:
                 l2_loss = 0
-            
             
         grad = tape.gradient(loss, model.trainable_variables)
         optimizer.apply_gradients(zip(grad, model.trainable_variables))

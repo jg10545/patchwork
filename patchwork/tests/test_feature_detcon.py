@@ -92,4 +92,3 @@ def test_prepare_embeddings():
     embeds = _prepare_embeddings(x,s)
     assert embeds.shape == (N*num_samples, d)
     
-test_prepare_embeddings()

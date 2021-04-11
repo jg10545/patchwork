@@ -10,6 +10,7 @@ The `patchwork.feature` module has several models implemented for unsupervised o
   * option to modify noise-contrastive loss function using margin term from [EqCo](https://arxiv.org/abs/2010.01929)
   * option to generate synthetic hard examples on-the-fly using [MoCHi](https://arxiv.org/abs/2010.01028)
 * [HCL](https://arxiv.org/abs/2010.04592) (along with multi-GPU implementation)
+* [DetCon](https://arxiv.org/abs/2103.10957) (multi-GPU implementation)
 
 The module has a class to manage the training of each model. The trainers are meant to be as similar as possible, to make it easy to throw different self-supervision approches at your problem and see how they compare. Here's what they have in common:
 
@@ -414,3 +415,91 @@ trainer = pw.feature.HCLTrainer(
 trainer.fit(10)
 ```
     
+    
+    
+
+   
+## DetCon
+
+**This trainer requires TensorFlow >= 2.4**
+
+[Efficient Visual Pretraining with Contrastive Detection](https://arxiv.org/abs/2103.10957) is another modification to SimCLR (or BYOL)- this time, breaking up each image using a heuristic segmentation so that features can be contrasted within images in addition to between them. My implementation of DetCon_S works just like the HCLTrainer, but with two additional hyperparameters:
+
+* `mean_scale` sets the average scale and minimum size for the Felzenszwalb segmentation algorithm. To add some randomness to the segmentation, the value used is uniformly sampled between half this scale and 1.5x this scale. Setting `mean_scale=0` will use a square grid instead (like the "spatial heuristic" in figure 3 of the DetCon paper). This is cheaper to compute but probably not as effective.
+* `num_samples` sets the number of segments to sample per image- so the effective batch size for SimCLR loss will be `num_samples x batch_size`. The sampling is biased toward larger segments. If using `mean_scale=0`, this should be a square number (e.g. `mean_scale=9` would be a 3x3 grid).
+
+### Some practical issues with dynamically generating segments
+
+This isn't really discussed in the paper, but there are a few things that can go wrong with the preprocessing of data for DetCon:
+
+* The Felzenszwalb segmentation might find fewer segments than `num_samples`. In this case my code will switch to sampling segments with replacement.
+* The coupled image/segmentation augmentation step might completely remove one segment from the image (say, by cropping it out). In this case my code will skip the example.
+* The segments found by Felzenszwalb might be on a spatial scale that misses the semantic features you're actually interested in. This you need to correct by tuning `mean_scale`.
+
+Finding the best hyperparameters will mean tuning `mean_scale` and `num_samples` *as well as* the augmentation parameters (specifically `zoom_scale` and `shear`) together to find some balance between getting the right segments, having strong enough augmentation, and not wasting too much computation. To help, I've added an input pipeline tool at `pw.viz.detcon_input_pipeline()` that will run your configuration on a set of images and report how often it had to sample with replacement, how many examples it had to discard, and visualize 8 pairs of augmented images with their respective segmentation masks.
+
+```
+trainfiles = [imdir+x for x in os.listdir(imdir)]
+
+aug = {'flip_left_right': True,
+ 'flip_up_down': True,
+ 'rot90': True,
+ 'zoom_scale': 0.4,
+ 'jitter': 1.0,
+ 'shear': 0.3}
+ 
+pw.viz.detcon_input_pipeline(trainfiles[:200], aug, mean_scale=200, 
+                                num_samples=10, imshape=(256,256)) 
+```
+![](detcon_input_pipeline.png)
+
+
+### Differences between the paper and `patchwork`
+
+I've included the HCL hyperparameters as well.
+
+### Example code
+
+
+```{python}
+import tensorflow as tf
+import patchwork as pw
+
+# load paths to train files
+trainfiles = [x.strip() for x in open("mytrainfiles.txt").readlines()]
+labeldict = json.load(open("dictionary_mapping_some_images_to_labels.json"))
+
+# initialize a feature extractor
+fcn = tf.keras.applications.ResNet50(weights=None, include_top=False)
+
+# choose augmentation parameters
+aug_params = {'jitter':1,
+             'gaussian_blur': 0.25,
+             'flip_left_right': True,
+             'zoom_scale': 0.1,}
+             
+# pick a place to save models and tensorboard logs
+log_dir = "/path/to/my/log_dir/"
+
+# train
+trainer = pw.feature.DetConTrainer(
+        log_dir,
+        trainfiles,
+        testdata=testfiles,
+        fcn=fcn,
+        num_parallel_calls=6,
+        augment=aug_params,
+        lr=1e-3,
+        weight_decay=1e-6,
+        num_hidden=128,
+        output_dim=64,
+        temperature=0.1,
+        mean_scale=200,
+        num_samples=5,
+        batch_size=128, 
+        imshape=(128,128),
+        downstream_labels=labeldict
+    )
+
+trainer.fit(10)
+```
