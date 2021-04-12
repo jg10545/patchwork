@@ -430,13 +430,12 @@ trainer.fit(10)
 
 ### Some practical issues with dynamically generating segments
 
-This isn't really discussed in the paper, but there are a few things that can go wrong with the preprocessing of data for DetCon:
+When contrasting segment-weighted feature vectors, there are a couple cases we need to handle:
 
 * The Felzenszwalb segmentation might find fewer segments than `num_samples`. In this case my code will switch to sampling segments with replacement.
-* The coupled image/segmentation augmentation step might completely remove one segment from the image (say, by cropping it out). In this case my code will skip the example.
-* The segments found by Felzenszwalb might be on a spatial scale that misses the semantic features you're actually interested in. This you need to correct by tuning `mean_scale`.
+* The coupled image/segmentation augmentation step might completely remove one segment from the image (say, by cropping it out). Positive comparisons involving segments that have been augmented out of the image view are masked out of the loss function.
 
-Finding the best hyperparameters will mean tuning `mean_scale` and `num_samples` *as well as* the augmentation parameters (specifically `zoom_scale` and `shear`) together to find some balance between getting the right segments, having strong enough augmentation, and not wasting too much computation. To help, I've added an input pipeline tool at `pw.viz.detcon_input_pipeline()` that will run your configuration on a set of images and report how often it had to sample with replacement, how many examples it had to discard, and visualize 8 pairs of augmented images with their respective segmentation masks.
+Finding the best hyperparameters will mean tuning `mean_scale` and `num_samples` *as well as* the augmentation parameters (specifically `zoom_scale` and `shear`) together to find some balance between getting the right segments, having strong enough augmentation, and not wasting too much computation. To help, I've added an input pipeline tool at `pw.viz.detcon_input_pipeline()` that will run your configuration on a set of images and report how often it had to sample with replacement, how many examples it had to discard, and visualize 5 pairs of augmented images with their respective segmentation masks.
 
 ```
 trainfiles = [imdir+x for x in os.listdir(imdir)]
