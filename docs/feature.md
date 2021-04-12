@@ -455,7 +455,7 @@ pw.viz.detcon_input_pipeline(trainfiles[:200], aug, mean_scale=200,
 
 ### Differences between the paper and `patchwork`
 
-I've included the HCL hyperparameters as well.
+I've included the HCL hyperparameters as well. As of the time I'm writing this DeepMind hasn't released their code yet, so there may be other differences if I've misinterpreted anything from their paper.
 
 ### Example code
 
