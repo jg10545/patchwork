@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import numpy as np
 import tensorflow as tf
 
 from patchwork.feature._generic import GenericExtractor
@@ -20,8 +21,16 @@ def _build_negative_indices(batch_size):
         
     return indices
 
+def _build_negative_mask(batch_size):
+    mask = np.ones((2*batch_size, 2*batch_size), dtype=np.float32)
+    for i in range(2*batch_size):
+        for j in range(2*batch_size):
+            if (i == j) or (abs(i-j) == batch_size):
+                mask[i,j] = 0
+    return mask
 
-def _simclr_softmax_prob(z1, z2, temp):
+
+def _simclr_softmax_prob(z1, z2, temp, mask):
     """
     Compute SimCLR softmax probability for a pair of batches of normalized
     embeddings. Also compute the batch accuracy.
@@ -45,15 +54,16 @@ def _simclr_softmax_prob(z1, z2, temp):
     s = tf.matmul(z, z, transpose_b=True)
     # then remove the comparisons between corresponding pairs
     # shape (2gbs, 2gbs-2)
-    gbs = z1.shape[0]
-    neg_indices = _build_negative_indices(gbs)
+    #gbs = z1.shape[0]
+    #neg_indices = _build_negative_indices(gbs)
     # not in paper pseudocode or equation, but actual code includes
     # temperature scaling in importance-sampled sum
-    neg = tf.gather_nd(s, neg_indices)/temp
+    #neg = tf.gather_nd(s, neg_indices)/temp
     # convert negatives to logits
     # shape (gbs, gbs-2)
-    neg_exp = tf.exp(neg)
-            
+    #neg_exp = tf.exp(neg)
+    neg_exp = mask*tf.exp(s/temp)     
+       
     # COMPUTE BATCH ACCURACY ()
     biggest_neg = tf.reduce_max(neg_exp, -1)
     nce_batch_acc = tf.reduce_mean(tf.cast(pos_exp > biggest_neg, tf.float32))
@@ -62,7 +72,7 @@ def _simclr_softmax_prob(z1, z2, temp):
     return softmax_prob, nce_batch_acc
 
 
-def _hcl_softmax_prob(z1, z2, temp, beta, tau_plus):
+def _hcl_softmax_prob(z1, z2, temp, beta, tau_plus, mask):
     """
     Compute HCL softmax probability for a pair of batches of normalized
     embeddings. Also compute the batch accuracy.
@@ -89,25 +99,28 @@ def _hcl_softmax_prob(z1, z2, temp, beta, tau_plus):
     s = tf.matmul(z, z, transpose_b=True)
     # then remove the comparisons between corresponding pairs
     # shape (2gbs, 2gbs-2)
-    gbs = z1.shape[0]
-    neg_indices = _build_negative_indices(gbs)
+    #gbs = z1.shape[0]
+    #neg_indices = _build_negative_indices(gbs)
     # not in paper pseudocode or equation, but actual code includes
     # temperature scaling in importance-sampled sum
-    neg = tf.gather_nd(s, neg_indices)/temp
+    #neg = tf.gather_nd(s, neg_indices)/temp
     # convert negatives to logits
     # shape (gbs, gbs-2)
-    neg_exp = tf.exp(neg)
-            
+    #neg_exp = tf.exp(neg)
+    neg_exp = mask*tf.exp(s/temp)     
+       
     # COMPUTE BATCH ACCURACY ()
     biggest_neg = tf.reduce_max(neg_exp, -1)
     nce_batch_acc = tf.reduce_mean(tf.cast(pos_exp > biggest_neg, tf.float32))
 
     # importance sampling weights: shape (gbs, gbs-2)
-    imp = tf.exp(beta*neg)
+    #imp = tf.exp(beta*neg)
+    imp = mask*tf.exp(beta*s/temp)
     # partition function: shape (gbs,)
     Z = tf.reduce_mean(imp, -1)
     # reweighted negative logits using importance sampling: shape (gbs,)
-    reweight_neg = tf.reduce_sum(imp*tf.exp(neg),-1)/Z
+    #reweight_neg = tf.reduce_sum(imp*tf.exp(neg),-1)/Z
+    reweight_neg = tf.reduce_sum(imp*tf.exp(s/temp),-1)/Z
     #
     Ng = (reweight_neg - tau_plus*N*pos_exp)/(1-tau_plus)
     # constrain min value
@@ -148,14 +161,18 @@ def _build_trainstep(model, optimizer, strategy, temp=1, tau_plus=0, beta=0, wei
             # now correspond to the global batch size (gbs, d)
             z1 = context.all_gather(z1, 0)
             z2 = context.all_gather(z2, 0)
+            
+            with tape.stop_recording():
+                gbs = z1.shape[0]
+                mask = _build_negative_mask(2*gbs)
         
             # SimCLR case
             if (tau_plus == 0)&(beta == 0):
-                softmax_prob, nce_batch_acc = _simclr_softmax_prob(z1, z2, temp)
+                softmax_prob, nce_batch_acc = _simclr_softmax_prob(z1, z2, temp, mask)
             # HCL case
             elif (tau_plus > 0)&(beta > 0):
                 softmax_prob, nce_batch_acc = _hcl_softmax_prob(z1, z2, temp, 
-                                                                beta, tau_plus)
+                                                                beta, tau_plus, mask)
             else:
                 assert False, "both tau_plus and beta must be nonzero to run HCL"
                 
