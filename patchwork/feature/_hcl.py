@@ -164,7 +164,7 @@ def _build_trainstep(model, optimizer, strategy, temp=1, tau_plus=0, beta=0, wei
             
             with tape.stop_recording():
                 gbs = z1.shape[0]
-                mask = _build_negative_mask(2*gbs)
+                mask = _build_negative_mask(gbs)
         
             # SimCLR case
             if (tau_plus == 0)&(beta == 0):
@@ -214,8 +214,8 @@ class HCLTrainer(GenericExtractor):
 
     def __init__(self, logdir, trainingdata, testdata=None, fcn=None, 
                  augment=True, temperature=1., beta=0, tau_plus=0,
-                 num_hidden=128,
-                 output_dim=64, weight_decay=0,
+                 num_hidden=128, output_dim=64, 
+                 batchnorm=True, weight_decay=0,
                  lr=0.01, lr_decay=0, decay_type="exponential",
                  opt_type="adam",
                  imshape=(256,256), num_channels=3,
@@ -231,6 +231,7 @@ class HCLTrainer(GenericExtractor):
         :temperature: the Boltzmann temperature parameter- rescale the cosine similarities by this factor before computing softmax loss.
         :num_hidden: number of hidden neurons in the network's projection head
         :output_dim: dimension of projection head's output space. Figure 8 in Chen et al's paper shows that their results did not depend strongly on this value.
+        :batchnorm: whether to include batch normalization in the projection head.
         :weight_decay: coefficient for L2-norm loss. The original SimCLR paper used 1e-6.
         :lr: (float) initial learning rate
         :lr_decay:  (int) number of steps for one decay period (0 to disable)
@@ -271,7 +272,7 @@ class HCLTrainer(GenericExtractor):
             # Create a Keras model that wraps the base encoder and 
             # the projection head
             embed_model = _build_embedding_model(fcn, imshape, num_channels,
-                                             num_hidden, output_dim)
+                                             num_hidden, output_dim, batchnorm)
         
         self._models = {"fcn":fcn, 
                         "full":embed_model}
@@ -313,7 +314,7 @@ class HCLTrainer(GenericExtractor):
         self._parse_configs(augment=augment, temperature=temperature,
                             beta=beta, tau_plus=tau_plus,
                             num_hidden=num_hidden, output_dim=output_dim,
-                            weight_decay=weight_decay,
+                            weight_decay=weight_decay, batchnorm=batchnorm,
                             lr=lr, lr_decay=lr_decay, 
                             imshape=imshape, num_channels=num_channels,
                             norm=norm, batch_size=batch_size,
@@ -361,7 +362,8 @@ class HCLTrainer(GenericExtractor):
                     hp.HParam("lr", hp.RealInterval(0., 10000.)):self.config["lr"],
                     hp.HParam("lr_decay", hp.RealInterval(0., 10000.)):self.config["lr_decay"],
                     hp.HParam("decay_type", hp.Discrete(["cosine", "exponential"])):self.config["decay_type"],
-                    hp.HParam("weight_decay", hp.RealInterval(0., 10000.)):self.config["weight_decay"]
+                    hp.HParam("weight_decay", hp.RealInterval(0., 10000.)):self.config["weight_decay"],
+                    hp.HParam("batchnorm", hp.Discrete([True, False])):self.config["batchnorm"],
                     }
                 for k in self.augment_config:
                     if isinstance(self.augment_config[k], float):
