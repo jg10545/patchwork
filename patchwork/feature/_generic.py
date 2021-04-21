@@ -58,12 +58,12 @@ def linear_classification_test(fcn, downstream_labels, avpool=True, rotation_tas
     """
     # load features into memory
     if rotation_task:
-        features, labels = _get_rotation_features(fcn, 
-                                            downstream_labels, **input_config)     
+        features, labels = _get_rotation_features(fcn, downstream_labels, 
+                                                  avpool=avpool, **input_config)     
         
     else:
-        features, labels = _get_features(fcn, 
-                                            downstream_labels, **input_config)     
+        features, labels = _get_features(fcn, downstream_labels, 
+                                            avpool=avpool, **input_config)     
     # build a deterministic train/test split
     split = np.array([(i%3 == 0) for i in range(features.shape[0])])
     trainvecs = features[~split]
@@ -74,7 +74,8 @@ def linear_classification_test(fcn, downstream_labels, avpool=True, rotation_tas
     trainvecs = scaler.transform(trainvecs)
     testvecs = scaler.transform(testvecs)
     # train a multinomial linear classifier
-    logreg = SGDClassifier()
+    logreg = SGDClassifier(loss="log", max_iter=1000, n_jobs=-1, 
+                           learning_rate="adaptive", eta0=1e-2)
     logreg.fit(trainvecs, labels[~split])
     # make predictions on test set
     preds = logreg.predict(testvecs)
