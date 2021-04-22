@@ -21,6 +21,7 @@ from tensorboard.plugins.hparams import api as hp
 from patchwork.loaders import _get_features, _get_rotation_features
 from patchwork.viz._projector import save_embeddings
 from patchwork.viz._kernel import _make_kernel_sprites
+from patchwork.viz._feature import _build_query_image
 from patchwork._util import build_optimizer
 
 
@@ -39,7 +40,8 @@ def _run_this_epoch(flag, e):
             return False
 
 
-def linear_classification_test(fcn, downstream_labels, avpool=True, rotation_task=False,**input_config):
+def linear_classification_test(fcn, downstream_labels, avpool=True, rotation_task=False,
+                               query_fig=False, **input_config):
     """
     Train a linear classifier on a fully-convolutional network
     and return out-of-sample results.
@@ -50,11 +52,13 @@ def linear_classification_test(fcn, downstream_labels, avpool=True, rotation_tas
     :avpool: average-pool feature tensors before fitting linear model. if False, flatten instead.
     :rotation_task: if True, use an unlabeled list of filepaths and measure performance on an
         image-rotation task (see "Evaluating Self-Supervised Pretraining Without Using Labels")
+    :query_fig: set to an integer to return data for a figure showing images with similar vectors
     :input_config: kwargs for patchwork.loaders.dataset()
     
     Returns
     :acc: float; test accuracy
     :cm: 2D numpy array; confusion matrix
+    :fig: 4D numpy array; only returned if query_fig > 0
     """
     # load features into memory
     if rotation_task:
@@ -82,6 +86,10 @@ def linear_classification_test(fcn, downstream_labels, avpool=True, rotation_tas
     # compute metrics and return
     acc = accuracy_score(labels[split], preds)
     cm = confusion_matrix(labels[split], preds)
+    
+    if query_fig:
+        fig = _build_query_image(features, labels, downstream_labels, query_fig)
+        return acc, cm, fig
     return acc, cm
 
 
@@ -188,7 +196,7 @@ class GenericExtractor(object):
     
     def fit(self, epochs=1, avpool=True, save=True, evaluate=True, 
             save_projections=False,
-            visualize_kernels=False, log_fcn=False):
+            visualize_kernels=False, log_fcn=False, query_fig=False):
         """
         Train the feature extractor. All kwargs after "avpool" can either be
         Boolean (whether to run after every epoch) or an integer (run after
@@ -204,6 +212,8 @@ class GenericExtractor(object):
             layer's kernels
         :log_fcn: log a copy of the FCN with the epoch number so it won't be 
             overwritten
+        :query_fig: set to an integer to build a figure showing one example image
+            per class, along with <query_fig> images with closest feature vectors
         
         """
         for e in tqdm(range(epochs)):
@@ -212,7 +222,7 @@ class GenericExtractor(object):
             if _run_this_epoch(save, e):
                 self.save()
             if _run_this_epoch(evaluate, e):
-                self.evaluate(avpool=avpool)
+                self.evaluate(avpool=avpool, query_fig=query_fig)
             if _run_this_epoch(save_projections, e):
                 self.save_projections()
             if _run_this_epoch(visualize_kernels,e):
@@ -262,11 +272,17 @@ class GenericExtractor(object):
             
     def _linear_classification_test(self, params=None, 
                                     metrics=["linear_classification_accuracy"],
-                                    avpool=True):
-         acc, conf_mat = linear_classification_test(self.fcn, 
+                                    avpool=True, query_fig=False):
+        
+         results = linear_classification_test(self.fcn, 
                                     self._downstream_labels, 
-                                    avpool=avpool,
+                                    avpool=avpool, query_fig=query_fig,
                                     **self.input_config)
+         if query_fig:
+             acc, conf_mat, fig = results
+             self._record_images(closest_feature_vectors=fig)
+         else:
+             acc, conf_mat =results
          
          conf_mat = np.expand_dims(np.expand_dims(conf_mat, 0), -1)/conf_mat.max()
          self._record_scalars(linear_classification_accuracy=acc, metric=True)

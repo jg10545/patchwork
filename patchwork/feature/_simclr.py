@@ -371,7 +371,7 @@ class SimCLRTrainer(GenericExtractor):
             self._record_scalars(learning_rate=self._get_current_learning_rate())
             self.step += 1
              
-    def evaluate(self, avpool=True):
+    def evaluate(self, avpool=True, query_fig=False):
         
         if self._test:
             # if the user passed out-of-sample data to test- compute
@@ -408,5 +408,6 @@ class SimCLRTrainer(GenericExtractor):
                 hparams=None
 
             self._linear_classification_test(hparams,
-                        metrics=metrics, avpool=avpool)
+                        metrics=metrics, avpool=avpool,
+                        query_fig=query_fig)
         

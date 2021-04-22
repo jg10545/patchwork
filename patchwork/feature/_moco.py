@@ -386,7 +386,7 @@ class MomentumContrastTrainer(GenericExtractor):
             self.step += 1
             
  
-    def evaluate(self, avpool=True):
+    def evaluate(self, avpool=True, query_fig=False):
         if self._test:
             # if the user passed out-of-sample data to test- compute
             # alignment and uniformity measures
@@ -421,7 +421,8 @@ class MomentumContrastTrainer(GenericExtractor):
                         hparams[hp.HParam(k, hp.RealInterval(0., 10000.))] = self.augment_config[k]
             else:
                 hparams=None
-            self._linear_classification_test(hparams, metrics=metrics, avpool=avpool)
+            self._linear_classification_test(hparams, metrics=metrics, avpool=avpool,
+                                             query_fig=query_fig)
         
         
     def load_weights(self, logdir):
