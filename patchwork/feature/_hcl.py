@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import numpy as np
 import tensorflow as tf
 
 from patchwork.feature._generic import GenericExtractor
@@ -20,8 +21,16 @@ def _build_negative_indices(batch_size):
         
     return indices
 
+def _build_negative_mask(batch_size):
+    mask = np.ones((2*batch_size, 2*batch_size), dtype=np.float32)
+    for i in range(2*batch_size):
+        for j in range(2*batch_size):
+            if (i == j) or (abs(i-j) == batch_size):
+                mask[i,j] = 0
+    return mask
 
-def _simclr_softmax_prob(z1, z2, temp):
+
+def _simclr_softmax_prob(z1, z2, temp, mask):
     """
     Compute SimCLR softmax probability for a pair of batches of normalized
     embeddings. Also compute the batch accuracy.
@@ -45,15 +54,16 @@ def _simclr_softmax_prob(z1, z2, temp):
     s = tf.matmul(z, z, transpose_b=True)
     # then remove the comparisons between corresponding pairs
     # shape (2gbs, 2gbs-2)
-    gbs = z1.shape[0]
-    neg_indices = _build_negative_indices(gbs)
+    #gbs = z1.shape[0]
+    #neg_indices = _build_negative_indices(gbs)
     # not in paper pseudocode or equation, but actual code includes
     # temperature scaling in importance-sampled sum
-    neg = tf.gather_nd(s, neg_indices)/temp
+    #neg = tf.gather_nd(s, neg_indices)/temp
     # convert negatives to logits
     # shape (gbs, gbs-2)
-    neg_exp = tf.exp(neg)
-            
+    #neg_exp = tf.exp(neg)
+    neg_exp = mask*tf.exp(s/temp)     
+       
     # COMPUTE BATCH ACCURACY ()
     biggest_neg = tf.reduce_max(neg_exp, -1)
     nce_batch_acc = tf.reduce_mean(tf.cast(pos_exp > biggest_neg, tf.float32))
@@ -62,7 +72,7 @@ def _simclr_softmax_prob(z1, z2, temp):
     return softmax_prob, nce_batch_acc
 
 
-def _hcl_softmax_prob(z1, z2, temp, beta, tau_plus):
+def _hcl_softmax_prob(z1, z2, temp, beta, tau_plus, mask):
     """
     Compute HCL softmax probability for a pair of batches of normalized
     embeddings. Also compute the batch accuracy.
@@ -89,25 +99,28 @@ def _hcl_softmax_prob(z1, z2, temp, beta, tau_plus):
     s = tf.matmul(z, z, transpose_b=True)
     # then remove the comparisons between corresponding pairs
     # shape (2gbs, 2gbs-2)
-    gbs = z1.shape[0]
-    neg_indices = _build_negative_indices(gbs)
+    #gbs = z1.shape[0]
+    #neg_indices = _build_negative_indices(gbs)
     # not in paper pseudocode or equation, but actual code includes
     # temperature scaling in importance-sampled sum
-    neg = tf.gather_nd(s, neg_indices)/temp
+    #neg = tf.gather_nd(s, neg_indices)/temp
     # convert negatives to logits
     # shape (gbs, gbs-2)
-    neg_exp = tf.exp(neg)
-            
+    #neg_exp = tf.exp(neg)
+    neg_exp = mask*tf.exp(s/temp)     
+       
     # COMPUTE BATCH ACCURACY ()
     biggest_neg = tf.reduce_max(neg_exp, -1)
     nce_batch_acc = tf.reduce_mean(tf.cast(pos_exp > biggest_neg, tf.float32))
 
     # importance sampling weights: shape (gbs, gbs-2)
-    imp = tf.exp(beta*neg)
+    #imp = tf.exp(beta*neg)
+    imp = mask*tf.exp(beta*s/temp)
     # partition function: shape (gbs,)
     Z = tf.reduce_mean(imp, -1)
     # reweighted negative logits using importance sampling: shape (gbs,)
-    reweight_neg = tf.reduce_sum(imp*tf.exp(neg),-1)/Z
+    #reweight_neg = tf.reduce_sum(imp*tf.exp(neg),-1)/Z
+    reweight_neg = tf.reduce_sum(imp*tf.exp(s/temp),-1)/Z
     #
     Ng = (reweight_neg - tau_plus*N*pos_exp)/(1-tau_plus)
     # constrain min value
@@ -148,14 +161,18 @@ def _build_trainstep(model, optimizer, strategy, temp=1, tau_plus=0, beta=0, wei
             # now correspond to the global batch size (gbs, d)
             z1 = context.all_gather(z1, 0)
             z2 = context.all_gather(z2, 0)
+            
+            with tape.stop_recording():
+                gbs = z1.shape[0]
+                mask = _build_negative_mask(gbs)
         
             # SimCLR case
             if (tau_plus == 0)&(beta == 0):
-                softmax_prob, nce_batch_acc = _simclr_softmax_prob(z1, z2, temp)
+                softmax_prob, nce_batch_acc = _simclr_softmax_prob(z1, z2, temp, mask)
             # HCL case
             elif (tau_plus > 0)&(beta > 0):
                 softmax_prob, nce_batch_acc = _hcl_softmax_prob(z1, z2, temp, 
-                                                                beta, tau_plus)
+                                                                beta, tau_plus, mask)
             else:
                 assert False, "both tau_plus and beta must be nonzero to run HCL"
                 
@@ -197,8 +214,8 @@ class HCLTrainer(GenericExtractor):
 
     def __init__(self, logdir, trainingdata, testdata=None, fcn=None, 
                  augment=True, temperature=1., beta=0, tau_plus=0,
-                 num_hidden=128,
-                 output_dim=64, weight_decay=0,
+                 num_hidden=128, output_dim=64, 
+                 batchnorm=True, weight_decay=0,
                  lr=0.01, lr_decay=0, decay_type="exponential",
                  opt_type="adam",
                  imshape=(256,256), num_channels=3,
@@ -214,6 +231,7 @@ class HCLTrainer(GenericExtractor):
         :temperature: the Boltzmann temperature parameter- rescale the cosine similarities by this factor before computing softmax loss.
         :num_hidden: number of hidden neurons in the network's projection head
         :output_dim: dimension of projection head's output space. Figure 8 in Chen et al's paper shows that their results did not depend strongly on this value.
+        :batchnorm: whether to include batch normalization in the projection head.
         :weight_decay: coefficient for L2-norm loss. The original SimCLR paper used 1e-6.
         :lr: (float) initial learning rate
         :lr_decay:  (int) number of steps for one decay period (0 to disable)
@@ -254,7 +272,7 @@ class HCLTrainer(GenericExtractor):
             # Create a Keras model that wraps the base encoder and 
             # the projection head
             embed_model = _build_embedding_model(fcn, imshape, num_channels,
-                                             num_hidden, output_dim)
+                                             num_hidden, output_dim, batchnorm)
         
         self._models = {"fcn":fcn, 
                         "full":embed_model}
@@ -296,7 +314,7 @@ class HCLTrainer(GenericExtractor):
         self._parse_configs(augment=augment, temperature=temperature,
                             beta=beta, tau_plus=tau_plus,
                             num_hidden=num_hidden, output_dim=output_dim,
-                            weight_decay=weight_decay,
+                            weight_decay=weight_decay, batchnorm=batchnorm,
                             lr=lr, lr_decay=lr_decay, 
                             imshape=imshape, num_channels=num_channels,
                             norm=norm, batch_size=batch_size,
@@ -315,7 +333,7 @@ class HCLTrainer(GenericExtractor):
             self._record_scalars(learning_rate=self._get_current_learning_rate())
             self.step += 1
              
-    def evaluate(self, avpool=True):
+    def evaluate(self, avpool=True, query_fig=False):
         
         if self._test:
             # if the user passed out-of-sample data to test- compute
@@ -344,7 +362,8 @@ class HCLTrainer(GenericExtractor):
                     hp.HParam("lr", hp.RealInterval(0., 10000.)):self.config["lr"],
                     hp.HParam("lr_decay", hp.RealInterval(0., 10000.)):self.config["lr_decay"],
                     hp.HParam("decay_type", hp.Discrete(["cosine", "exponential"])):self.config["decay_type"],
-                    hp.HParam("weight_decay", hp.RealInterval(0., 10000.)):self.config["weight_decay"]
+                    hp.HParam("weight_decay", hp.RealInterval(0., 10000.)):self.config["weight_decay"],
+                    hp.HParam("batchnorm", hp.Discrete([True, False])):self.config["batchnorm"],
                     }
                 for k in self.augment_config:
                     if isinstance(self.augment_config[k], float):
@@ -353,7 +372,7 @@ class HCLTrainer(GenericExtractor):
                 hparams=None
 
             self._linear_classification_test(hparams,
-                        metrics=metrics, avpool=avpool)
+                        metrics=metrics, avpool=avpool, query_fig=query_fig)
         
 # -*- coding: utf-8 -*-
 

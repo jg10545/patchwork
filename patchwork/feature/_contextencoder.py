@@ -381,7 +381,7 @@ class ContextEncoderTrainer(GenericExtractor):
             self.step += 1
 
            
-    def evaluate(self, avpool=True):
+    def evaluate(self, avpool=True, query_fig=False):
         num_test_images=10
         if self._test:
             preds = self._models["inpainter"].predict(self._test_masked_ims)
@@ -417,7 +417,7 @@ class ContextEncoderTrainer(GenericExtractor):
                     }
             else:
                 hparams=None
-            self._linear_classification_test(hparams, avpool=avpool)
+            self._linear_classification_test(hparams, avpool=avpool, query_fig=query_fig)
         
         
         

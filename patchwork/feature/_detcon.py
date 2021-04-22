@@ -6,7 +6,7 @@ import tensorflow as tf
 
 from patchwork._util import compute_l2_loss, _compute_alignment_and_uniformity
 from patchwork._augment import augment_function
-from patchwork.feature._hcl import _simclr_softmax_prob, _hcl_softmax_prob
+from patchwork.feature._hcl import _simclr_softmax_prob, _hcl_softmax_prob, _build_negative_mask
 
 from patchwork.loaders import _image_file_dataset
 
@@ -136,13 +136,17 @@ def _build_trainstep(fcn, projector, optimizer, strategy, temp=1, tau_plus=0, be
             mask = context.all_gather(mask, 0)
             print("mask:", mask.shape)
             
+            with tape.stop_recording():
+                gbs = z1.shape[0]
+                mask = _build_negative_mask(gbs)
+            
             # SimCLR loss case
             if (tau_plus == 0)&(beta == 0):
-                softmax_prob, nce_batch_acc = _simclr_softmax_prob(z1, z2, temp)
+                softmax_prob, nce_batch_acc = _simclr_softmax_prob(z1, z2, temp, mask)
             # HCL loss case
             elif (tau_plus > 0)&(beta > 0):
                 softmax_prob, nce_batch_acc = _hcl_softmax_prob(z1, z2, temp, 
-                                                                beta, tau_plus)
+                                                                beta, tau_plus, mask)
             else:
                 assert False, "both tau_plus and beta must be nonzero to run HCL"
             
@@ -185,7 +189,7 @@ class DetConTrainer(GenericExtractor):
     def __init__(self, logdir, trainingdata, testdata=None, fcn=None, 
                  augment=True, temperature=1., mean_scale=1000, num_samples=16,
                  beta=0, tau_plus=0,
-                 num_hidden=128, output_dim=64, 
+                 num_hidden=128, output_dim=64, batchnorm=True,
                  weight_decay=0,
                  lr=0.01, lr_decay=0, decay_type="exponential",
                  opt_type="adam",
@@ -206,7 +210,8 @@ class DetConTrainer(GenericExtractor):
         :beta: concentration parameter for HCL loss (0 to use SimCLR loss)
         :tau_plus: class prior parameter for HCL loss (0 to use SimCLR loss)
         :num_hidden: number of hidden neurons in the network's projection head
-        :output_dim: dimension of projection head's output space. Figure 8 in Chen et al's paper shows that their results did not depend strongly on this value.
+        :output_dim: dimension of projection head's output space. 
+        :batchnorm: whether to include batch normalization in the projection head.
         :weight_decay: coefficient for L2-norm loss. The original SimCLR paper used 1e-6.
         :lr: (float) initial learning rate
         :lr_decay:  (int) number of steps for one decay period (0 to disable)
@@ -247,7 +252,8 @@ class DetConTrainer(GenericExtractor):
             # the projection head
             inpt = tf.keras.layers.Input((fcn.output_shape[-1]))
             net = tf.keras.layers.Dense(num_hidden)(inpt)
-            net = tf.keras.layers.BatchNormalization()(net)
+            if batchnorm:
+                net = tf.keras.layers.BatchNormalization()(net)
             net = tf.keras.layers.Activation("relu")(net)
             net = tf.keras.layers.Dense(output_dim, use_bias=False)(net)
             projector = tf.keras.Model(inpt, net)
@@ -305,7 +311,7 @@ class DetConTrainer(GenericExtractor):
         # parse and write out config YAML
         self._parse_configs(augment=augment, temperature=temperature,
                             mean_scale=mean_scale, num_samples=num_samples,
-                            beta=beta, tau_plus=tau_plus,
+                            beta=beta, tau_plus=tau_plus, batchnorm=batchnorm,
                             num_hidden=num_hidden, output_dim=output_dim,
                             weight_decay=weight_decay,
                             lr=lr, lr_decay=lr_decay, 
@@ -326,7 +332,7 @@ class DetConTrainer(GenericExtractor):
             self._record_scalars(learning_rate=self._get_current_learning_rate())
             self.step += 1
              
-    def evaluate(self, avpool=True):
+    def evaluate(self, avpool=True, query_fig=False):
         
         if self._test:
             # if the user passed out-of-sample data to test- compute
@@ -357,7 +363,8 @@ class DetConTrainer(GenericExtractor):
                     hp.HParam("lr", hp.RealInterval(0., 10000.)):self.config["lr"],
                     hp.HParam("lr_decay", hp.RealInterval(0., 10000.)):self.config["lr_decay"],
                     hp.HParam("decay_type", hp.Discrete(["cosine", "exponential"])):self.config["decay_type"],
-                    hp.HParam("weight_decay", hp.RealInterval(0., 10000.)):self.config["weight_decay"]
+                    hp.HParam("weight_decay", hp.RealInterval(0., 10000.)):self.config["weight_decay"],
+                    hp.HParam("batchnorm", hp.Discrete([True, False])):self.config["batchnorm"],
                     }
                 for k in self.augment_config:
                     if isinstance(self.augment_config[k], float):
@@ -366,7 +373,7 @@ class DetConTrainer(GenericExtractor):
                 hparams=None
 
             self._linear_classification_test(hparams,
-                        metrics=metrics, avpool=avpool)
+                        metrics=metrics, avpool=avpool, query_fig=query_fig)
         
 # -*- coding: utf-8 -*-
 
