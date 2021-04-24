@@ -11,6 +11,14 @@ from patchwork.feature._simclr import _build_embedding_model
 
 
 def _build_negative_indices(batch_size):
+    """
+    compute indices of negative sampled from matrix of pairwise dot products
+    of embeddings. use with tf.gather_nd()
+    
+    DEPRECATED: because the number of operations scales with batch size,
+    tracing functions that use this take forever on large batches. use
+    _build_negative_mask instead.
+    """
     indices = []
     for i in range(2*batch_size):
         row = []
@@ -22,6 +30,14 @@ def _build_negative_indices(batch_size):
     return indices
 
 def _build_negative_mask(batch_size):
+    """
+    If we take the matrix of pairwise dot products of all the embeddings, it
+    will include positive comparisons along the diagonal (and half-diagonals
+    if the batch is symmetrized). 
+    
+    This function builds a (2*batch_size, 2*batch_size) matrix that masks out
+    the positive cases.
+    """
     mask = np.ones((2*batch_size, 2*batch_size), dtype=np.float32)
     for i in range(2*batch_size):
         for j in range(2*batch_size):
@@ -52,16 +68,7 @@ def _simclr_softmax_prob(z1, z2, temp, mask):
     # negative samples- first find all pairwise combinations
     # shape (2gbs, 2gbs)
     s = tf.matmul(z, z, transpose_b=True)
-    # then remove the comparisons between corresponding pairs
-    # shape (2gbs, 2gbs-2)
-    #gbs = z1.shape[0]
-    #neg_indices = _build_negative_indices(gbs)
-    # not in paper pseudocode or equation, but actual code includes
-    # temperature scaling in importance-sampled sum
-    #neg = tf.gather_nd(s, neg_indices)/temp
     # convert negatives to logits
-    # shape (gbs, gbs-2)
-    #neg_exp = tf.exp(neg)
     neg_exp = mask*tf.exp(s/temp)     
        
     # COMPUTE BATCH ACCURACY ()
@@ -97,16 +104,7 @@ def _hcl_softmax_prob(z1, z2, temp, beta, tau_plus, mask):
     # negative samples- first find all pairwise combinations
     # shape (2gbs, 2gbs)
     s = tf.matmul(z, z, transpose_b=True)
-    # then remove the comparisons between corresponding pairs
-    # shape (2gbs, 2gbs-2)
-    #gbs = z1.shape[0]
-    #neg_indices = _build_negative_indices(gbs)
-    # not in paper pseudocode or equation, but actual code includes
-    # temperature scaling in importance-sampled sum
-    #neg = tf.gather_nd(s, neg_indices)/temp
     # convert negatives to logits
-    # shape (gbs, gbs-2)
-    #neg_exp = tf.exp(neg)
     neg_exp = mask*tf.exp(s/temp)     
        
     # COMPUTE BATCH ACCURACY ()
@@ -114,12 +112,10 @@ def _hcl_softmax_prob(z1, z2, temp, beta, tau_plus, mask):
     nce_batch_acc = tf.reduce_mean(tf.cast(pos_exp > biggest_neg, tf.float32))
 
     # importance sampling weights: shape (gbs, gbs-2)
-    #imp = tf.exp(beta*neg)
     imp = mask*tf.exp(beta*s/temp)
     # partition function: shape (gbs,)
     Z = tf.reduce_mean(imp, -1)
     # reweighted negative logits using importance sampling: shape (gbs,)
-    #reweight_neg = tf.reduce_sum(imp*tf.exp(neg),-1)/Z
     reweight_neg = tf.reduce_sum(imp*tf.exp(s/temp),-1)/Z
     #
     Ng = (reweight_neg - tau_plus*N*pos_exp)/(1-tau_plus)
@@ -153,7 +149,6 @@ def _build_trainstep(model, optimizer, strategy, temp=1, tau_plus=0, beta=0, wei
             # get replica context- we'll use this to aggregate embeddings
             # across different GPUs
             context = tf.distribute.get_replica_context()
-            #print("x,y:", x.shape, y.shape)
             # run images through model and normalize embeddings
             z1 = tf.nn.l2_normalize(model(x, training=True), 1)
             z2 = tf.nn.l2_normalize(model(y, training=True), 1)
