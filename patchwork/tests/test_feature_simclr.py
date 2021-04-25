@@ -95,7 +95,7 @@ def test_build_embedding_model():
     model = _build_embedding_model(fcn, (32,32), 3, 17, 11)
     assert isinstance(model, tf.keras.Model)
     assert model.output_shape[-1] == 11
-    assert len(model.layers) == 8
+    assert len(model.layers) == 7 # was 8 before taking out extra batchnorm
     
     
 def test_build_simclr_training_step():

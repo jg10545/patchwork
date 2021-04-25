@@ -59,6 +59,8 @@ def _jitter(x, strength=1., **kwargs):
                                        tf.maximum(1.0-delta, 0),
                                        1.0+delta)
             return img*factor
+            #print("USING ADDITIVE RANDOM_BRIGHTNESS")
+            #return tf.image.random_brightness(x, delta)
         elif i == 1:
             delta = 0.8*strength
             return tf.image.random_contrast(img, 1-delta, 1+delta)
@@ -176,7 +178,10 @@ def _random_zoom(x, scale=0.1, imshape=(256,256), **kwargs):
 
 def _center_crop(x, scale=0.1, imshape=(256,256), **kwargs):
     z = tf.random.uniform(np.array([1]), scale, 1)
-    box = (1-z)*tf.random.uniform(np.array([1,4]), 0, 0.5) * np.array([[1,1,-1,-1]], dtype=np.float32) 
+    edges = tf.random.uniform(np.array([1,4]), 0.25, 0.5)
+    edges /= tf.reduce_mean(edges)
+    #box = (1-z**2)*tf.random.uniform(np.array([1,4]), 0, 0.5) * np.array([[1,1,-1,-1]], dtype=np.float32) 
+    box = (1-z)*edges * np.array([[1,1,-1,-1]], dtype=np.float32) 
     box += np.array([0,0,1,1], dtype=np.float32)
     ind = np.array([0], dtype=np.int32)
     return tf.image.crop_and_resize(tf.expand_dims(x, 0), box, ind, imshape)[0]
@@ -243,6 +248,7 @@ def _gaussian_blur(x, prob=0.25, imshape=(256,256), **kwargs):
         
 
 def _random_brightness(x, brightness_delta=0.2, **kwargs):
+    #print("USING ADDITIVE RANDOM_BRIGHTNESS")
     #return tf.image.random_brightness(x, brightness_delta)
     factor = tf.random.uniform([], tf.maximum(1.0-brightness_delta, 0),
                                        1.0+brightness_delta)

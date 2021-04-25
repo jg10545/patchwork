@@ -10,6 +10,7 @@ The `patchwork.feature` module has several models implemented for unsupervised o
   * option to modify noise-contrastive loss function using margin term from [EqCo](https://arxiv.org/abs/2010.01929)
   * option to generate synthetic hard examples on-the-fly using [MoCHi](https://arxiv.org/abs/2010.01028)
 * [HCL](https://arxiv.org/abs/2010.04592) (along with multi-GPU implementation)
+* [DetCon](https://arxiv.org/abs/2103.10957) (multi-GPU implementation)
 
 The module has a class to manage the training of each model. The trainers are meant to be as similar as possible, to make it easy to throw different self-supervision approches at your problem and see how they compare. Here's what they have in common:
 
@@ -28,16 +29,24 @@ The module has a class to manage the training of each model. The trainers are me
 * If you have a small number of labels for a downstream task, the trainer will automate the linear downstream task test that self-supervision papers use for comparison:
   * Input labels as a dictionary mapping filepaths to labels
   * At the end of each epoch (or whenever `trainer.evaluate()` is called), `patchwork` will do a train/test split on your labels (the split is deterministic to make sure it's consistent across runs), compute features using flattened outputs of the FCN, and train a linear support vector classifier on the features. The test accuracy and confusion matrix are recorded for TensorBoard.
-* If you can't get any labels together, call `trainer.rotation_classification_test()` to apply the proxy method from Reed *et al*'s [Evaluating Self-Supervised Pretraining Without Using Labels](Evaluating Self-Supervised Pretraining Without Using Labels).
+* If you can't get any labels together, call `trainer.rotation_classification_test()` to apply the proxy method from Reed *et al*'s [Evaluating Self-Supervised Pretraining Without Using Labels](https://arxiv.org/abs/2009.07724).
   
 ### Interpreting
 
 * All hyperparameters are automatically logged to the [TensorBoard HPARAMS](https://www.tensorflow.org/tensorboard/hyperparameter_tuning_with_hparams) interface, so you can visualize how they correlate with the downstream task accuracy, rotation task accuracy, alignment, or uniformity.
 * The `trainer.save_projections()` method will record embeddings, as well as image sprites and metadata for the [TensorBoard projector](https://www.tensorflow.org/tensorboard/tensorboard_projector_plugin). I've sometimes found this to be a helpful diagnostic tool when I'm *really* stuck.
 * The `trainer.visualize_kernels()` method will record to TensorBoard an image of the kernels from the first convolutional layer in your network. If those kernels don't include a few that look like generic edge detectors, something has probably gone horribly wrong (e.g. you're learning a shortcut somewhere). Example of a bad case below.
+* If you're using a dictionary of labeled examples, you can also set the `query_fig` kwarg to `trainer.fit()` or `trainer.evaluate()` and it will record a TensorBoard image that shows one image from each class, as well as the images with most (cosine) similar embeddings. I've occasionally found this kind of visualization useful for diagnosing shortcuts that the model is learning. 
+
+#### Hyperparameter visualization
 
 ![](hparams.png)
+
+#### Projector embeddings
 ![](projector.png)
+
+#### Filters from first convolutional layer
+
 ![](first_convolution_filters.png)
 
 ### Documenting
@@ -47,6 +56,15 @@ The module has a class to manage the training of each model. The trainers are me
 * Pass a string containing any contextual information about the experiment to the `notes` kwarg; it will be added to the YAML file (and recorded for MLflow)
   
 ![](mlflow_tracking.png)
+
+#### A word on batch normalization
+
+There's a running theme in contrastive learning literature of results depending critically on how batch normalization is used in the projection head (such as MoCo requiring batchnorm shuffling across GPUs, or BYOL collapsing when batchnorm is removed). In my (limited) test cases it seems like batchnorm in the projection head can sometimes cause problems, particularly in situations where you're hardware-limited to smaller batch sizes.
+
+For this reason- there's a Boolean `batchnorm` kwarg in several of the trainers that you can use to disable batch normalization in the hidden layer of the projection head. I'd recommend trying this out if you find yourself in either of these situations:
+
+* The contrastive training loss plateaus early on in training
+* The loss is decreasing but the downstream accuracy never goes above the base rate
 
 
 
@@ -368,7 +386,7 @@ The `HCLTrainer` always wraps the pieces in a `tf.distribute.Strategy` object, u
 
 Everything else should work the same. The batch size specified is the **global** batch size. I've only tested with the `MirroredStrategy()` and `OneDeviceStrategy()` so far. 
 
-During training, after embeddings are computed on each GPU's subset of the batch, those embeddings are gathered so that each GPU's subset can contrast with negative samples from the others. This uses `ReplicaContex.all_gather()` which requires TensorFlow 2.4.
+During training, after embeddings are computed on each GPU's subset of the batch, those embeddings are gathered so that each GPU's subset can contrast with negative samples from the others. This uses `ReplicaContext.all_gather()` which requires TensorFlow 2.4.
 
 ```
 # same basic setup as before, but....
@@ -381,7 +399,7 @@ assert strat.num_replicas_in_sync == number_of_gpus_i_was_expecting
 with strat.scope():
     # initialize a new model
     fcn = tf.keras.applications.ResNet50(weights=None, include_top=False)
-    # and/or transfer learn from your last one
+    # or transfer learn from your last one or pretrained weights
     fcn.load_weights("my_previous_model.h5")
 
 
@@ -414,3 +432,98 @@ trainer = pw.feature.HCLTrainer(
 trainer.fit(10)
 ```
     
+    
+    
+
+   
+## DetCon
+
+**This trainer requires TensorFlow >= 2.4**
+
+[Efficient Visual Pretraining with Contrastive Detection](https://arxiv.org/abs/2103.10957) is another modification to SimCLR (or BYOL)- this time, breaking up each image using a heuristic segmentation so that features can be contrasted within images in addition to between them. My implementation of DetCon_S works just like the HCLTrainer, but with two additional hyperparameters:
+
+* `mean_scale` sets the average scale and minimum size for the Felzenszwalb segmentation algorithm. To add some randomness to the segmentation, the value used is uniformly sampled between half this scale and 1.5x this scale. Setting `mean_scale=0` will use a square grid instead (like the "spatial heuristic" in figure 3 of the DetCon paper). This is cheaper to compute but probably not as effective.
+* `num_samples` sets the number of segments to sample per image- so the effective batch size for SimCLR loss will be `num_samples x batch_size`. The sampling is biased toward larger segments. If using `mean_scale=0`, this should be a square number (e.g. `mean_scale=9` would be a 3x3 grid).
+
+### Some practical issues with dynamically generating segments
+
+When contrasting segment-weighted feature vectors, there are a couple cases we need to handle:
+
+* The Felzenszwalb segmentation might find fewer segments than `num_samples`. In this case my code will switch to sampling segments with replacement.
+* The coupled image/segmentation augmentation step might completely remove one segment from the image (say, by cropping it out). Positive comparisons involving segments that have been augmented out of the image view are masked out of the loss function.
+
+Finding the best hyperparameters will mean tuning `mean_scale` and `num_samples` *as well as* the augmentation parameters (specifically `zoom_scale` and `shear`) together to find some balance between getting the right segments, having strong enough augmentation, and not wasting too much computation. To help, I've added an input pipeline tool at `pw.viz.detcon_input_pipeline()` that will run your configuration on a set of images and report how often it had to sample with replacement, how many examples it had to discard, and visualize 5 pairs of augmented images with their respective segmentation masks.
+
+```
+trainfiles = [imdir+x for x in os.listdir(imdir)]
+
+aug = {'flip_left_right': True,
+ 'flip_up_down': True,
+ 'rot90': True,
+ 'zoom_scale': 0.4,
+ 'jitter': 1.0,
+ 'shear': 0.3}
+ 
+pw.viz.detcon_input_pipeline(trainfiles[:200], aug, mean_scale=200, 
+                                num_samples=10, imshape=(256,256)) 
+```
+![](detcon_input_pipeline.png)
+
+
+### Differences between the paper and `patchwork`
+
+I've included the HCL hyperparameters as well. As of the time I'm writing this DeepMind hasn't released their code yet, so there may be other differences if I've misinterpreted anything from their paper.
+
+### Example code
+
+
+```{python}
+import tensorflow as tf
+import patchwork as pw
+
+# load paths to train files
+trainfiles = [x.strip() for x in open("mytrainfiles.txt").readlines()]
+labeldict = json.load(open("dictionary_mapping_some_images_to_labels.json"))
+
+strat = tf.distribute.MirroredStrategy()
+with strat.scope():
+    # initialize a new model
+    fcn = tf.keras.applications.ResNet50(weights=None, include_top=False)
+    # or transfer learn from your last one or pretrained weights
+    fcn.load_weights("my_previous_model.h5")
+
+# initialize a feature extractor
+fcn = tf.keras.applications.ResNet50(weights=None, include_top=False)
+
+# choose augmentation parameters
+aug_params = {'jitter':1,
+             'gaussian_blur': 0.25,
+             'flip_left_right': True,
+             'zoom_scale': 0.1,}
+             
+# pick a place to save models and tensorboard logs
+log_dir = "/path/to/my/log_dir/"
+
+# train
+trainer = pw.feature.DetConTrainer(
+        log_dir,
+        trainfiles,
+        testdata=testfiles,
+        fcn=fcn,
+        num_parallel_calls=6,
+        augment=aug_params,
+        lr=1e-3,
+        weight_decay=1e-6,
+        num_hidden=128,
+        output_dim=64,
+        temperature=0.1,
+        mean_scale=200,
+        num_samples=5,
+        batch_size=128, 
+        imshape=(128,128),
+        downstream_labels=labeldict,
+        strategy=strat
+    )
+
+trainer.fit(10)
+```
