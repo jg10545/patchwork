@@ -29,7 +29,7 @@ The module has a class to manage the training of each model. The trainers are me
 * If you have a small number of labels for a downstream task, the trainer will automate the linear downstream task test that self-supervision papers use for comparison:
   * Input labels as a dictionary mapping filepaths to labels
   * At the end of each epoch (or whenever `trainer.evaluate()` is called), `patchwork` will do a train/test split on your labels (the split is deterministic to make sure it's consistent across runs), compute features using flattened outputs of the FCN, and train a linear support vector classifier on the features. The test accuracy and confusion matrix are recorded for TensorBoard.
-* If you can't get any labels together, call `trainer.rotation_classification_test()` to apply the proxy method from Reed *et al*'s [Evaluating Self-Supervised Pretraining Without Using Labels](Evaluating Self-Supervised Pretraining Without Using Labels).
+* If you can't get any labels together, call `trainer.rotation_classification_test()` to apply the proxy method from Reed *et al*'s [Evaluating Self-Supervised Pretraining Without Using Labels](https://arxiv.org/abs/2009.07724).
   
 ### Interpreting
 
