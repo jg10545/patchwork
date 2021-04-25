@@ -82,7 +82,7 @@ def _build_simclr_dataset(imfiles, imshape=(256,256), batch_size=256,
     return ds
 
 
-def _build_embedding_model(fcn, imshape, num_channels, num_hidden, output_dim):
+def _build_embedding_model(fcn, imshape, num_channels, num_hidden, output_dim, batchnorm=True):
     """
     Create a Keras model that wraps the base encoder and 
     the projection head
@@ -102,10 +102,10 @@ def _build_embedding_model(fcn, imshape, num_channels, num_hidden, output_dim):
     net = fcn(inpt)
     net = tf.keras.layers.Flatten()(net)
     net = tf.keras.layers.Dense(num_hidden)(net)
-    net = tf.keras.layers.BatchNormalization()(net)
+    if batchnorm:
+        net = tf.keras.layers.BatchNormalization()(net)
     net = tf.keras.layers.Activation("relu")(net)
     net = tf.keras.layers.Dense(output_dim, use_bias=False)(net)
-    #net = tf.keras.layers.BatchNormalization()(net)
     embedding_model = tf.keras.Model(inpt, net)
     return embedding_model
 
@@ -239,7 +239,7 @@ class SimCLRTrainer(GenericExtractor):
 
     def __init__(self, logdir, trainingdata, testdata=None, fcn=None, 
                  augment=True, temperature=1., num_hidden=128,
-                 output_dim=64, weight_decay=0,
+                 output_dim=64, batchnorm=True, weight_decay=0,
                  lr=0.01, lr_decay=100000, decay_type="exponential",
                  opt_type="adam",
                  imshape=(256,256), num_channels=3,
@@ -255,6 +255,7 @@ class SimCLRTrainer(GenericExtractor):
         :temperature: the Boltzmann temperature parameter- rescale the cosine similarities by this factor before computing softmax loss.
         :num_hidden: number of hidden neurons in the network's projection head
         :output_dim: dimension of projection head's output space. Figure 8 in Chen et al's paper shows that their results did not depend strongly on this value.
+        :batchnorm: whether to include batch normalization in the projection head.
         :weight_decay: coefficient for L2-norm loss. The original SimCLR paper used 1e-6.
         :lr: (float) initial learning rate
         :lr_decay:  (int) number of steps for one decay period (0 to disable)
@@ -293,7 +294,7 @@ class SimCLRTrainer(GenericExtractor):
             # Create a Keras model that wraps the base encoder and 
             # the projection head
             embed_model = _build_embedding_model(fcn, imshape, num_channels,
-                                             num_hidden, output_dim)
+                                             num_hidden, output_dim, batchnorm)
         
         self._models = {"fcn":fcn, 
                         "full":embed_model}
@@ -351,7 +352,7 @@ class SimCLRTrainer(GenericExtractor):
         # parse and write out config YAML
         self._parse_configs(augment=augment, temperature=temperature,
                             num_hidden=num_hidden, output_dim=output_dim,
-                            weight_decay=weight_decay,
+                            weight_decay=weight_decay, batchnorm=batchnorm,
                             lr=lr, lr_decay=lr_decay, 
                             imshape=imshape, num_channels=num_channels,
                             norm=norm, batch_size=batch_size,
@@ -370,7 +371,7 @@ class SimCLRTrainer(GenericExtractor):
             self._record_scalars(learning_rate=self._get_current_learning_rate())
             self.step += 1
              
-    def evaluate(self, avpool=True):
+    def evaluate(self, avpool=True, query_fig=False):
         
         if self._test:
             # if the user passed out-of-sample data to test- compute
@@ -397,7 +398,8 @@ class SimCLRTrainer(GenericExtractor):
                     hp.HParam("lr", hp.RealInterval(0., 10000.)):self.config["lr"],
                     hp.HParam("lr_decay", hp.RealInterval(0., 10000.)):self.config["lr_decay"],
                     hp.HParam("decay_type", hp.Discrete(["cosine", "exponential"])):self.config["decay_type"],
-                    hp.HParam("weight_decay", hp.RealInterval(0., 10000.)):self.config["weight_decay"]
+                    hp.HParam("weight_decay", hp.RealInterval(0., 10000.)):self.config["weight_decay"],
+                    hp.HParam("batchnorm", hp.Discrete([True, False])):self.config["batchnorm"],
                     }
                 for k in self.augment_config:
                     if isinstance(self.augment_config[k], float):
@@ -406,5 +408,6 @@ class SimCLRTrainer(GenericExtractor):
                 hparams=None
 
             self._linear_classification_test(hparams,
-                        metrics=metrics, avpool=avpool)
+                        metrics=metrics, avpool=avpool,
+                        query_fig=query_fig)
         

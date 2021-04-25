@@ -7,7 +7,7 @@ from patchwork._augment import augment_function
 from patchwork.loaders import _image_file_dataset
 from patchwork._util import compute_l2_loss, _compute_alignment_and_uniformity
 
-
+from patchwork.loaders import _generate_imtypes, _build_load_function
 
 def copy_model(mod):
     """
@@ -58,16 +58,29 @@ def _build_augment_pair_dataset(imfiles, imshape=(256,256), batch_size=256,
     """
     assert augment, "don't you need to augment your data?"
     _aug = augment_function(imshape, augment)
+    # CASE 1: User passes a custom tensorflow Dataset
+    # define an pair augment function 
+    if isinstance(imfiles, tf.data.Dataset):
+        ds = imfiles
+        def _loader(x):
+            return _aug(x), _aug(x)
+        
+    # CASE 2: User passes a list of filepaths. Turn the list into a Dataset,
+    # shuffle, and define a function that both loads and augments each image
+    else:
+        imtypes = _generate_imtypes(imfiles)
+        ds = tf.data.Dataset.from_tensor_slices((imfiles, imtypes))
+        ds = ds.shuffle(len(imfiles))
     
-    ds = _image_file_dataset(imfiles, imshape=imshape, 
-                             num_parallel_calls=num_parallel_calls,
-                             norm=norm, num_channels=num_channels,
-                             shuffle=True, single_channel=single_channel)  
+        _load_img = _build_load_function(imshape, norm, num_channels, 
+                                         single_channel)
+        def _loader(x,t):
+            img = _load_img(x,t)
+            return _aug(img), _aug(img)
+    # map load/augment function across dataset
+    ds = ds.map(_loader, num_parallel_calls=num_parallel_calls, 
+                deterministic=False)
     
-    def _augment_pair(x):
-        return _aug(x), _aug(x)
-
-    ds = ds.map(_augment_pair, num_parallel_calls=num_parallel_calls)
     ds = ds.batch(batch_size, drop_remainder=True)
     ds = ds.prefetch(1)
     return ds
@@ -386,7 +399,7 @@ class MomentumContrastTrainer(GenericExtractor):
             self.step += 1
             
  
-    def evaluate(self, avpool=True):
+    def evaluate(self, avpool=True, query_fig=False):
         if self._test:
             # if the user passed out-of-sample data to test- compute
             # alignment and uniformity measures
@@ -421,7 +434,8 @@ class MomentumContrastTrainer(GenericExtractor):
                         hparams[hp.HParam(k, hp.RealInterval(0., 10000.))] = self.augment_config[k]
             else:
                 hparams=None
-            self._linear_classification_test(hparams, metrics=metrics, avpool=avpool)
+            self._linear_classification_test(hparams, metrics=metrics, avpool=avpool,
+                                             query_fig=query_fig)
         
         
     def load_weights(self, logdir):
