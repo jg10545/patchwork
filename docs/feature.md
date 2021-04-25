@@ -36,9 +36,17 @@ The module has a class to manage the training of each model. The trainers are me
 * All hyperparameters are automatically logged to the [TensorBoard HPARAMS](https://www.tensorflow.org/tensorboard/hyperparameter_tuning_with_hparams) interface, so you can visualize how they correlate with the downstream task accuracy, rotation task accuracy, alignment, or uniformity.
 * The `trainer.save_projections()` method will record embeddings, as well as image sprites and metadata for the [TensorBoard projector](https://www.tensorflow.org/tensorboard/tensorboard_projector_plugin). I've sometimes found this to be a helpful diagnostic tool when I'm *really* stuck.
 * The `trainer.visualize_kernels()` method will record to TensorBoard an image of the kernels from the first convolutional layer in your network. If those kernels don't include a few that look like generic edge detectors, something has probably gone horribly wrong (e.g. you're learning a shortcut somewhere). Example of a bad case below.
+* If you're using a dictionary of labeled examples, you can also set the `query_fig` kwarg to `trainer.fit()` or `trainer.evaluate()` and it will record a TensorBoard image that shows one image from each class, as well as the images with most (cosine) similar embeddings. I've occasionally found this kind of visualization useful for diagnosing shortcuts that the model is learning. 
+
+#### Hyperparameter visualization
 
 ![](hparams.png)
+
+#### Projector embeddings
 ![](projector.png)
+
+#### Filters from first convolutional layer
+
 ![](first_convolution_filters.png)
 
 ### Documenting
@@ -48,6 +56,15 @@ The module has a class to manage the training of each model. The trainers are me
 * Pass a string containing any contextual information about the experiment to the `notes` kwarg; it will be added to the YAML file (and recorded for MLflow)
   
 ![](mlflow_tracking.png)
+
+#### A word on batch normalization
+
+There's a running theme in contrastive learning literature of results depending critically on how batch normalization is used in the projection head (such as MoCo requiring batchnorm shuffling across GPUs, or BYOL collapsing when batchnorm is removed). In my (limited) test cases it seems like batchnorm in the projection head can sometimes cause problems, particularly in situations where you're hardware-limited to smaller batch sizes.
+
+For this reason- there's a Boolean `batchnorm` kwarg in several of the trainers that you can use to disable batch normalization in the hidden layer of the projection head. I'd recommend trying this out if you find yourself in either of these situations:
+
+* The contrastive training loss plateaus early on in training
+* The loss is decreasing but the downstream accuracy never goes above the base rate
 
 
 
@@ -369,7 +386,7 @@ The `HCLTrainer` always wraps the pieces in a `tf.distribute.Strategy` object, u
 
 Everything else should work the same. The batch size specified is the **global** batch size. I've only tested with the `MirroredStrategy()` and `OneDeviceStrategy()` so far. 
 
-During training, after embeddings are computed on each GPU's subset of the batch, those embeddings are gathered so that each GPU's subset can contrast with negative samples from the others. This uses `ReplicaContex.all_gather()` which requires TensorFlow 2.4.
+During training, after embeddings are computed on each GPU's subset of the batch, those embeddings are gathered so that each GPU's subset can contrast with negative samples from the others. This uses `ReplicaContext.all_gather()` which requires TensorFlow 2.4.
 
 ```
 # same basic setup as before, but....
@@ -382,7 +399,7 @@ assert strat.num_replicas_in_sync == number_of_gpus_i_was_expecting
 with strat.scope():
     # initialize a new model
     fcn = tf.keras.applications.ResNet50(weights=None, include_top=False)
-    # and/or transfer learn from your last one
+    # or transfer learn from your last one or pretrained weights
     fcn.load_weights("my_previous_model.h5")
 
 
@@ -468,6 +485,13 @@ import patchwork as pw
 trainfiles = [x.strip() for x in open("mytrainfiles.txt").readlines()]
 labeldict = json.load(open("dictionary_mapping_some_images_to_labels.json"))
 
+strat = tf.distribute.MirroredStrategy()
+with strat.scope():
+    # initialize a new model
+    fcn = tf.keras.applications.ResNet50(weights=None, include_top=False)
+    # or transfer learn from your last one or pretrained weights
+    fcn.load_weights("my_previous_model.h5")
+
 # initialize a feature extractor
 fcn = tf.keras.applications.ResNet50(weights=None, include_top=False)
 
@@ -497,7 +521,8 @@ trainer = pw.feature.DetConTrainer(
         num_samples=5,
         batch_size=128, 
         imshape=(128,128),
-        downstream_labels=labeldict
+        downstream_labels=labeldict,
+        strategy=strat
     )
 
 trainer.fit(10)
