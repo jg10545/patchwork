@@ -162,7 +162,7 @@ def _build_trainstep(fcn, projector, optimizer, strategy, temp=1, tau_plus=0, be
             
         grad = tape.gradient(loss, trainvars)
         optimizer.apply_gradients(zip(grad, trainvars))
-        return {"total_loss":loss, "softmax_loss":softmax_loss, 
+        return {"loss":loss, "nt_xent_loss":softmax_loss, 
                 "l2_loss":l2_loss,
                "nce_batch_accuracy":nce_batch_acc}
         
