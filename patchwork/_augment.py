@@ -178,7 +178,7 @@ def _random_zoom(x, scale=0.1, imshape=(256,256), **kwargs):
 
 def _center_crop(x, scale=0.1, imshape=(256,256), **kwargs):
     z = tf.random.uniform(np.array([1]), scale, 1)
-    edges = tf.random.uniform(np.array([1,4]), 0.25, 0.5)
+    edges = tf.random.uniform(np.array([1,4]), 0.25, 1.)
     edges /= tf.reduce_mean(edges)
     #box = (1-z**2)*tf.random.uniform(np.array([1,4]), 0, 0.5) * np.array([[1,1,-1,-1]], dtype=np.float32) 
     box = (1-z)*edges * np.array([[1,1,-1,-1]], dtype=np.float32) 

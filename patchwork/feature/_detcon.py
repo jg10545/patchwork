@@ -138,15 +138,15 @@ def _build_trainstep(fcn, projector, optimizer, strategy, temp=1, tau_plus=0, be
             
             with tape.stop_recording():
                 gbs = z1.shape[0]
-                mask = _build_negative_mask(gbs)
+                negmask = _build_negative_mask(gbs)
             
             # SimCLR loss case
             if (tau_plus == 0)&(beta == 0):
-                softmax_prob, nce_batch_acc = _simclr_softmax_prob(z1, z2, temp, mask)
+                softmax_prob, nce_batch_acc = _simclr_softmax_prob(z1, z2, temp, negmask)
             # HCL loss case
             elif (tau_plus > 0)&(beta > 0):
                 softmax_prob, nce_batch_acc = _hcl_softmax_prob(z1, z2, temp, 
-                                                                beta, tau_plus, mask)
+                                                                beta, tau_plus, negmask)
             else:
                 assert False, "both tau_plus and beta must be nonzero to run HCL"
             
