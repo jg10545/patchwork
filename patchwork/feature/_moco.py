@@ -65,6 +65,9 @@ def _build_augment_pair_dataset(imfiles, imshape=(256,256), batch_size=256,
         def _loader(x):
             return _aug(x), _aug(x)
         
+        ds = ds.map(_loader, num_parallel_calls=num_parallel_calls, 
+                deterministic=False)
+        
     # CASE 2: User passes a list of filepaths. Turn the list into a Dataset,
     # shuffle, and define a function that both loads and augments each image
     else:
@@ -74,12 +77,21 @@ def _build_augment_pair_dataset(imfiles, imshape=(256,256), batch_size=256,
     
         _load_img = _build_load_function(imshape, norm, num_channels, 
                                          single_channel)
+        # modify to return a tensorflow dataset
         def _loader(x,t):
             img = _load_img(x,t)
-            return _aug(img), _aug(img)
+            #return _aug(img), _aug(img)
+            augmented = ( _aug(img), _aug(img))
+            return tf.data.Dataset.from_tensors(augmented)
+        
+        ds = ds.interleave(_loader, cycle_length=num_parallel_calls,
+                       num_parallel_calls=num_parallel_calls,
+                       deterministic=False)
+    
+            
     # map load/augment function across dataset
-    ds = ds.map(_loader, num_parallel_calls=num_parallel_calls, 
-                deterministic=False)
+    #ds = ds.map(_loader, num_parallel_calls=num_parallel_calls, 
+    #            deterministic=False)
     
     ds = ds.batch(batch_size, drop_remainder=True)
     ds = ds.prefetch(1)
