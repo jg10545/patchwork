@@ -12,6 +12,7 @@ from patchwork._quicktagger import QuickTagger
 from patchwork._fixmatch import FixMatchTrainer
 from patchwork._prep import prep_label_dataframe
 from patchwork._distill import distill
+from patchwork._tfrecord import save_dataset_to_tfrecords
 import patchwork.feature
 import patchwork.viz
 import patchwork.loaders
