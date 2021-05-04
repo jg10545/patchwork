@@ -131,7 +131,8 @@ def _image_file_dataset(fps, ys=None, imshape=(256,256),
     elif isinstance(fps, str):
         if augment:
             augment = augment_function(imshape, augment)
-        ds = load_dataset_from_tfrecords(fps, num_parallel_calls=num_parallel_calls,
+        ds = load_dataset_from_tfrecords(fps, imshape, num_channels,
+                                         num_parallel_calls=num_parallel_calls,
                                          map_fn=augment)
     # SINGLE-INPUT CASE: list of filepaths (probably what almost always will get used)
     elif isinstance(fps[0], str):
@@ -457,7 +458,8 @@ def _fixmatch_unlab_dataset(fps, weak_aug, str_aug, imshape=(256,256),
 
     
     
-def load_dataset_from_tfrecords(record_dir, shuffle=2048, num_parallel_calls=None,
+def load_dataset_from_tfrecords(record_dir, imshape, num_channels,
+                                shuffle=2048, num_parallel_calls=None,
                                 map_fn=False):
     """
     Load a directory structure of tfrecord files (like you'd build with save_to_tfrecords) 
@@ -466,6 +468,8 @@ def load_dataset_from_tfrecords(record_dir, shuffle=2048, num_parallel_calls=Non
     Assumes tfrecord files are saved with .tfrecord or .snapshot.
     
     :record_dir: top-level directory containing record files
+    :imshape: (H,W) dimensions of image
+    :num_channels: number of channels
     :shuffle: if not False, size of shuffle queue
     :num_parallel_calls: number of parallel readers/mappers for loading and parsing
         the dataset
@@ -480,6 +484,7 @@ def load_dataset_from_tfrecords(record_dir, shuffle=2048, num_parallel_calls=Non
                                 num_parallel_reads=num_parallel_calls)
     def _parse(x):
         x = tf.io.parse_tensor(x, tf.float32)
+        x.set_shape((imshape[0], imshape[1], num_channels))
         if map_fn:
             x = map_fn(x)
         return x

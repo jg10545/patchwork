@@ -15,7 +15,7 @@ def test_save_and_load_tfrecord(test_png_path, tmp_path_factory):
                               imshape=(32,32), num_channels=3,
                               norm=255)
     
-    ds = load_dataset_from_tfrecords(fn)
+    ds = load_dataset_from_tfrecords(fn, (32,32), 3)
     for x in ds:
         break
     

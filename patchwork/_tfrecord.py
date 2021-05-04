@@ -19,7 +19,7 @@ def save_dataset_to_tfrecords(imfiles, outdir, num_shards=10, imshape=(256,256),
     """
     if not isinstance(imfiles, tf.data.Dataset):
         imfiles = _image_file_dataset(imfiles, imshape=imshape, norm=norm, 
-                                      num_channels=num_channels,
+                                      num_channels=num_channels, shuffle=True,
                                       num_parallel_calls=num_parallel_calls).prefetch(num_parallel_calls)
         
     def _shardfunc(x):
