@@ -4,7 +4,7 @@ import tensorflow as tf
 
 from patchwork.feature._generic import GenericExtractor
 from patchwork._augment import augment_function
-from patchwork.loaders import _image_file_dataset
+from patchwork.loaders import load_dataset_from_tfrecords
 from patchwork._util import compute_l2_loss, _compute_alignment_and_uniformity
 
 from patchwork.loaders import _generate_imtypes, _build_load_function
@@ -65,7 +65,16 @@ def _build_augment_pair_dataset(imfiles, imshape=(256,256), batch_size=256,
         def _loader(x):
             return _aug(x), _aug(x)
         
-    # CASE 2: User passes a list of filepaths. Turn the list into a Dataset,
+        ds = ds.map(_loader, num_parallel_calls=num_parallel_calls)
+        
+    # CASE 2: User passes a string giving the path to a directory of
+    # tfrecord files. 
+    elif isinstance(imfiles, str):
+        def _loader(x):
+            return _aug(x), _aug(x)
+        ds = load_dataset_from_tfrecords(imfiles, num_parallel_calls=num_parallel_calls,
+                                         map_fn=_loader)
+    # CASE 3: User passes a list of filepaths. Turn the list into a Dataset,
     # shuffle, and define a function that both loads and augments each image
     else:
         imtypes = _generate_imtypes(imfiles)
@@ -74,12 +83,16 @@ def _build_augment_pair_dataset(imfiles, imshape=(256,256), batch_size=256,
     
         _load_img = _build_load_function(imshape, norm, num_channels, 
                                          single_channel)
+        # modify to return a tensorflow dataset
         def _loader(x,t):
             img = _load_img(x,t)
-            return _aug(img), _aug(img)
-    # map load/augment function across dataset
-    ds = ds.map(_loader, num_parallel_calls=num_parallel_calls, 
-                deterministic=False)
+            #return _aug(img), _aug(img)
+            augmented = ( _aug(img), _aug(img))
+            return tf.data.Dataset.from_tensors(augmented)
+        
+        ds = ds.interleave(_loader, cycle_length=num_parallel_calls,
+                       num_parallel_calls=num_parallel_calls,
+                       deterministic=False)
     
     ds = ds.batch(batch_size, drop_remainder=True)
     ds = ds.prefetch(1)

@@ -11,6 +11,8 @@ from patchwork._util import tiff_to_array
 from patchwork._augment import augment_function
 from patchwork._tasks import _rotate
 
+import os
+
 
 def _generate_imtypes(fps):
     """
@@ -125,7 +127,14 @@ def _image_file_dataset(fps, ys=None, imshape=(256,256),
         if augment:
             _aug = augment_function(imshape, augment)
             ds = ds.map(_aug, num_parallel_calls=num_parallel_calls)
-    # SINGLE-INPUT CASE (probably what almost always will get used)
+    # SINGLE-INPUT CASE: directory of tfrecord files
+    elif isinstance(fps, str):
+        if augment:
+            augment = augment_function(imshape, augment)
+        ds = load_dataset_from_tfrecords(fps, imshape, num_channels,
+                                         num_parallel_calls=num_parallel_calls,
+                                         map_fn=augment)
+    # SINGLE-INPUT CASE: list of filepaths (probably what almost always will get used)
     elif isinstance(fps[0], str):
         if ys is None:
             no_labels = True
@@ -445,4 +454,41 @@ def _fixmatch_unlab_dataset(fps, weak_aug, str_aug, imshape=(256,256),
     ds = ds.map(aug_pair, num_parallel_calls=num_parallel_calls)
     ds = ds.batch(batch_size)
     ds = ds.prefetch(1)
+    return ds
+
+    
+    
+def load_dataset_from_tfrecords(record_dir, imshape, num_channels,
+                                shuffle=2048, num_parallel_calls=None,
+                                map_fn=False):
+    """
+    Load a directory structure of tfrecord files (like you'd build with save_to_tfrecords) 
+    into a tensorflow dataset. Wrapper for tf.data.TFRecordDataset().
+    
+    Assumes tfrecord files are saved with .tfrecord or .snapshot.
+    
+    :record_dir: top-level directory containing record files
+    :imshape: (H,W) dimensions of image
+    :num_channels: number of channels
+    :shuffle: if not False, size of shuffle queue
+    :num_parallel_calls: number of parallel readers/mappers for loading and parsing
+        the dataset
+    :map_fn: function to map across dataset during loading (for example, for augmentation)
+    """
+    recordfiles = []
+    for dirpath, dirnames, filenames in os.walk(record_dir):
+        for f in filenames:
+            if f.lower().endswith("tfrecord") or f.lower().endswith("snapshot"):
+                recordfiles.append(os.path.join(dirpath,f))
+    ds = tf.data.TFRecordDataset(recordfiles, compression_type="GZIP",
+                                num_parallel_reads=num_parallel_calls)
+    def _parse(x):
+        x = tf.io.parse_tensor(x, tf.float32)
+        x.set_shape((imshape[0], imshape[1], num_channels))
+        if map_fn:
+            x = map_fn(x)
+        return x
+    ds = ds.map(_parse, num_parallel_calls=num_parallel_calls)
+    if shuffle:
+        ds = ds.shuffle(shuffle)
     return ds
