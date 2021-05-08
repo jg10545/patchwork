@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import tensorflow as tf
+import warnings
 from patchwork.loaders import _image_file_dataset
 
 
@@ -7,6 +8,9 @@ def save_dataset_to_tfrecords(imfiles, outdir, num_shards=10, imshape=(256,256),
                               norm=255, num_parallel_calls=None):
     """
     Save a dataset to tfrecord files. Wrapper for tf.data.experimental.save().
+    
+    NOTE: THIS DOES NOT HAVE ANY GUARDRAILS! If you pass a dataset, it will write
+    until that dataset stops returning data.
     
     :imfiles: list of paths to image files, or tensorflow dataset to spool to disk
     :outdir: top-level directory to save tfrecords to
@@ -21,6 +25,8 @@ def save_dataset_to_tfrecords(imfiles, outdir, num_shards=10, imshape=(256,256),
         imfiles = _image_file_dataset(imfiles, imshape=imshape, norm=norm, 
                                       num_channels=num_channels, shuffle=True,
                                       num_parallel_calls=num_parallel_calls).prefetch(num_parallel_calls)
+    else:
+        warnings.warn("Make sure your dataset does not return images forever, otherwise this function will definitely murder your hard drive.")
         
     def _shardfunc(x):
         return tf.random.uniform((), minval=0, maxval=num_shards, dtype=tf.int64)

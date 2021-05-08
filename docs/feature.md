@@ -17,6 +17,10 @@ The module has a class to manage the training of each model. The trainers are me
 ### Building
 
 * Each feature extractor training class shares common [input pipeline and augmentation parameters](input_aug.md).
+* Support for a several options for getting training data into the model:
+  * Default: provide a list of paths to image files
+  * Custom: provide a `tf.data.Dataset` object that yields single image tensors
+  * TFrecord: for higher performance, especially when training using large batch sizes, provide a path to a directory containing TFrecord files to load from. Use `patchwork.save_dataset_to_tfrecords()` to generate sharded TFrecords from a list of filepaths or a custom dataset.
 * Choose between `adam` and `momentum` optimizers, with no learning rate decay, or `exponential` (smooth exponential decay), `staircase` (LR cut in half every `lr_decay` steps), or `cosine` decay.
 * Call `trainer.load_weights()` to import weights of all the training components from a previous run
 * Each is initialized with a fully-convolutional `tf.keras.Model` object (some come with a default model)
