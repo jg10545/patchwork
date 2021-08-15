@@ -67,3 +67,38 @@ def build_text_encoder(vocab, project_to=512, num_layers=12, num_heads=12, key_d
     x = encoder(x)
     x = tfm(x)
     return tf.keras.Model(inpt, x)  
+
+
+
+def build_image_encoder(fcn, num_channels=3, output_dim=64):
+    """
+    NOT the full version used in OpenAI's paper- just a linear
+    projection head after the global average pool, instead of
+    a multi-head attention mechanism
+    """
+    inpt = tf.keras.layers.Input((None, None, 3))
+    x = fcn(inpt)
+    x = tf.keras.layers.GlobalAveragePooling2D()(x)
+    x = tf.keras.layers.Dense(output_dim)(x)
+    return tf.keras.Model(inpt, x)
+
+def compute_nce_loss(img_embed, text_embed, temp=0.07):
+    """
+    Symmetrized NCE loss for paired image/text embeddings
+    """
+    N = img_embed.shape[0]
+    img_norm = tf.nn.l2_normalize(img_embed, 1)
+    text_norm = tf.nn.l2_normalize(text_embed, 1)
+    # NOTE this is different from what's described in the paper- check 
+    # pseudocode in figure 3
+    logits1 = tf.matmul(img_norm, text_norm, transpose_b=True)/temp
+    labels1 = tf.range(N)
+    loss1 = tf.reduce_mean(
+        tf.losses.sparse_categorical_crossentropy(labels1, logits1, from_logits=True))
+    
+    logits2 = tf.matmul(text_norm, img_norm, transpose_b=True)/temp
+    labels2 = tf.range(N)
+    loss2 = tf.reduce_mean(
+        tf.losses.sparse_categorical_crossentropy(labels2, logits2, from_logits=True))
+    return 0.5*(loss1 + loss2)
+
