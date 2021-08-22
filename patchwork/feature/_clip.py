@@ -1,76 +1,54 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 import tensorflow as tf
-import sklearn.feature_extraction
+import logging
 
 from patchwork._util import compute_l2_loss
 from patchwork.feature._generic import GenericExtractor
-from patchwork.loaders import dataset
+from patchwork.feature._text_transformer import build_text_transformer
+from patchwork.loaders import _image_file_dataset
 
 
-def _add_1d_residual_attention_block(inpt, num_heads, key_dim, attention_axes=[1]):
-    """
-    Add a residual attention block to a Keras model. patterned after this:
-    
-    https://github.com/openai/CLIP/blob/fa56f2525191a013533338f137aab59ac36d8c26/clip/model.py#L167
-    """
-    d_model = inpt.shape[-1]
-    x = tf.keras.layers.LayerNormalization()(inpt)
-    x = tf.keras.layers.MultiHeadAttention(num_heads=num_heads, key_dim=key_dim,
-                                          attention_axes=attention_axes)(x,x)
-    x = tf.keras.layers.LayerNormalization()(x)
-    x = tf.keras.layers.Dense(4*d_model)(x)
-    x = tf.keras.layers.Activation(tf.nn.gelu)(x)
-    x = tf.keras.layers.Dense(d_model)(x)
-    return x
+try:
+    import sentencepiece as spm
+except:
+    logging.debug("unable to import sentencepiece- CLIPTrainer won't work.")
 
 
-def build_bagofwords_transformer(d, project_to=512, num_layers=12, num_heads=12, key_dim=None, final_projection=False):
-    """
-    Build a simple transformer for text encoded as a bag-of-words. Project to a lower dimension, then
-    add residual attention blocks and(optionally) a final linear projection/
-    """
-    if key_dim is None:
-        key_dim = project_to
-        
-    inpt = tf.keras.layers.Input((d,))
-    x = tf.keras.layers.Dense(project_to, activation="relu")(inpt)
-    for n in range(num_layers):
-        x = _add_1d_residual_attention_block(x, num_heads, key_dim)
-    if final_projection:
-        x = tf.keras.layers.Dense(final_projection)(x)
-    
-    return tf.keras.Model(inpt, x)
-
-
-def get_vocab(corpus, max_features=5000, min_df=1, max_df=1., **kwargs):
-    """
-    """
-    vec = sklearn.feature_extraction.text.CountVectorizer(max_features=max_features, min_df=min_df, 
-                                                          max_df=max_df, **kwargs)
-    vec.fit(corpus)
-    vocab = list(vec.vocabulary_.keys())
-    return vocab
-
-def multihot_encode(x, depth):
-    onehot = tf.one_hot(x, depth=depth)
-    return tf.reduce_sum(onehot, 1)
-
-
-def build_text_encoder(vocab, project_to=512, num_layers=12, num_heads=12, key_dim=None, final_projection=False):
+def clip_dataset(fps, labels, encoder, maxlen=76, imshape=(256,256), 
+                 num_channels=3, num_parallel_calls=None, norm=255, 
+                 batch_size=256, augment=False, shuffle=True,
+                 single_channel=False):
     """
     
     """
-    V = len(vocab)
-    vectorizer = tf.keras.layers.experimental.preprocessing.TextVectorization(vocabulary=vocab)
-    encoder = tf.keras.layers.Lambda(lambda x: multihot_encode(x, V))
-    tfm = build_bagofwords_transformer(V, project_to, num_layers, num_heads, key_dim, final_projection)
+    ds = pw.loaders._image_file_dataset(imfiles, ys=labels, imshape=imshape, 
+                                        augment=augment, shuffle=shuffle)
+
+    if augment:
+        aug_func = pw._augment.augment_function(imshape, {"rot90":True})
+
+
+    def _encode_text(y):
+        y = str(y)
+        y = encoder.encode(y, out_type=int, add_bos=True, add_eos=True)
+        N = len(y)
+        if N > maxlen:
+            y = y[:maxlen]
+        elif N < maxlen:
+            y += [0]*(maxlen-N)
+        return np.array(y)
+
+    def _augment_and_encode(x,y):
+        if augment:
+            x = aug_func(x)
+        y = tf.py_function(_encode_text, (y,), Tout=tf.int64)
+        return x,y
     
-    inpt = tf.keras.layers.Input((), dtype=tf.string)
-    x = vectorizer(inpt)
-    x = encoder(x)
-    x = tfm(x)
-    return tf.keras.Model(inpt, x)  
+    ds = ds.map(_augment_and_encode, num_parallel_calls=num_parallel_calls)
+    ds = ds.batch(batch_size)
+    ds = ds.prefetch(1)
+    return ds
 
 
 
@@ -86,7 +64,7 @@ def build_image_encoder(fcn, num_channels=3, output_dim=64):
     x = tf.keras.layers.Dense(output_dim)(x)
     return tf.keras.Model(inpt, x)
 
-def compute_nce_loss(img_embed, text_embed, temp=0.07):
+def compute_nce_loss(img_embed, text_embed, temp=0.07, return_acc=False):
     """
     Symmetrized NCE loss for paired image/text embeddings
     """
@@ -104,7 +82,13 @@ def compute_nce_loss(img_embed, text_embed, temp=0.07):
     labels2 = tf.range(N)
     loss2 = tf.reduce_mean(
         tf.losses.sparse_categorical_crossentropy(labels2, logits2, from_logits=True))
-    return 0.5*(loss1 + loss2)
+    loss = 0.5*(loss1 + loss2)
+    if return_acc:
+        pred = tf.argmax(logits1, 1)
+        acc = tf.reduce_mean(tf.cast(pred == labels1, tf.float32))
+        return loss, acc
+    
+    return loss
 
 
 
@@ -130,6 +114,23 @@ def build_clip_training_step(img_model, text_model, optimizer, temp=0.07, weight
     return trainstep
 
 
+def build_clip_test_step(img_model, text_model, optimizer, temp=0.07, weight_decay=0):
+    @tf.function
+    def teststep(img_batch, text_batch):
+        img_embed = img_model(img_batch, training=False)
+        text_embed = text_model(text_batch, training=False)
+            
+        nce_loss, acc = compute_nce_loss(img_embed, text_embed, temp, True)
+        if weight_decay > 0:
+            l2_loss = compute_l2_loss(img_model) + compute_l2_loss(text_model)
+        else:
+            l2_loss = 0
+                
+        loss = nce_loss + weight_decay*l2_loss
+        return loss, acc
+    return teststep
+
+
 
 class CLIPTrainer(GenericExtractor):
     """
@@ -141,7 +142,7 @@ class CLIPTrainer(GenericExtractor):
     modelname = "CLIP"
 
     def __init__(self, logdir, vocab, trainingdata, traininglabels, 
-                 testdata=None, fcn=None, 
+                 testdata=None, testlabels=None, fcn=None, 
                  augment=True, temperature=0.07, output_dim=64, 
                  project_to=512, num_layers=12, num_heads=12,
                  weight_decay=0,
@@ -157,6 +158,7 @@ class CLIPTrainer(GenericExtractor):
         :trainingdata: (list) list of paths to training images
         :traininglabels:
         :testdata: (list) filepaths of a batch of images to use for eval
+        :testlabels:
         :fcn: (keras Model) fully-convolutional network to train as feature extractor
         :augment: (dict) dictionary of augmentation parameters, True for defaults
         :temperature: the Boltzmann temperature parameter- rescale the cosine similarities by this factor before computing softmax loss.
@@ -211,11 +213,6 @@ class CLIPTrainer(GenericExtractor):
                         "text":text}
         
         # build training dataset
-        
-        
-        # we need to find the output size of the FCN
-        mock_input = np.zeros((1,imshape[0], imshape[1], num_channels), dtype=np.float32)
-        outshp = fcn(mock_input).shape # should be rank-4: (1,h,w,d)
         ds = dataset(trainingdata, traininglabels, imshape=imshape,
                      num_channels=num_channels, num_parallel_calls=num_parallel_calls,
                      norm=norm, batch_size=batch_size, shuffle=True)
@@ -230,18 +227,15 @@ class CLIPTrainer(GenericExtractor):
         self._training_step = build_clip_training_step(full, text, 
                                                        self._optimizer, temp=temperature,
                                                        weight_decay=weight_decay)
-        """
+        
         if testdata is not None:
-            self._test_ds =  _build_augment_pair_dataset(testdata, 
-                                        imshape=imshape, batch_size=batch_size,
-                                        num_parallel_calls=num_parallel_calls, 
-                                        norm=norm, num_channels=num_channels, 
-                                        augment=augment,
-                                        single_channel=single_channel)
+            self._test_ds = dataset(testdata, testlabels, imshape=imshape,
+                     num_channels=num_channels, num_parallel_calls=num_parallel_calls,
+                     norm=norm, batch_size=batch_size, shuffle=False)
             self._test = True
         else:
             self._test = False
-        """
+        
         self.step = 0
         
         # parse and write out config YAML
@@ -261,28 +255,31 @@ class CLIPTrainer(GenericExtractor):
         """
         
         """
-        for x1, seg1, x2, seg2 in self._ds:
-            lossdict = self._training_step(x1, seg1, x2, seg2)
+        for x, y in self._ds:
+            lossdict = self._training_step(x, y)
             self._record_scalars(**lossdict)
             self._record_scalars(learning_rate=self._get_current_learning_rate())
             self.step += 1
              
     def evaluate(self, avpool=True, query_fig=False):
-        """
+        
         if self._test:
+            test_acc = []
+            test_loss = []
+            #for x, y in
             # if the user passed out-of-sample data to test- compute
             # alignment and uniformity measures
-            alignment, uniformity = _compute_alignment_and_uniformity(
-                                            self._test_ds, self._models["full"])
+            #alignment, uniformity = _compute_alignment_and_uniformity(
+            #                                self._test_ds, self._models["full"])
             
-            self._record_scalars(alignment=alignment,
-                             uniformity=uniformity, metric=True)
-            metrics=["linear_classification_accuracy",
-                                 "alignment",
-                                 "uniformity"]
-        else:
-            metrics=["linear_classification_accuracy"]
-        
+            #self._record_scalars(alignment=alignment,
+            #                 uniformity=uniformity, metric=True)
+            #metrics=["linear_classification_accuracy",
+            #                     "alignment",
+            #                     "uniformity"]
+        #else:
+        #    metrics=["linear_classification_accuracy"]
+        """
         if self._downstream_labels is not None:
             # choose the hyperparameters to record
             if not hasattr(self, "_hparams_config"):
