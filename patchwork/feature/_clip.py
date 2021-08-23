@@ -2,11 +2,13 @@
 import numpy as np
 import tensorflow as tf
 import logging
+import os
 
 from patchwork._util import compute_l2_loss
 from patchwork.feature._generic import GenericExtractor
 from patchwork.feature._text_transformer import build_text_transformer
 from patchwork.loaders import _image_file_dataset
+from patchwork._augment import augment_function
 
 
 try:
@@ -15,18 +17,18 @@ except:
     logging.debug("unable to import sentencepiece- CLIPTrainer won't work.")
 
 
-def clip_dataset(fps, labels, encoder, maxlen=76, imshape=(256,256), 
+def clip_dataset(imfiles, labels, encoder, maxlen=76, imshape=(256,256), 
                  num_channels=3, num_parallel_calls=None, norm=255, 
                  batch_size=256, augment=False, shuffle=True,
                  single_channel=False):
     """
     
     """
-    ds = pw.loaders._image_file_dataset(imfiles, ys=labels, imshape=imshape, 
+    ds = _image_file_dataset(imfiles, ys=labels, imshape=imshape, 
                                         augment=augment, shuffle=shuffle)
 
     if augment:
-        aug_func = pw._augment.augment_function(imshape, {"rot90":True})
+        aug_func = augment_function(imshape, {"rot90":True})
 
 
     def _encode_text(y):
@@ -141,10 +143,12 @@ class CLIPTrainer(GenericExtractor):
     """
     modelname = "CLIP"
 
-    def __init__(self, logdir, vocab, trainingdata, traininglabels, 
-                 testdata=None, testlabels=None, fcn=None, 
-                 augment=True, temperature=0.07, output_dim=64, 
-                 project_to=512, num_layers=12, num_heads=12,
+    def __init__(self, logdir, tokenizer, trainingdata, traininglabels, 
+                 testdata=None, testlabels=None, fcn=None,  augment=True,
+                 maxlen=76, embed_dim=512, ff_dim=2048,
+                 num_layers=12, num_heads=8,
+                 temperature=0.07, output_dim=64, 
+                 project_to=512,
                  weight_decay=0,
                  lr=0.01, lr_decay=0, decay_type="cosine",
                  opt_type="adam",
@@ -154,18 +158,21 @@ class CLIPTrainer(GenericExtractor):
                  downstream_labels=None, stratify=None, strategy=None):
         """
         :logdir: (string) path to log directory
-        :vocab:
+        :tokenizer: (string) path to sentencepiece model file
         :trainingdata: (list) list of paths to training images
         :traininglabels:
         :testdata: (list) filepaths of a batch of images to use for eval
         :testlabels:
         :fcn: (keras Model) fully-convolutional network to train as feature extractor
         :augment: (dict) dictionary of augmentation parameters, True for defaults
+        :maxlen:
+        :embed_dim:
+        :ff_dim:
+        :num_layers:
+        :num_heads:
         :temperature: the Boltzmann temperature parameter- rescale the cosine similarities by this factor before computing softmax loss.
         :output_dim: dimension of projection head's output space. 
         :project_to:
-        :num_layers:
-        :num_heads:
         :weight_decay: coefficient for L2-norm loss. The original SimCLR paper used 1e-6.
         :lr: (float) initial learning rate
         :lr_decay:  (int) number of steps for one decay period (0 to disable)
@@ -194,6 +201,9 @@ class CLIPTrainer(GenericExtractor):
         
         self._file_writer = tf.summary.create_file_writer(logdir, flush_millis=10000)
         self._file_writer.set_as_default()
+        # load tokenizer
+        self._tokenizer = spm.SentencePieceProcessor(tokenizer)
+        self._vocab_size = self._tokenizer._vocab_size()
         
         # if no FCN is passed- build one
         with self.scope():
@@ -204,18 +214,21 @@ class CLIPTrainer(GenericExtractor):
             # the projection head
             full = build_image_encoder(fcn, num_channels=num_channels, 
                                        output_dim=output_dim)
-            text = build_text_encoder(vocab, project_to=project_to, num_layers=num_layers,
-                                      num_heads=num_heads, key_dim=project_to,
-                                      final_projection=output_dim)
+            text = build_text_transformer(self._vocab_size, maxlen,
+                                          embed_dim=embed_dim, num_layers=num_layers,
+                                          num_heads=num_heads, ff_dim=ff_dim,
+                                          final_projection=output_dim)
         
         self._models = {"fcn":fcn, 
                         "full":full,
                         "text":text}
         
         # build training dataset
-        ds = dataset(trainingdata, traininglabels, imshape=imshape,
-                     num_channels=num_channels, num_parallel_calls=num_parallel_calls,
-                     norm=norm, batch_size=batch_size, shuffle=True)
+        ds = clip_dataset(trainingdata, traininglabels, self._tokenizer,
+                          maxlen=maxlen, imshape=imshape, 
+                          num_channels=num_channels, 
+                          num_parallel_calls=num_parallel_calls,
+                          norm=norm, batch_size=batch_size, shuffle=True)
         self._ds = self._distribute_dataset(ds)
         
         # create optimizer
@@ -229,9 +242,15 @@ class CLIPTrainer(GenericExtractor):
                                                        weight_decay=weight_decay)
         
         if testdata is not None:
-            self._test_ds = dataset(testdata, testlabels, imshape=imshape,
-                     num_channels=num_channels, num_parallel_calls=num_parallel_calls,
-                     norm=norm, batch_size=batch_size, shuffle=False)
+            self._test_ds = clip_dataset(testdata, testlabels, self._tokenizer,
+                                         maxlen=maxlen, imshape=imshape,
+                                         num_channels=num_channels,
+                                         num_parallel_calls=num_parallel_calls,
+                                         norm=norm, batch_size=batch_size, shuffle=False)
+            @tf.function
+            def loss_step(x,y):
+                return compute_nce_loss(x, y, temp=temperature, return_acc=True)
+            self._loss_step = loss_step
             self._test = True
         else:
             self._test = False
@@ -239,7 +258,8 @@ class CLIPTrainer(GenericExtractor):
         self.step = 0
         
         # parse and write out config YAML
-        self._parse_configs(augment=augment, temperature=temperature,
+        self._parse_configs(tokenizer=tokenizer, maxlen=maxlen,
+                            augment=augment, temperature=temperature,
                             output_dim=output_dim, weight_decay=weight_decay,
                             project_to=project_to, num_layers=num_layers, 
                             num_heads=num_heads,
@@ -266,7 +286,13 @@ class CLIPTrainer(GenericExtractor):
         if self._test:
             test_acc = []
             test_loss = []
-            #for x, y in
+            for x, y in self._test_ds:
+                l, a = self._loss_step(x,y)
+                test_acc.append(a.numpy())
+                test_loss.append(l.numpy())
+                
+            self._record_scalars(test_acc=np.mean(test_acc),
+                                 test_loss=np.mean(test_loss))
             # if the user passed out-of-sample data to test- compute
             # alignment and uniformity measures
             #alignment, uniformity = _compute_alignment_and_uniformity(
@@ -307,4 +333,17 @@ class CLIPTrainer(GenericExtractor):
             self._linear_classification_test(hparams,
                         metrics=metrics, avpool=avpool, query_fig=query_fig)
             """
+            
+    def save(self):
+        """
+        Write model(s) to disk
+        
+        Note: tried to use SavedModel format for this and got a memory leak;
+        think it's related to https://github.com/tensorflow/tensorflow/issues/32234
+        
+        For now sticking with HDF5
+        """
+        for m in self._models:
+            path = os.path.join(self.logdir, m)
+            self._models[m].save(path, overwrite=True, save_format="tf")
         
