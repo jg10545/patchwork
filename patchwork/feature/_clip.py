@@ -203,7 +203,7 @@ class CLIPTrainer(GenericExtractor):
         self._file_writer.set_as_default()
         # load tokenizer
         self._tokenizer = spm.SentencePieceProcessor(tokenizer)
-        self._vocab_size = self._tokenizer._vocab_size()
+        self._vocab_size = self._tokenizer.vocab_size()
         
         # if no FCN is passed- build one
         with self.scope():
@@ -261,7 +261,7 @@ class CLIPTrainer(GenericExtractor):
         self._parse_configs(tokenizer=tokenizer, maxlen=maxlen,
                             augment=augment, temperature=temperature,
                             output_dim=output_dim, weight_decay=weight_decay,
-                            project_to=project_to, num_layers=num_layers, 
+                            num_layers=num_layers, 
                             num_heads=num_heads,
                             lr=lr, lr_decay=lr_decay, 
                             imshape=imshape, num_channels=num_channels,
