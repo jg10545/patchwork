@@ -36,7 +36,7 @@ def _generate_imtypes(fps):
     return imtypes
 
 
-def _build_load_function(imshape, norm, num_channels, single_channel,
+def _build_load_function(path, imshape, norm, num_channels, single_channel,
                          augment=False):
     """
     macro to build a function that handles all the loading. the
@@ -48,42 +48,35 @@ def _build_load_function(imshape, norm, num_channels, single_channel,
         The graph couldn't be sorted in topological order. 
         [Op:OptimizeDataset]" errors
     """
-    # helper function for loading tiffs
-    def _load_tif(f):
-        return tf.image.resize(tiff_to_array(f.numpy().decode("utf-8") , swapaxes=True, 
-                                 norm=norm, num_channels=num_channels),
-                               imshape)
-    load_tif = lambda x: tf.py_function(_load_tif, [x], tf.float32)
+    if path.lower().endswith(".jpg"):
+        decode = tf.io.decode_jpeg
+    elif path.lower().endswith(".png"):
+        decode = tf.io.decode_png
+    elif path.lower().endswith(".gif"):
+        decode = tf.io.decode_gif
+    else:
+        assert False, "unsupported file type"
     
-    
-    # main loading map function
-    #@tf.function
-    def _load_img(x, t):
+    def _load_img(x,y):
         loaded = tf.io.read_file(x)
-        # jpg
-        if t == 1:
-            decoded = tf.io.decode_jpeg(loaded)
-            resized = tf.image.resize(decoded, imshape)
-        # gif
-        elif t == 2:
-            decoded = tf.io.decode_gif(loaded)
-            resized = tf.image.resize(decoded, imshape)
-        # tif
-        elif t == 3:
-            resized = load_tif(x)
-        # png
-        else:
-            decoded = tf.io.decode_png(loaded)
-            resized = tf.image.resize(decoded, imshape)
-            
+        img = decode(loaded)
         if single_channel:
-            resized = tf.concat(num_channels*[resized], -1)
-        normed = tf.cast(resized[:,:,:num_channels], tf.float32)/norm
-        img = tf.reshape(normed, (imshape[0], imshape[1], num_channels))
+            #resized = tf.concat(num_channels*[resized], -1)
+            img = tf.concat(num_channels*[img], -1)
+        # normalize
+        img = tf.cast(img[:,:,:num_channels], tf.float32)/norm
+        #img = tf.reshape(normed, (imshape[0], imshape[1], num_channels))
         if augment:
             img = augment_function(imshape, augment)(img)
-        
-        return img
+        # TWO RESIZING OPERATIONS HERE
+        # first: tf.image.resize(), which will resample the image if it
+        # doesn't have the right dimensions
+        img = tf.image.resize(img, imshape)
+        # in some cases tf.image.resize() will return tensors of shape
+        # [imshape[0], imshape[1], None], so now we'll specify the
+        # channel dimension explicitly.
+        img = tf.reshape(img, [imshape[0], imshape[1], num_channels])
+        return img,y
     
     return _load_img
 
@@ -121,20 +114,21 @@ def _image_file_dataset(fps, ys=None, imshape=(256,256),
         and (x) otherwise. images (x) are a 3D float32 tensor and labels
         should be a 0D int64 tensor
     """    
-    # SINGLE-INPUT PRE-BUILT DATASET
+    # PRE-BUILT DATASET CASE
     if isinstance(fps, tf.data.Dataset):
         ds = fps
         if augment:
             _aug = augment_function(imshape, augment)
             ds = ds.map(_aug, num_parallel_calls=num_parallel_calls)
-    # SINGLE-INPUT CASE: directory of tfrecord files
+    # DIRECTORY OF TFRECORD FILES CASE
     elif isinstance(fps, str):
         if augment:
             augment = augment_function(imshape, augment)
         ds = load_dataset_from_tfrecords(fps, imshape, num_channels,
                                          num_parallel_calls=num_parallel_calls,
                                          map_fn=augment)
-    # SINGLE-INPUT CASE: list of filepaths (probably what almost always will get used)
+    # LIST OF FILES CASE: list of filepaths (probably what almost 
+    # always will get used)
     elif isinstance(fps[0], str):
         if ys is None:
             no_labels = True
@@ -142,53 +136,24 @@ def _image_file_dataset(fps, ys=None, imshape=(256,256),
         else:
             no_labels = False
         # get an integer index for each filepath
-        imtypes = _generate_imtypes(fps)
-        ds = tf.data.Dataset.from_tensor_slices((fps, imtypes, ys))
+        #imtypes = _generate_imtypes(fps)
+        ds = tf.data.Dataset.from_tensor_slices((fps, ys))
         # do the shuffling before loading so we can have a big queue without
         # taking up much memory
         if shuffle:
             ds = ds.shuffle(len(fps))
-        _load_img = _build_load_function(imshape, norm, num_channels, 
+        _load_img = _build_load_function(fps[0], imshape, norm, num_channels, 
                                          single_channel, augment)
-        ds = ds.map(lambda x,t,y: (_load_img(x,t),y), 
-                    num_parallel_calls=num_parallel_calls)
+        #ds = ds.map(lambda x,t,y: (_load_img(x),y), 
+        #            num_parallel_calls=num_parallel_calls)
+        ds = ds.map(_load_img, num_parallel_calls=num_parallel_calls)
         # if no labels were passed, strip out the y.
         if no_labels:
             ds = ds.map(lambda x,y: x)
-    # DUAL-INPUT CASE
+            
     else:
-        # let's do some input checking here
-        assert len(fps) == 2, "only single or double input currently supported"
-        if isinstance(imshape[0], int): imshape = (imshape, imshape)
-        
-        if ys is None:
-            no_labels = True
-            ys = np.zeros(len(fps[0]), dtype=np.int64)
-        else:
-            no_labels = False
-        # parse out filetypes
-        imtypes0 = _generate_imtypes(fps[0])
-        imtypes1 = _generate_imtypes(fps[1])
-        ds = tf.data.Dataset.from_tensor_slices((fps[0], imtypes0, 
-                                                 fps[1], imtypes1,
-                                                 ys))
-        if shuffle:
-            ds = ds.shuffle(len(fps))
-        _load_img0 = _build_load_function(imshape[0], _select(norm,0), 
-                                          _select(num_channels,0), 
-                                          _select(single_channel,0),
-                                          augment)
-        _load_img1 = _build_load_function(imshape[1], _select(norm,1), 
-                                          _select(num_channels,1), 
-                                          _select(single_channel,1),
-                                          augment)
-                                          
-        ds = ds.map(lambda x0,t0,x1,t1,y: (
-                    (_load_img0(x0,t0), _load_img1(x1,t1)),y), 
-                    num_parallel_calls=num_parallel_calls)
-        if no_labels:
-            ds = ds.map(lambda x,y: x)
-    
+        assert False, "what are these inputs"
+            
     return ds
 
 
