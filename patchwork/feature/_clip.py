@@ -87,7 +87,7 @@ def compute_nce_loss(img_embed, text_embed, temp=0.07, return_acc=False):
     loss = 0.5*(loss1 + loss2)
     if return_acc:
         pred = tf.argmax(logits1, 1)
-        acc = tf.reduce_mean(tf.cast(pred == labels1, tf.float32))
+        acc = tf.reduce_mean(tf.cast(tf.cast(pred, tf.int32) == tf.cast(labels1, tf.int32), tf.float32))
         return loss, acc
     
     return loss
@@ -249,7 +249,9 @@ class CLIPTrainer(GenericExtractor):
                                          norm=norm, batch_size=batch_size, shuffle=False)
             @tf.function
             def loss_step(x,y):
-                return compute_nce_loss(x, y, temp=temperature, return_acc=True)
+                img_embed = self._models["full"](x, training=False)
+                text_embed = self._models["text"](y, training=False)
+                return compute_nce_loss(img_embed, text_embed, temp=temperature, return_acc=True)
             self._loss_step = loss_step
             self._test = True
         else:
