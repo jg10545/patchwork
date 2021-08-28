@@ -3,6 +3,10 @@ import numpy as np
 import tensorflow as tf
 import logging
 import os
+import matplotlib.pyplot as plt
+
+from PIL import Image
+from scipy.spatial.distance import cdist
 
 from patchwork._util import compute_l2_loss
 from patchwork.feature._generic import GenericExtractor
@@ -195,9 +199,13 @@ class CLIPTrainer(GenericExtractor):
         self.logdir = logdir
         self.trainingdata = trainingdata
         self._downstream_labels = downstream_labels
+        self._test_index_updated = False
         if strategy is None:
             strategy = tf.distribute.get_strategy()
         self.strategy = strategy
+        
+        self._testdata = testdata
+        self._testlabels = testlabels
         
         self._file_writer = tf.summary.create_file_writer(logdir, flush_millis=10000)
         self._file_writer.set_as_default()
@@ -277,6 +285,7 @@ class CLIPTrainer(GenericExtractor):
         """
         
         """
+        self._test_index_updated = False
         for x, y in self._ds:
             lossdict = self._training_step(x, y)
             self._record_scalars(**lossdict)
@@ -348,4 +357,70 @@ class CLIPTrainer(GenericExtractor):
         for m in self._models:
             path = os.path.join(self.logdir, m)
             self._models[m].save(path, overwrite=True, save_format="tf")
+            
+    def load_weights(self, logdir):
+        """
+        Update model weights from a previously trained model
+        
+        Different from generic load_weights because we're using TF 
+        savedmodel format instead of HDF5
+        """
+        for k in self._models:
+            savedloc = os.path.join(logdir, k, "variables", "variables")
+            self._models[k].load_weights(savedloc)
+
+
+    def _update_test_index(self):
+        """
+        Precompute embeddings on the test set so we can run sample
+        queries against it.
+        """
+        if not self._test_index_updated:
+            logging.info("updating embedding index on test data")
+            self._test_index = self._models["full"].predict(self._test_ds)
+            self._test_index_updated = True
+            
+            
+    def query_test_set(self, querystring, plot=True):
+        """
+        
+        """
+        maxlen = self.config["maxlen"]
+        # make sure test index is up-to-date
+        self._update_test_index()
+        # run byte-pair encoding of query text
+        query_array = np.array(self._tokenizer.encode(querystring,
+                                                      out_type=int, add_bos=True,
+                                                      add_eos=True))
+        # pad or clip query as necessary
+        L = len(query_array)
+        if L > maxlen:
+            query_array = query_array[:maxlen]
+        elif L < maxlen:
+            query_array = np.concatenate([query_array,
+                                          np.zeros(maxlen-L, dtype=np.int64)])
+        query_array = query_array.reshape(1,-1)
+        
+        # now map that query to a semantic vector in the shared 
+        # embedding space
+        query_vector = self._models["text"](query_array, training=False)
+        # find distance to all the image embeddings from the test set
+        dists = cdist(self._test_index, query_vector.numpy(), metric="cosine").ravel()
+        ordering = dists.argsort()
+        
+        if plot:
+            plt.suptitle("Query: %s"%querystring, fontsize=14)
+            for i in range(9):
+                plt.subplot(3,3,i+1)
+                img = Image.open(self._testdata[ordering[i]])
+                plt.imshow(img)
+                plt.axis(False)
+                plt.title(self.testlabels[ordering[i]].replace(".",".\n").replace(",",",\n"))
+        else:
+            return dists
+                
+        
+        
+        
+        
         
