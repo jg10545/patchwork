@@ -409,13 +409,13 @@ class CLIPTrainer(GenericExtractor):
         ordering = dists.argsort()
         
         if plot:
-            plt.suptitle("Query: %s"%querystring, fontsize=14)
+            plt.suptitle("Query: '%s'"%querystring, fontsize=14)
             for i in range(9):
                 plt.subplot(3,3,i+1)
                 img = Image.open(self._testdata[ordering[i]])
                 plt.imshow(img)
                 plt.axis(False)
-                plt.title(self.testlabels[ordering[i]].replace(".",".\n").replace(",",",\n"))
+                plt.title(self._testlabels[ordering[i]].replace(".",".\n").replace(",",",\n"))
         else:
             return dists
                 
