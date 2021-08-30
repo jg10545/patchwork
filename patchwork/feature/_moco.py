@@ -77,16 +77,14 @@ def _build_augment_pair_dataset(imfiles, imshape=(256,256), batch_size=256,
     # CASE 3: User passes a list of filepaths. Turn the list into a Dataset,
     # shuffle, and define a function that both loads and augments each image
     else:
-        imtypes = _generate_imtypes(imfiles)
-        ds = tf.data.Dataset.from_tensor_slices((imfiles, imtypes))
+        ds = tf.data.Dataset.from_tensor_slices(imfiles)
         ds = ds.shuffle(len(imfiles))
     
-        _load_img = _build_load_function(imshape, norm, num_channels, 
+        _load_img = _build_load_function(imfiles[0], imshape, norm, num_channels, 
                                          single_channel)
         # modify to return a tensorflow dataset
-        def _loader(x,t):
-            img = _load_img(x,t)
-            #return _aug(img), _aug(img)
+        def _loader(x):
+            img, _ = _load_img(x,0)
             augmented = ( _aug(img), _aug(img))
             return tf.data.Dataset.from_tensors(augmented)
         
