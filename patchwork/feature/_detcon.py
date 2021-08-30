@@ -39,8 +39,7 @@ def _build_segment_pair_dataset(imfiles, mean_scale=1000, num_samples=16, output
     ds = _image_file_dataset(imfiles, imshape=imshape, 
                              num_parallel_calls=num_parallel_calls,
                              norm=norm, num_channels=num_channels,
-                             shuffle=True, single_channel=single_channel)  
-    #print("1:", ds)
+                             shuffle=True, single_channel=single_channel) 
     # generate segments- using Felzenszwalb
     if mean_scale > 0:
         def _segment(x):
@@ -56,7 +55,6 @@ def _build_segment_pair_dataset(imfiles, mean_scale=1000, num_samples=16, output
         
     # dataset yields unbatched (image, segmentation) tuples
     ds = ds.map(_segment, num_parallel_calls=num_parallel_calls)
-    #print("2:", ds)
     # augment image and segmentation together
     def _seg_aug(img, seg):
         img1, aug1 = _segment_aug(img, seg, augment, outputsize=outputsize)
@@ -64,12 +62,10 @@ def _build_segment_pair_dataset(imfiles, mean_scale=1000, num_samples=16, output
         return img1, aug1, img2, aug2
     # dataset yields unbatched (image, segmentation, image, segmentation) tuples
     ds = ds.map(_seg_aug, num_parallel_calls=num_parallel_calls)
-    #print("3:", ds)
     # filter out cases where the previous augmentation step creates any empty segments
     #ds = ds.filter(_filter_out_bad_segments)
     # finally, augment images separately
     aug2 = {k:augment[k] for k in augment if k not in SEG_AUG_FUNCTIONS}
-    #print(aug2)
     _aug = augment_function(imshape, aug2)
     if len(aug2) > 0:
         def _augment_pair(img1, seg1, img2, seg2):

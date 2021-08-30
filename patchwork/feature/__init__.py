@@ -8,3 +8,4 @@ from patchwork.feature._moco import MomentumContrastTrainer
 from patchwork.feature._byol import BYOLTrainer
 from patchwork.feature._hcl import HCLTrainer
 from patchwork.feature._detcon import DetConTrainer
+from patchwork.feature._clip import CLIPTrainer
