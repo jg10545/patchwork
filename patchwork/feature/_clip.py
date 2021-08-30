@@ -152,14 +152,13 @@ class CLIPTrainer(GenericExtractor):
                  maxlen=76, embed_dim=512, ff_dim=2048,
                  num_layers=12, num_heads=8,
                  temperature=0.07, output_dim=64, 
-                 project_to=512,
                  weight_decay=0,
                  lr=0.01, lr_decay=0, decay_type="cosine",
                  opt_type="adam",
                  imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, num_parallel_calls=None,
                  single_channel=False, notes="",
-                 downstream_labels=None, stratify=None, strategy=None):
+                 strategy=None):
         """
         :logdir: (string) path to log directory
         :tokenizer: (string) path to sentencepiece model file
@@ -169,14 +168,13 @@ class CLIPTrainer(GenericExtractor):
         :testlabels:
         :fcn: (keras Model) fully-convolutional network to train as feature extractor
         :augment: (dict) dictionary of augmentation parameters, True for defaults
-        :maxlen:
-        :embed_dim:
-        :ff_dim:
-        :num_layers:
-        :num_heads:
+        :maxlen: int; length to pad or truncate encoded text queries to
+        :embed_dim: int; embedding dimension of tokens and transformers for language model
+        :ff_dim: int; dimension of internal feed-forward layers inside transformer blocks
+        :num_layers: int; number of transformer blocks in language model
+        :num_heads: int; number of heads in each transformer block in language model
         :temperature: the Boltzmann temperature parameter- rescale the cosine similarities by this factor before computing softmax loss.
         :output_dim: dimension of projection head's output space. 
-        :project_to:
         :weight_decay: coefficient for L2-norm loss. The original SimCLR paper used 1e-6.
         :lr: (float) initial learning rate
         :lr_decay:  (int) number of steps for one decay period (0 to disable)
@@ -198,7 +196,6 @@ class CLIPTrainer(GenericExtractor):
         """
         self.logdir = logdir
         self.trainingdata = trainingdata
-        self._downstream_labels = downstream_labels
         self._test_index_updated = False
         if strategy is None:
             strategy = tf.distribute.get_strategy()
@@ -368,6 +365,7 @@ class CLIPTrainer(GenericExtractor):
         for k in self._models:
             savedloc = os.path.join(logdir, k, "variables", "variables")
             self._models[k].load_weights(savedloc)
+        self._test_index_updated = False
 
 
     def _update_test_index(self):
