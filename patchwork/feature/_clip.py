@@ -26,7 +26,12 @@ def clip_dataset(imfiles, labels, encoder, maxlen=76, imshape=(256,256),
                  batch_size=256, augment=False, shuffle=True,
                  single_channel=False):
     """
+    Build a tf.data.Dataset object for training CLIP
     
+    :imfiles: list of paths to training images
+    :labels: list of strings containing a caption for each image 
+    :encoder: sentencepiece object for mapping strings to byte pair encoded arrays
+    :maxlen: int; length of sequences. BPE arrays will be padded or truncated to this.
     """
     ds = _image_file_dataset(imfiles, ys=labels, imshape=imshape, 
                                         augment=augment, shuffle=shuffle)
@@ -63,6 +68,10 @@ def build_image_encoder(fcn, num_channels=3, output_dim=64):
     NOT the full version used in OpenAI's paper- just a linear
     projection head after the global average pool, instead of
     a multi-head attention mechanism
+    
+    :fcn: fully convolutional network to build off of
+    :num_channels: int; number of input channels
+    :output_dim: int; output dimension of final dense layer
     """
     inpt = tf.keras.layers.Input((None, None, 3))
     x = fcn(inpt)
@@ -158,14 +167,15 @@ class CLIPTrainer(GenericExtractor):
                  imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, num_parallel_calls=None,
                  single_channel=False, notes="",
+                 downstream_labels=None,
                  strategy=None):
         """
         :logdir: (string) path to log directory
         :tokenizer: (string) path to sentencepiece model file
-        :trainingdata: (list) list of paths to training images
-        :traininglabels:
+        :trainingdata: (list) list of strings; paths to training images
+        :traininglabels: (list) list of strings; captions for training images
         :testdata: (list) filepaths of a batch of images to use for eval
-        :testlabels:
+        :testlabels: (list) list of strings; captions for test images
         :fcn: (keras Model) fully-convolutional network to train as feature extractor
         :augment: (dict) dictionary of augmentation parameters, True for defaults
         :maxlen: int; length to pad or truncate encoded text queries to
@@ -196,6 +206,7 @@ class CLIPTrainer(GenericExtractor):
         """
         self.logdir = logdir
         self.trainingdata = trainingdata
+        self._downstream_labels = downstream_labels
         self._test_index_updated = False
         if strategy is None:
             strategy = tf.distribute.get_strategy()
@@ -301,19 +312,7 @@ class CLIPTrainer(GenericExtractor):
                 
             self._record_scalars(test_acc=np.mean(test_acc),
                                  test_loss=np.mean(test_loss))
-            # if the user passed out-of-sample data to test- compute
-            # alignment and uniformity measures
-            #alignment, uniformity = _compute_alignment_and_uniformity(
-            #                                self._test_ds, self._models["full"])
-            
-            #self._record_scalars(alignment=alignment,
-            #                 uniformity=uniformity, metric=True)
-            #metrics=["linear_classification_accuracy",
-            #                     "alignment",
-            #                     "uniformity"]
-        #else:
-        #    metrics=["linear_classification_accuracy"]
-        """
+
         if self._downstream_labels is not None:
             # choose the hyperparameters to record
             if not hasattr(self, "_hparams_config"):
@@ -339,8 +338,7 @@ class CLIPTrainer(GenericExtractor):
                 hparams=None
 
             self._linear_classification_test(hparams,
-                        metrics=metrics, avpool=avpool, query_fig=query_fig)
-            """
+                        avpool=avpool, query_fig=query_fig)
             
     def save(self):
         """
