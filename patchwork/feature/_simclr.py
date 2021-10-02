@@ -60,10 +60,17 @@ def _build_simclr_dataset(imfiles, imshape=(256,256), batch_size=256,
     #if isinstance(imfiles, tf.data.Dataset) or isinstance(imfiles[0], str):
     _aug = augment_function(imshape, augment)
     @tf.function
-    def _augment_and_stack(x):
-        x = tf.reshape(x, (imshape[0], imshape[1], num_channels))
+    def _augment_and_stack(*x):
+        # if there's only one input, augment it twice (standard SimCLR).
+        # if there are two, augment them separately (case where user is
+        # trying to express some specific semantics)
+        x0 = tf.reshape(x[0], (imshape[0], imshape[1], num_channels))
+        if len(x) == 2:
+            x1 = tf.reshape(x[1], (imshape[0], imshape[1], num_channels))
+        else:
+            x1 = x0
         y = tf.constant(np.array([1,-1]).astype(np.int32))
-        return tf.stack([_aug(x),_aug(x)]), y
+        return tf.stack([_aug(x0),_aug(x1)]), y
 
     ds = ds.map(_augment_and_stack, num_parallel_calls=num_parallel_calls)
         
