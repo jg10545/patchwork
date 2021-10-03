@@ -28,7 +28,7 @@ def save_dataset_to_tfrecords(imfiles, outdir, num_shards=10, imshape=(256,256),
     else:
         warnings.warn("Make sure your dataset does not return images forever, otherwise this function will definitely murder your hard drive.")
         
-    def _shardfunc(x):
+    def _shardfunc(*x):
         return tf.random.uniform((), minval=0, maxval=num_shards, dtype=tf.int64)
     
     tf.data.experimental.save(imfiles, outdir, compression="GZIP", shard_func=_shardfunc)
