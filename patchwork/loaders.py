@@ -425,7 +425,7 @@ def _fixmatch_unlab_dataset(fps, weak_aug, str_aug, imshape=(256,256),
     
 def load_dataset_from_tfrecords(record_dir, imshape, num_channels,
                                 shuffle=2048, num_parallel_calls=None,
-                                map_fn=False):
+                                map_fn=None, num_images=1):
     """
     Load a directory structure of tfrecord files (like you'd build with save_to_tfrecords) 
     into a tensorflow dataset. Wrapper for tf.data.TFRecordDataset().
@@ -440,20 +440,20 @@ def load_dataset_from_tfrecords(record_dir, imshape, num_channels,
         the dataset
     :map_fn: function to map across dataset during loading (for example, for augmentation)
     """
-    recordfiles = []
-    for dirpath, dirnames, filenames in os.walk(record_dir):
-        for f in filenames:
-            if f.lower().endswith("tfrecord") or f.lower().endswith("snapshot"):
-                recordfiles.append(os.path.join(dirpath,f))
-    ds = tf.data.TFRecordDataset(recordfiles, compression_type="GZIP",
-                                num_parallel_reads=num_parallel_calls)
-    def _parse(x):
-        x = tf.io.parse_tensor(x, tf.float32)
-        x.set_shape((imshape[0], imshape[1], num_channels))
-        if map_fn:
-            x = map_fn(x)
-        return x
-    ds = ds.map(_parse, num_parallel_calls=num_parallel_calls)
+    # single-image case: dataset returns a single tensor
+    if num_images == 1:
+        element_spec = tf.TensorSpec(shape=(imshape[0],imshape[1],num_channels),
+                                     dtype=tf.float32)
+    # multiple-image case: dataset returns a TUPLE of `num_images` tensors
+    else:
+        element_spec = tuple(tf.TensorSpec(shape=(imshape[0],imshape[1],num_channels),
+                                     dtype=tf.float32) for 
+                         _ in range(num_images))
+    # note that this function may change in the future
+    ds = tf.data.experimental.load(record_dir, element_spec, compression="GZIP")
+    # if a map function was included, map across the dataset
+    if map_fn is not None:
+        ds = ds.map(map_fn, num_parallel_calls=num_parallel_calls)
     if shuffle:
         ds = ds.shuffle(shuffle)
     return ds

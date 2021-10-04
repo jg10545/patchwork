@@ -62,8 +62,16 @@ def _build_augment_pair_dataset(imfiles, imshape=(256,256), batch_size=256,
     # define an pair augment function 
     if isinstance(imfiles, tf.data.Dataset):
         ds = imfiles
-        def _loader(x):
-            return _aug(x), _aug(x)
+        def _loader(*x):
+            # check to see whether one or two image tensors were passed.
+            # if one, augment it twice (vanilla MoCo). if two, augment
+            # them separately
+            x0 = x[0]
+            if len(x) == 2:
+                x1 = x[1]
+            else:
+                x1 = x0
+            return _aug(x0), _aug(x1)
         
         ds = ds.map(_loader, num_parallel_calls=num_parallel_calls)
         
