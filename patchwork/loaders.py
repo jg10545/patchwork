@@ -425,7 +425,7 @@ def _fixmatch_unlab_dataset(fps, weak_aug, str_aug, imshape=(256,256),
     
 def load_dataset_from_tfrecords(record_dir, imshape, num_channels,
                                 shuffle=2048, num_parallel_calls=None,
-                                map_fn=None, num_images=1):
+                                map_fn=None, num_images=1, gzip=True):
     """
     Load a directory structure of tfrecord files (like you'd build with save_to_tfrecords) 
     into a tensorflow dataset. Wrapper for tf.data.TFRecordDataset().
@@ -439,7 +439,12 @@ def load_dataset_from_tfrecords(record_dir, imshape, num_channels,
     :num_parallel_calls: number of parallel readers/mappers for loading and parsing
         the dataset
     :map_fn: function to map across dataset during loading (for example, for augmentation)
+    :gzip: whether tfrecord was saved using GZIP compression
     """
+    if gzip:
+        comp = "GZIP"
+    else:
+        comp = "NONE"
     # single-image case: dataset returns a single tensor
     if num_images == 1:
         element_spec = tf.TensorSpec(shape=(imshape[0],imshape[1],num_channels),
@@ -450,7 +455,7 @@ def load_dataset_from_tfrecords(record_dir, imshape, num_channels,
                                      dtype=tf.float32) for 
                          _ in range(num_images))
     # note that this function may change in the future
-    ds = tf.data.experimental.load(record_dir, element_spec, compression="GZIP")
+    ds = tf.data.experimental.load(record_dir, element_spec, compression=comp)
     # if a map function was included, map across the dataset
     if map_fn is not None:
         ds = ds.map(map_fn, num_parallel_calls=num_parallel_calls)
