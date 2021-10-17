@@ -9,6 +9,7 @@ from patchwork.loaders import _image_file_dataset
 from patchwork._util import compute_l2_loss, _compute_alignment_and_uniformity
 
 from patchwork.feature._moco import _build_augment_pair_dataset
+from patchwork.feature._contrastive import _contrastive_loss, _build_negative_mask
 
 BIG_NUMBER = 1000.
 
@@ -112,7 +113,8 @@ def _build_embedding_model(fcn, imshape, num_channels, num_hidden, output_dim, b
 
 
 def _build_simclr_training_step(embed_model, optimizer, temperature=0.1,
-                                weight_decay=0):
+                                weight_decay=0, decoupled=False, 
+                                data_parallel=False):
     """
     Generate a tensorflow function to run the training step for SimCLR.
     
@@ -121,6 +123,8 @@ def _build_simclr_training_step(embed_model, optimizer, temperature=0.1,
     :optimizer: Keras optimizer
     :temperature: hyperparameter for scaling cosine similarities
     :weight_decay: coefficient for L2 loss
+    :decoupled:
+    :data_parallel:
     
     The training function returns:
     :loss: value of the loss function for training
@@ -130,41 +134,46 @@ def _build_simclr_training_step(embed_model, optimizer, temperature=0.1,
     # distribute across multiple GPUs
     #@tf.function 
     def training_step(x,y):
-        lossdict = {}
-        eye = tf.linalg.eye(y.shape[0])
-        index = tf.range(0, y.shape[0])
-        # the labels tell which similarity is the "correct" one- the augmented
-        # pair from the same image. so index+y should look like [1,0,3,2,5,4...]
-        labels = index+y
-
+        
         with tf.GradientTape() as tape:
-            # run each image through the convnet and
-            # projection head
-            embeddings = embed_model(x, training=True)
-            # normalize the embeddings
-            embeds_norm = tf.nn.l2_normalize(embeddings, axis=1)
-            # compute the pairwise matrix of cosine similarities
-            sim = tf.matmul(embeds_norm, embeds_norm, transpose_b=True)
-            # subtract a large number from diagonals to effectively remove
-            # them from the sum, and rescale by temperature
-            logits = (sim - BIG_NUMBER*eye)/temperature
+            # run images through model and normalize embeddings
+            z1 = tf.nn.l2_normalize(embed_model(x, training=True), 1)
+            z2 = tf.nn.l2_normalize(embed_model(y, training=True), 1)
             
-            loss = tf.reduce_mean(
-                    tf.nn.sparse_softmax_cross_entropy_with_logits(labels, logits))
+            if not data_parallel:
+                # get replica context- we'll use this to aggregate embeddings
+                # across different GPUs
+                context = tf.distribute.get_replica_context()
+                # aggregate projections across replicas. z1 and z2 should
+                # now correspond to the global batch size (gbs, d)
+                z1 = context.all_gather(z1, 0)
+                z2 = context.all_gather(z2, 0)
+                
+            # get the batch size and precompute mask
+            with tape.stop_recording():
+                gbs = z1.shape[0]
+                mask = _build_negative_mask(gbs)
+        
+            xent_loss, batch_acc = _contrastive_loss(z1, z2, temperature,
+                                          decoupled)
             
-            # the original SimCLR paper used a weight decay of 1e-6
+        
             if weight_decay > 0:
-                lossdict["l2_loss"] = compute_l2_loss(embed_model)
-                lossdict["nt_xent_loss"] = loss
-                loss += weight_decay*lossdict["l2_loss"]
-            lossdict["loss"] = loss
+                l2_loss = compute_l2_loss(embed_model)
+            else:
+                l2_loss = 0
+                
+            loss = xent_loss + weight_decay*l2_loss
 
         gradients = tape.gradient(loss, embed_model.trainable_variables)
         optimizer.apply_gradients(zip(gradients,
                                       embed_model.trainable_variables))
 
-        lossdict["avg_cosine_sim"] = tf.reduce_mean(sim)
-        return lossdict
+        
+        return {"nt_xent_loss":xent_loss,
+                "l2_loss":l2_loss,
+                "loss":loss,
+                "nce_batch_acc":batch_acc}
     return training_step
 
 
@@ -238,6 +247,7 @@ class SimCLRTrainer(GenericExtractor):
     def __init__(self, logdir, trainingdata, testdata=None, fcn=None, 
                  augment=True, temperature=1., num_hidden=128,
                  output_dim=64, batchnorm=True, weight_decay=0,
+                 decoupled=False, data_parallel=True,
                  lr=0.01, lr_decay=100000, decay_type="exponential",
                  opt_type="adam",
                  imshape=(256,256), num_channels=3,
@@ -255,6 +265,8 @@ class SimCLRTrainer(GenericExtractor):
         :output_dim: dimension of projection head's output space. Figure 8 in Chen et al's paper shows that their results did not depend strongly on this value.
         :batchnorm: whether to include batch normalization in the projection head.
         :weight_decay: coefficient for L2-norm loss. The original SimCLR paper used 1e-6.
+        :decoupled:
+        :data_parallel:
         :lr: (float) initial learning rate
         :lr_decay:  (int) number of steps for one decay period (0 to disable)
         :decay_type: (string) how to decay the learning rate- "exponential" (smooth exponential decay), "staircase" (non-smooth exponential decay), or "cosine"
@@ -298,7 +310,8 @@ class SimCLRTrainer(GenericExtractor):
                         "full":embed_model}
         
         # build training dataset
-        ds = _build_simclr_dataset(trainingdata, 
+        #ds = _build_simclr_dataset(trainingdata, 
+        ds = _build_augment_pair_dataset(trainingdata,
                                    imshape=imshape, batch_size=batch_size,
                                    num_parallel_calls=num_parallel_calls, 
                                    norm=norm, num_channels=num_channels, 
@@ -315,7 +328,8 @@ class SimCLRTrainer(GenericExtractor):
         # build training step
         step_fn = _build_simclr_training_step(
                 embed_model, self._optimizer, 
-                temperature, weight_decay=weight_decay)
+                temperature, weight_decay=weight_decay,
+                decoupled=decoupled, data_parallel=data_parallel)
         self._training_step = self._distribute_training_function(step_fn)
         
         if testdata is not None:
@@ -352,6 +366,7 @@ class SimCLRTrainer(GenericExtractor):
                             num_hidden=num_hidden, output_dim=output_dim,
                             weight_decay=weight_decay, batchnorm=batchnorm,
                             lr=lr, lr_decay=lr_decay, 
+                            decoupled=decoupled, data_parallel=data_parallel,
                             imshape=imshape, num_channels=num_channels,
                             norm=norm, batch_size=batch_size,
                             num_parallel_calls=num_parallel_calls,
