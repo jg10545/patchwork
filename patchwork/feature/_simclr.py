@@ -253,7 +253,7 @@ class SimCLRTrainer(GenericExtractor):
                  imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, num_parallel_calls=None,
                  single_channel=False, notes="",
-                 downstream_labels=None, stratify=None, strategy=None):
+                 downstream_labels=None, strategy=None):
         """
         :logdir: (string) path to log directory
         :trainingdata: (list) list of paths to training images
@@ -282,8 +282,6 @@ class SimCLRTrainer(GenericExtractor):
         :notes: (string) any notes on the experiment that you want saved in the
                 config.yml file
         :downstream_labels: dictionary mapping image file paths to labels
-        :stratify: pass a list of image labels here to stratify by batch
-            during training
         :strategy: if distributing across multiple GPUs, pass a tf.distribute
             Strategy object here
         """
@@ -316,8 +314,7 @@ class SimCLRTrainer(GenericExtractor):
                                    num_parallel_calls=num_parallel_calls, 
                                    norm=norm, num_channels=num_channels, 
                                    augment=augment,
-                                   single_channel=single_channel,
-                                   stratify=stratify)
+                                   single_channel=single_channel)
         self._ds = self._distribute_dataset(ds)
         
         # create optimizer
