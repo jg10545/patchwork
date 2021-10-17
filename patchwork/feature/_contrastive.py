@@ -7,6 +7,8 @@ Helper functions for SimCLR-type feature trainers
 import numpy as np
 import tensorflow as tf
 
+EPSILON = 1e-8
+
 def _build_negative_mask(batch_size):
     """
     If we take the matrix of pairwise dot products of all the embeddings, it
@@ -148,6 +150,6 @@ def _contrastive_loss(z1, z2, temp, mask, decoupled=True):
     else:
         # COMPUTE SOFTMAX PROBABILITY (gbs,)
         softmax_prob = pos_exp/(pos_exp + tf.reduce_sum(neg_exp, -1))
-        loss = tf.reduce_mean(-1*tf.math.log(softmax_prob))
+        loss = tf.reduce_mean(-1*tf.math.log(softmax_prob + EPSILON))
         
     return loss, nce_batch_acc

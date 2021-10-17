@@ -410,6 +410,8 @@ class SimCLRTrainer(GenericExtractor):
                     hp.HParam("decay_type", hp.Discrete(["cosine", "exponential"])):self.config["decay_type"],
                     hp.HParam("weight_decay", hp.RealInterval(0., 10000.)):self.config["weight_decay"],
                     hp.HParam("batchnorm", hp.Discrete([True, False])):self.config["batchnorm"],
+                    hp.HParam("decoupled", hp.Discrete([True, False])):self.config["decoupled"],
+                    hp.HParam("data_parallel", hp.Discrete([True, False])):self.config["data_parallel"]
                     }
                 for k in self.augment_config:
                     if isinstance(self.augment_config[k], float):
