@@ -150,4 +150,4 @@ def _contrastive_loss(z1, z2, temp, mask, decoupled=True):
         softmax_prob = pos_exp/(pos_exp + tf.reduce_sum(neg_exp, -1))
         loss = tf.reduce_mean(-1*tf.math.log(softmax_prob))
         
-    return softmax_prob, nce_batch_acc
+    return loss, nce_batch_acc
