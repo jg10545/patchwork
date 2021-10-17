@@ -154,7 +154,7 @@ def _build_simclr_training_step(embed_model, optimizer, temperature=0.1,
                 gbs = z1.shape[0]
                 mask = _build_negative_mask(gbs)
         
-            xent_loss, batch_acc = _contrastive_loss(z1, z2, temperature,
+            xent_loss, batch_acc = _contrastive_loss(z1, z2, temperature, mask,
                                           decoupled)
             
         
