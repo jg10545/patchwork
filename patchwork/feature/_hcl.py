@@ -7,7 +7,9 @@ from patchwork._util import compute_l2_loss, _compute_alignment_and_uniformity
 
 from patchwork.feature._moco import _build_augment_pair_dataset
 from patchwork.feature._simclr import _build_embedding_model
-
+from patchwork.feature._contrastive import _build_negative_mask
+from patchwork.feature._contrastive import _simclr_softmax_prob
+from patchwork.feature._contrastive import _hcl_softmax_prob
 
 
 def _build_negative_indices(batch_size):
@@ -29,103 +31,6 @@ def _build_negative_indices(batch_size):
         
     return indices
 
-def _build_negative_mask(batch_size):
-    """
-    If we take the matrix of pairwise dot products of all the embeddings, it
-    will include positive comparisons along the diagonal (and half-diagonals
-    if the batch is symmetrized). 
-    
-    This function builds a (2*batch_size, 2*batch_size) matrix that masks out
-    the positive cases.
-    """
-    mask = np.ones((2*batch_size, 2*batch_size), dtype=np.float32)
-    for i in range(2*batch_size):
-        for j in range(2*batch_size):
-            if (i == j) or (abs(i-j) == batch_size):
-                mask[i,j] = 0
-    return mask
-
-
-def _simclr_softmax_prob(z1, z2, temp, mask):
-    """
-    Compute SimCLR softmax probability for a pair of batches of normalized
-    embeddings. Also compute the batch accuracy.
-    
-    :z1, z2: normalized embeddings (gbs,d)
-    :temp: scalar Gibbs temperature parameter
-    
-    Returns:
-        :softmax_prob:
-        :nce_batch_acc:
-    """
-    # positive logits: just the dot products between corresponding pairs
-    # shape (gbs,)
-    pos = tf.reduce_sum(z1*z2, -1)/temp
-    pos = tf.concat([pos,pos], 0) # from HCL code- line 38 in main.py. shape (2gbs,)
-    pos_exp = tf.exp(pos)
-            
-    z = tf.concat([z1,z2],0)
-    # negative samples- first find all pairwise combinations
-    # shape (2gbs, 2gbs)
-    s = tf.matmul(z, z, transpose_b=True)
-    # convert negatives to logits
-    neg_exp = mask*tf.exp(s/temp)     
-       
-    # COMPUTE BATCH ACCURACY ()
-    biggest_neg = tf.reduce_max(neg_exp, -1)
-    nce_batch_acc = tf.reduce_mean(tf.cast(pos_exp > biggest_neg, tf.float32))
-    # COMPUTE SOFTMAX PROBABILITY (gbs,)
-    softmax_prob = pos_exp/(pos_exp + tf.reduce_sum(neg_exp, -1))
-    return softmax_prob, nce_batch_acc
-
-
-def _hcl_softmax_prob(z1, z2, temp, beta, tau_plus, mask):
-    """
-    Compute HCL softmax probability for a pair of batches of normalized
-    embeddings. Also compute the batch accuracy.
-    
-    :z1, z2: normalized embeddings (gbs,d)
-    :temp: scalar Gibbs temperature parameter
-    
-    Returns:
-        :softmax_prob:
-        :nce_batch_acc:
-    """
-    # get the global batch size
-    gbs = z1.shape[0]
-    N = 2*gbs - 2
-    # positive logits: just the dot products between corresponding pairs
-    # shape (gbs,)
-    pos = tf.reduce_sum(z1*z2, -1)/temp
-    pos = tf.concat([pos,pos], 0) # from HCL code- line 38 in main.py. shape (2gbs,)
-    pos_exp = tf.exp(pos)
-            
-    z = tf.concat([z1,z2],0)
-    # negative samples- first find all pairwise combinations
-    # shape (2gbs, 2gbs)
-    s = tf.matmul(z, z, transpose_b=True)
-    # convert negatives to logits
-    neg_exp = mask*tf.exp(s/temp)     
-       
-    # COMPUTE BATCH ACCURACY ()
-    biggest_neg = tf.reduce_max(neg_exp, -1)
-    nce_batch_acc = tf.reduce_mean(tf.cast(pos_exp > biggest_neg, tf.float32))
-
-    # importance sampling weights: shape (gbs, gbs-2)
-    imp = mask*tf.exp(beta*s/temp)
-    # partition function: shape (gbs,)
-    Z = tf.reduce_mean(imp, -1)
-    # reweighted negative logits using importance sampling: shape (gbs,)
-    reweight_neg = tf.reduce_sum(imp*tf.exp(s/temp),-1)/Z
-    #
-    Ng = (reweight_neg - tau_plus*N*pos_exp)/(1-tau_plus)
-    # constrain min value
-    Ng = tf.maximum(Ng, N*tf.exp(-1/temp))
-    # manually compute softmax
-    softmax_prob = pos_exp/(pos_exp+Ng)
-    
-    
-    return softmax_prob, nce_batch_acc
 
 def _build_trainstep(model, optimizer, strategy, temp=1, tau_plus=0, beta=0, weight_decay=0):
     """

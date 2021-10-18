@@ -104,12 +104,13 @@ def test_build_simclr_training_step():
     step = _build_simclr_training_step(model, opt, 0.1)
     
     x = tf.zeros((4,32,32,3), dtype=tf.float32)
-    y = np.array([1,-1,1,-1]).astype(np.int32)
+    #y = np.array([1,-1,1,-1]).astype(np.int32)
+    y = x
     lossdict = step(x,y)
     
     assert isinstance(lossdict["loss"].numpy(), np.float32)
     # should include loss and average cosine similarity
-    assert len(lossdict) == 2
+    assert len(lossdict) == 4 #2
     
     
 def test_build_simclr_training_step_with_weight_decay():
@@ -119,7 +120,8 @@ def test_build_simclr_training_step_with_weight_decay():
                                        weight_decay=1e-6)
     
     x = tf.zeros((4,32,32,3), dtype=tf.float32)
-    y = np.array([1,-1,1,-1]).astype(np.int32)
+    #y = np.array([1,-1,1,-1]).astype(np.int32)
+    y = x
     lossdict = step(x,y)
     
     # should include total loss, crossent loss, average cosine
