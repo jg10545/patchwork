@@ -6,6 +6,7 @@ Helper functions for SimCLR-type feature trainers
 """
 import numpy as np
 import tensorflow as tf
+import logging
 
 EPSILON = 1e-8
 
@@ -142,12 +143,15 @@ def _contrastive_loss(z1, z2, temp, mask, decoupled=True):
     nce_batch_acc = tf.reduce_mean(tf.cast(pos_exp > biggest_neg, tf.float32))
     
     if decoupled:
+        logging.info("using decoupled contrastive learning objective")
         # compute mises-fisher weighting function (gbs,)
-        weight = 2 - pos_exp/tf.reduce_mean(pos_exp)
+        #weight = 2 - pos_exp/tf.reduce_mean(pos_exp)
+        weight = 1
         l_dcw = -1*weight*pos + tf.math.log(tf.reduce_sum(neg_exp, -1))
         loss = tf.reduce_mean(l_dcw)
     
     else:
+        logging.info("using standard contrastive learning objective")
         # COMPUTE SOFTMAX PROBABILITY (gbs,)
         softmax_prob = pos_exp/(pos_exp + tf.reduce_sum(neg_exp, -1))
         loss = tf.reduce_mean(-1*tf.math.log(softmax_prob + EPSILON))
