@@ -145,8 +145,14 @@ def _contrastive_loss(z1, z2, temp, mask, decoupled=True):
     if decoupled:
         logging.info("using decoupled contrastive learning objective")
         # compute mises-fisher weighting function (gbs,)
-        #weight = 2 - pos_exp/tf.reduce_mean(pos_exp)
-        weight = 1
+        #print("using weighted decoupled loss without gradients")
+        
+        sigma = 0.5 # section 4.2 of paper used this value for one set of experiments
+        factor = tf.exp(tf.reduce_sum(z1*z2, -1)/sigma) # (gbs,)
+        factor = tf.concat([factor, factor], 0) # (2gbs,)
+        weight = tf.stop_gradient(2 - factor/tf.reduce_mean(factor)) # (2gbs,)
+        #weight = 2 - factor/tf.reduce_mean(factor) # (2gbs,)
+        #weight = 1
         l_dcw = -1*weight*pos + tf.math.log(tf.reduce_sum(neg_exp, -1))
         loss = tf.reduce_mean(l_dcw)
     
