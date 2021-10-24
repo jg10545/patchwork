@@ -282,12 +282,11 @@ class CLIPTrainer(GenericExtractor):
                                          norm=norm, batch_size=batch_size, shuffle=False)
             @tf.function
             def loss_step(x,y):
-                mask = _build_negative_mask(x.shape[0])
                 img_embed = self._models["full"](x, training=False)
                 text_embed = self._models["text"](y, training=False)
                 img_norm = tf.nn.l2_normalize(img_embed, 1)
                 text_norm = tf.nn.l2_normalize(text_embed, 1)
-                return _contrastive_loss(img_norm, text_norm, temperature, mask, decoupled)
+                return _contrastive_loss(img_norm, text_norm, temperature, decoupled)
             self._loss_step = loss_step
             self._test = True
         else:
