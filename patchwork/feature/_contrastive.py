@@ -110,7 +110,7 @@ def _hcl_softmax_prob(z1, z2, temp, beta, tau_plus, mask):
 
 
 
-def _contrastive_loss(z1, z2, temp, mask, decoupled=True):
+def _contrastive_loss(z1, z2, temp, decoupled=True):
     """
     Compute contrastive loss for SimCLR or Decoupled Contrastive Learning.
     Also compute the batch accuracy.
@@ -121,10 +121,11 @@ def _contrastive_loss(z1, z2, temp, mask, decoupled=True):
     Returns:
         :softmax_prob:
         :nce_batch_acc:
-        :mask:
         :decoupled: if True, compute the weighted decoupled loss from equation 6
             of "Decoupled Contrastive Learning" by Yeh et al
     """
+    # construct mask
+    mask = tf.stop_gradient(_build_negative_mask(z1.shape[0]))
     # positive logits: just the dot products between corresponding pairs
     # shape (gbs,)
     pos = tf.reduce_sum(z1*z2, -1)/temp

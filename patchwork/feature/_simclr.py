@@ -145,13 +145,8 @@ def _build_simclr_training_step(embed_model, optimizer, temperature=0.1,
                 # now correspond to the global batch size (gbs, d)
                 z1 = context.all_gather(z1, 0)
                 z2 = context.all_gather(z2, 0)
-                
-            # get the batch size and precompute mask
-            with tape.stop_recording():
-                gbs = z1.shape[0]
-                mask = _build_negative_mask(gbs)
         
-            xent_loss, batch_acc = _contrastive_loss(z1, z2, temperature, mask,
+            xent_loss, batch_acc = _contrastive_loss(z1, z2, temperature, 
                                           decoupled)
             
         

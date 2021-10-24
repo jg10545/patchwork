@@ -120,7 +120,7 @@ def build_clip_training_step(img_model, text_model, optimizer, temp=0.07, weight
     trainvars = img_model.trainable_variables + text_model.trainable_variables
     def trainstep(img_batch, text_batch):
         N = img_batch.shape[0]
-        mask = _build_negative_mask(N)
+        #mask = _build_negative_mask(N)
         with tf.GradientTape() as tape:
             img_embed = img_model(img_batch, training=True)
             text_embed = text_model(text_batch, training=True)
@@ -129,7 +129,7 @@ def build_clip_training_step(img_model, text_model, optimizer, temp=0.07, weight
             text_norm = tf.nn.l2_normalize(text_embed, 1)
             
             nce_loss, acc = _contrastive_loss(img_norm, text_norm, temp,
-                                  mask, decoupled=decoupled)
+                                  decoupled=decoupled)
             if weight_decay > 0:
                 l2_loss = compute_l2_loss(img_model) + compute_l2_loss(text_model)
             else:
