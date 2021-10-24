@@ -130,9 +130,6 @@ def _build_simclr_training_step(embed_model, optimizer, temperature=0.1,
     :loss: value of the loss function for training
     :avg_cosine_sim: average value of the batch's matrix of dot products
     """
-    # adding the tf.function decorator here causes errors when we
-    # distribute across multiple GPUs
-    #@tf.function 
     def training_step(x,y):
         
         with tf.GradientTape() as tape:
@@ -245,7 +242,7 @@ class SimCLRTrainer(GenericExtractor):
     modelname = "SimCLR"
 
     def __init__(self, logdir, trainingdata, testdata=None, fcn=None, 
-                 augment=True, temperature=1., num_hidden=128,
+                 augment=True, temperature=0.1, num_hidden=128,
                  output_dim=64, batchnorm=True, weight_decay=0,
                  decoupled=False, data_parallel=True,
                  lr=0.01, lr_decay=100000, decay_type="exponential",
@@ -265,8 +262,10 @@ class SimCLRTrainer(GenericExtractor):
         :output_dim: dimension of projection head's output space. Figure 8 in Chen et al's paper shows that their results did not depend strongly on this value.
         :batchnorm: whether to include batch normalization in the projection head.
         :weight_decay: coefficient for L2-norm loss. The original SimCLR paper used 1e-6.
-        :decoupled:
-        :data_parallel:
+        :decoupled: if True, use the modified loss function from "Decoupled Contrastive 
+            Learning" by Yeh et al
+        :data_parallel: if True, compute contrastive loss only using negatives from
+            within each replica
         :lr: (float) initial learning rate
         :lr_decay:  (int) number of steps for one decay period (0 to disable)
         :decay_type: (string) how to decay the learning rate- "exponential" (smooth exponential decay), "staircase" (non-smooth exponential decay), or "cosine"
