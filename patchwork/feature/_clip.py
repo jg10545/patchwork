@@ -119,7 +119,6 @@ def build_clip_training_step(img_model, text_model, optimizer, temp=0.07, weight
                              decoupled=False):
     trainvars = img_model.trainable_variables + text_model.trainable_variables
     def trainstep(img_batch, text_batch):
-        N = img_batch.shape[0]
         #mask = _build_negative_mask(N)
         with tf.GradientTape() as tape:
             img_embed = img_model(img_batch, training=True)
@@ -295,7 +294,10 @@ class CLIPTrainer(GenericExtractor):
         self.step = 0
         
         # parse and write out config YAML
-        self._parse_configs(tokenizer=tokenizer, maxlen=maxlen,
+        metrics= ["linear_classification_accuracy",
+                   "test_acc"]
+        self._parse_configs(metrics=metrics,
+                            tokenizer=tokenizer, maxlen=maxlen,
                             augment=augment, temperature=temperature,
                             output_dim=output_dim, weight_decay=weight_decay,
                             num_layers=num_layers, 

@@ -385,13 +385,14 @@ class SimCLRTrainer(GenericExtractor):
             
             self._record_scalars(alignment=alignment,
                              uniformity=uniformity, metric=True)
-            metrics=["linear_classification_accuracy",
-                                 "alignment",
-                                 "uniformity"]
-        else:
-            metrics=["linear_classification_accuracy"]
+            #metrics=["linear_classification_accuracy",
+            #                     "alignment",
+            #                     "uniformity"]
+        #else:
+        #    metrics=["linear_classification_accuracy"]
         
         if self._downstream_labels is not None:
+            """
             # choose the hyperparameters to record
             if not hasattr(self, "_hparams_config"):
                 from tensorboard.plugins.hparams import api as hp
@@ -412,6 +413,7 @@ class SimCLRTrainer(GenericExtractor):
                         hparams[hp.HParam(k, hp.RealInterval(0., 10000.))] = self.augment_config[k]
             else:
                 hparams=None
+            """
 
             self._linear_classification_test(hparams,
                         metrics=metrics, avpool=avpool,
