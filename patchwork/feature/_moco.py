@@ -427,33 +427,9 @@ class MomentumContrastTrainer(GenericExtractor):
             
             self._record_scalars(alignment=alignment,
                              uniformity=uniformity, metric=True)
-            metrics=["linear_classification_accuracy",
-                                 "alignment",
-                                 "uniformity"]
-        else:
-            metrics=["linear_classification_accuracy"]
-            
+
         if self._downstream_labels is not None:
-            # choose the hyperparameters to record
-            if not hasattr(self, "_hparams_config"):
-                from tensorboard.plugins.hparams import api as hp
-                hparams = {
-                    hp.HParam("tau", hp.RealInterval(0., 10000.)):self.config["tau"],
-                    hp.HParam("alpha", hp.RealInterval(0., 1.)):self.config["alpha"],
-                    hp.HParam("batches_in_buffer", hp.IntInterval(1, 1000000)):self.config["batches_in_buffer"],
-                    hp.HParam("output_dim", hp.IntInterval(1, 1000000)):self.config["output_dim"],
-                    hp.HParam("num_hidden", hp.IntInterval(1, 1000000)):self.config["num_hidden"],
-                    hp.HParam("weight_decay", hp.RealInterval(0., 10000.)):self.config["weight_decay"],
-                    hp.HParam("N", hp.IntInterval(0, 1000000)):self.config["N"],
-                    hp.HParam("s", hp.IntInterval(0, 1000000)):self.config["s"],
-                    hp.HParam("margin", hp.RealInterval(0., 10000.)):self.config["margin"]
-                    }
-                for k in self.augment_config:
-                    if isinstance(self.augment_config[k], float):
-                        hparams[hp.HParam(k, hp.RealInterval(0., 10000.))] = self.augment_config[k]
-            else:
-                hparams=None
-            self._linear_classification_test(hparams, metrics=metrics, avpool=avpool,
+            self._linear_classification_test(avpool=avpool,
                                              query_fig=query_fig)
         
         

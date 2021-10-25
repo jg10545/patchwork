@@ -307,19 +307,7 @@ class DeepClusterTrainer(GenericExtractor):
                     self._record_scalars(test_nmi=nmi)
                     
         if self._downstream_labels is not None:
-            # choose the hyperparameters to record
-            if not hasattr(self, "_hparams_config"):
-                from tensorboard.plugins.hparams import api as hp
-                hparams = {
-                    hp.HParam("pca_dim", hp.IntInterval(0, 1000000)):self.config["pca_dim"],
-                    hp.HParam("k", hp.IntInterval(1, 1000000)):self.config["k"],
-                    hp.HParam("mult", hp.IntInterval(1, 1000000)):self.config["mult"],
-                    }
-                for e, d in enumerate(self.config["dense"]):
-                    hparams[hp.HParam("dense_%s"%e, hp.IntInterval(1, 1000000))] = d
-            else:
-                hparams=None
-            self._linear_classification_test(hparams, avpool=avpool, query_fig=query_fig)
+            self._linear_classification_test(avpool=avpool, query_fig=query_fig)
             
             
             

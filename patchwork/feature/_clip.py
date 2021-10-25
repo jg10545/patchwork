@@ -334,35 +334,7 @@ class CLIPTrainer(GenericExtractor):
             self._record_scalars(test_acc=np.mean(test_acc),
                                  test_loss=np.mean(test_loss))
 
-        if self._downstream_labels is not None:
-            """
-            # choose the hyperparameters to record
-            if not hasattr(self, "_hparams_config"):
-                from tensorboard.plugins.hparams import api as hp
-                hparams = {
-                    hp.HParam("temperature", hp.RealInterval(0., 10000.)):self.config["temperature"],
-                    hp.HParam("mean_scale", hp.RealInterval(0., 10000.)):self.config["mean_scale"],
-                    hp.HParam("num_samples", hp.IntInterval(1, 1000000)):self.config["num_samples"],
-                    hp.HParam("beta", hp.RealInterval(0., 10000.)):self.config["beta"],
-                    hp.HParam("tau_plus", hp.RealInterval(0., 10000.)):self.config["tau_plus"],
-                    hp.HParam("num_hidden", hp.IntInterval(1, 1000000)):self.config["num_hidden"],
-                    hp.HParam("output_dim", hp.IntInterval(1, 1000000)):self.config["output_dim"],
-                    hp.HParam("lr", hp.RealInterval(0., 10000.)):self.config["lr"],
-                    hp.HParam("lr_decay", hp.RealInterval(0., 10000.)):self.config["lr_decay"],
-                    hp.HParam("decay_type", hp.Discrete(["cosine", "exponential"])):self.config["decay_type"],
-                    hp.HParam("weight_decay", hp.RealInterval(0., 10000.)):self.config["weight_decay"],
-                    hp.HParam("batchnorm", hp.Discrete([True, False])):self.config["batchnorm"],
-                    hp.HParam("decoupled", hp.Discrete([True, False])):self.config["decoupled"],
-                    }
-                for k in self.augment_config:
-                    if isinstance(self.augment_config[k], float):
-                        hparams[hp.HParam(k, hp.RealInterval(0., 10000.))] = self.augment_config[k]
-            else:
-                hparams=None
-            
-            self._linear_classification_test(hparams,
-                        avpool=avpool, query_fig=query_fig)
-            """            
+        if self._downstream_labels is not None:         
             self._linear_classification_test(avpool=avpool, query_fig=query_fig)
             
     def save(self):

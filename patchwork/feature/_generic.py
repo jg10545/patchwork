@@ -322,9 +322,7 @@ class GenericExtractor(object):
         for h in hists:
             tf.summary.histogram(h, hists[h], step=self.step)
             
-    def _linear_classification_test(self, params=None, 
-                                    metrics=["linear_classification_accuracy"],
-                                    avpool=True, query_fig=False):
+    def _linear_classification_test(self, avpool=True, query_fig=False):
         
          results = linear_classification_test(self.fcn, 
                                     self._downstream_labels, 
@@ -339,22 +337,7 @@ class GenericExtractor(object):
          conf_mat = np.expand_dims(np.expand_dims(conf_mat, 0), -1)/conf_mat.max()
          self._record_scalars(linear_classification_accuracy=acc, metric=True)
          self._record_images(linear_classification_confusion_matrix=conf_mat)
-         # if the model passed hyperparameters to record for the
-         # tensorboard hparams interface:
-         """
-         if params is not None:
-             # first time- set up hparam config
-             if not hasattr(self, "_hparams_config"):
-                metrics = [hp.Metric(m) for m in metrics]
-                self._hparams_config = hp.hparams_config(
-                        hparams=list(params.keys()), 
-                        metrics=metrics)
-                
-                # record hyperparamters
-                base_dir, run_name = os.path.split(self.logdir)
-                if len(run_name) == 0:
-                    base_dir, run_name = os.path.split(base_dir)
-                hp.hparams(params, trial_id=run_name)"""
+  
                 
     def rotation_classification_test(self, testdata=None, avpool=False):
         """
