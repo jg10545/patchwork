@@ -1,0 +1,42 @@
+
+Notes on DCL experiments on BigEarthNet.
+
+Downstream task was a 4-way classification task I threw together a while ago and have been using as a benchmark- airports vs bare rock vs burnt areas vs dump sites. Trained SSL models on 584k image chips and evaluated downstream accuracy on 5543 labeled chips with a 2/3 - 1/3 train/test split.
+
+Hyperparameters:
+
+aug_params = {'gaussian_blur': 0.25,
+ 'drop_color': 0.25,
+ 'gaussian_noise': 0.25,
+ 'jitter':1.,
+ 'flip_left_right': True,
+ 'flip_up_down': True,
+ 'rot90': True,
+ 'zoom_scale': 0.2,
+ }
+ 
+Batch size of 128, trained with Adam optimizer and fixed LR of 1e-3, temperature=0.1, weight decay=1e-6, projection head hidden dimension 2048 and output dimension 256.
+
+Why was I getting no improvement for DCL before? Turns out I fat-fingered one of the hyperparameters (temperature at 1.0 instead of 0.1). Two possible takeaways:
+	-I'm a dumbass
+	-Depite the claims in the DCL paper that it's more forgiving than SimCLR toward mistuned hyperparameters, if you're off by a decade your model will still suck.
+
+No code available for DCL yet so I can't check implementation details. For the weighted loss function (equation 6) it's not specified whether the function that creates the weights is "part" of the loss (e.g. if we pass gradients back through it) or whether it's something that's applied externally (no contribution to gradient). My default assumption would be the former, but I've been getting qualitatively different results from the paper- while the weighted loss function eventually trains a better model, for the first couple dozen epochs performance lags behind SimCLR:
+
+simclr_vs_dcl_acc.png
+
+(orange is SimCLR; blue is weighted DCL)
+
+If I don't pass gradients back through the weights, and just use them to bias the loss function, it at least performs on-par with SimCLR before pulling ahead:
+
+simclr_vs_dcl_vs_dcl_gradstop_smoothed_accuracy
+
+(weighted/grad-stopped DCL in red. smoothed so it's easier to see).
+
+I didn't let the "unstopped" DCL train as long and it looks like it may wind up in the same ballpark as the stopped one.
+
+
+
+SimCLR- smoothed downstream accuracy after 45 epochs: 0.849
+DCL, weighted with gradient stop- smoothed downstream accuracy after 44 epochs: 0.873
+DCL, weighted w/o gradient stop- smoothed downstream accuracy after 32 epochs: 0.865

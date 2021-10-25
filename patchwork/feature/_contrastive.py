@@ -110,7 +110,7 @@ def _hcl_softmax_prob(z1, z2, temp, beta, tau_plus, mask):
 
 
 
-def _contrastive_loss(z1, z2, temp, mask, decoupled=True):
+def _contrastive_loss(z1, z2, temp, decoupled=True):
     """
     Compute contrastive loss for SimCLR or Decoupled Contrastive Learning.
     Also compute the batch accuracy.
@@ -121,10 +121,11 @@ def _contrastive_loss(z1, z2, temp, mask, decoupled=True):
     Returns:
         :softmax_prob:
         :nce_batch_acc:
-        :mask:
         :decoupled: if True, compute the weighted decoupled loss from equation 6
             of "Decoupled Contrastive Learning" by Yeh et al
     """
+    # construct mask
+    mask = tf.stop_gradient(_build_negative_mask(z1.shape[0]))
     # positive logits: just the dot products between corresponding pairs
     # shape (gbs,)
     pos = tf.reduce_sum(z1*z2, -1)/temp
@@ -145,8 +146,14 @@ def _contrastive_loss(z1, z2, temp, mask, decoupled=True):
     if decoupled:
         logging.info("using decoupled contrastive learning objective")
         # compute mises-fisher weighting function (gbs,)
-        #weight = 2 - pos_exp/tf.reduce_mean(pos_exp)
-        weight = 1
+        #print("using weighted decoupled loss without gradients")
+        
+        sigma = 0.5 # section 4.2 of paper used this value for one set of experiments
+        factor = tf.exp(tf.reduce_sum(z1*z2, -1)/sigma) # (gbs,)
+        factor = tf.concat([factor, factor], 0) # (2gbs,)
+        weight = tf.stop_gradient(2 - factor/tf.reduce_mean(factor)) # (2gbs,)
+        #weight = 2 - factor/tf.reduce_mean(factor) # (2gbs,)
+        #weight = 1
         l_dcw = -1*weight*pos + tf.math.log(tf.reduce_sum(neg_exp, -1))
         loss = tf.reduce_mean(l_dcw)
     

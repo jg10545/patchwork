@@ -409,15 +409,7 @@ class ContextEncoderTrainer(GenericExtractor):
             self._record_scalars(test_recon_loss=reconstructed_loss)
             
         if self._downstream_labels is not None:
-            # choose the hyperparameters to record
-            if not hasattr(self, "_hparams_config"):
-                from tensorboard.plugins.hparams import api as hp
-                hparams = {
-                    hp.HParam("adv_weight", hp.RealInterval(0., 10000.)):self.config["adv_weight"]
-                    }
-            else:
-                hparams=None
-            self._linear_classification_test(hparams, avpool=avpool, query_fig=query_fig)
+            self._linear_classification_test(avpool=avpool, query_fig=query_fig)
         
         
         

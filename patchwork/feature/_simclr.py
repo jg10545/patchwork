@@ -130,9 +130,6 @@ def _build_simclr_training_step(embed_model, optimizer, temperature=0.1,
     :loss: value of the loss function for training
     :avg_cosine_sim: average value of the batch's matrix of dot products
     """
-    # adding the tf.function decorator here causes errors when we
-    # distribute across multiple GPUs
-    #@tf.function 
     def training_step(x,y):
         
         with tf.GradientTape() as tape:
@@ -148,13 +145,8 @@ def _build_simclr_training_step(embed_model, optimizer, temperature=0.1,
                 # now correspond to the global batch size (gbs, d)
                 z1 = context.all_gather(z1, 0)
                 z2 = context.all_gather(z2, 0)
-                
-            # get the batch size and precompute mask
-            with tape.stop_recording():
-                gbs = z1.shape[0]
-                mask = _build_negative_mask(gbs)
         
-            xent_loss, batch_acc = _contrastive_loss(z1, z2, temperature, mask,
+            xent_loss, batch_acc = _contrastive_loss(z1, z2, temperature, 
                                           decoupled)
             
         
@@ -245,7 +237,7 @@ class SimCLRTrainer(GenericExtractor):
     modelname = "SimCLR"
 
     def __init__(self, logdir, trainingdata, testdata=None, fcn=None, 
-                 augment=True, temperature=1., num_hidden=128,
+                 augment=True, temperature=0.1, num_hidden=128,
                  output_dim=64, batchnorm=True, weight_decay=0,
                  decoupled=False, data_parallel=True,
                  lr=0.01, lr_decay=100000, decay_type="exponential",
@@ -265,8 +257,10 @@ class SimCLRTrainer(GenericExtractor):
         :output_dim: dimension of projection head's output space. Figure 8 in Chen et al's paper shows that their results did not depend strongly on this value.
         :batchnorm: whether to include batch normalization in the projection head.
         :weight_decay: coefficient for L2-norm loss. The original SimCLR paper used 1e-6.
-        :decoupled:
-        :data_parallel:
+        :decoupled: if True, use the modified loss function from "Decoupled Contrastive 
+            Learning" by Yeh et al
+        :data_parallel: if True, compute contrastive loss only using negatives from
+            within each replica
         :lr: (float) initial learning rate
         :lr_decay:  (int) number of steps for one decay period (0 to disable)
         :decay_type: (string) how to decay the learning rate- "exponential" (smooth exponential decay), "staircase" (non-smooth exponential decay), or "cosine"
@@ -391,13 +385,14 @@ class SimCLRTrainer(GenericExtractor):
             
             self._record_scalars(alignment=alignment,
                              uniformity=uniformity, metric=True)
-            metrics=["linear_classification_accuracy",
-                                 "alignment",
-                                 "uniformity"]
-        else:
-            metrics=["linear_classification_accuracy"]
+            #metrics=["linear_classification_accuracy",
+            #                     "alignment",
+            #                     "uniformity"]
+        #else:
+        #    metrics=["linear_classification_accuracy"]
         
         if self._downstream_labels is not None:
+            """
             # choose the hyperparameters to record
             if not hasattr(self, "_hparams_config"):
                 from tensorboard.plugins.hparams import api as hp
@@ -418,8 +413,13 @@ class SimCLRTrainer(GenericExtractor):
                         hparams[hp.HParam(k, hp.RealInterval(0., 10000.))] = self.augment_config[k]
             else:
                 hparams=None
+            
 
             self._linear_classification_test(hparams,
                         metrics=metrics, avpool=avpool,
                         query_fig=query_fig)
+            """
+            self._linear_classification_test(avpool=avpool,
+                        query_fig=query_fig)
+        
         
