@@ -335,6 +335,7 @@ class CLIPTrainer(GenericExtractor):
                                  test_loss=np.mean(test_loss))
 
         if self._downstream_labels is not None:
+            """
             # choose the hyperparameters to record
             if not hasattr(self, "_hparams_config"):
                 from tensorboard.plugins.hparams import api as hp
@@ -358,9 +359,11 @@ class CLIPTrainer(GenericExtractor):
                         hparams[hp.HParam(k, hp.RealInterval(0., 10000.))] = self.augment_config[k]
             else:
                 hparams=None
-
+            
             self._linear_classification_test(hparams,
                         avpool=avpool, query_fig=query_fig)
+            """            
+            self._linear_classification_test(avpool=avpool, query_fig=query_fig)
             
     def save(self):
         """

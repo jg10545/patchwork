@@ -413,9 +413,13 @@ class SimCLRTrainer(GenericExtractor):
                         hparams[hp.HParam(k, hp.RealInterval(0., 10000.))] = self.augment_config[k]
             else:
                 hparams=None
-            """
+            
 
             self._linear_classification_test(hparams,
                         metrics=metrics, avpool=avpool,
                         query_fig=query_fig)
+            """
+            self._linear_classification_test(avpool=avpool,
+                        query_fig=query_fig)
+        
         

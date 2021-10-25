@@ -236,7 +236,7 @@ class GenericExtractor(object):
         # questions is the batch size.
         dicts = [self.config, {"batch_size":self.input_config["batch_size"]},
                  self.augment_config]
-        _configure_hparams(self._logdir, dicts, metrics)
+        _configure_hparams(self.logdir, dicts, metrics)
         
     def _build_default_model(self, **kwargs):
         # REPLACE THIS WHEN SUBCLASSING
