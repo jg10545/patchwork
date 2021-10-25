@@ -80,18 +80,13 @@ def build_image_encoder(fcn, num_channels=3, output_dim=64):
     x = tf.keras.layers.Dense(output_dim)(x)
     return tf.keras.Model(inpt, x)
 
-def compute_nce_loss(img_embed, text_embed, temp=0.07, return_acc=False,
-                     decoupled=False):
+def compute_nce_loss(img_embed, text_embed, temp=0.07, return_acc=False):
     """
     Symmetrized NCE loss for paired image/text embeddings
     """
     N = img_embed.shape[0]
-    mask = _build_negative_mask(N)
     img_norm = tf.nn.l2_normalize(img_embed, 1)
     text_norm = tf.nn.l2_normalize(text_embed, 1)
-    loss, acc = _contrastive_loss(img_norm, text_norm, temp,
-                                  mask, decoupled=decoupled)
-    """
     # NOTE this is different from what's described in the paper- check 
     # pseudocode in figure 3
     logits1 = tf.matmul(img_norm, text_norm, transpose_b=True)/temp
@@ -104,10 +99,9 @@ def compute_nce_loss(img_embed, text_embed, temp=0.07, return_acc=False,
     loss2 = tf.reduce_mean(
         tf.losses.sparse_categorical_crossentropy(labels2, logits2, from_logits=True))
     loss = 0.5*(loss1 + loss2)
-    """
     if return_acc:
-        #pred = tf.argmax(logits1, 1)
-        #acc = tf.reduce_mean(tf.cast(tf.cast(pred, tf.int32) == tf.cast(labels1, tf.int32), tf.float32))
+        pred = tf.argmax(logits1, 1)
+        acc = tf.reduce_mean(tf.cast(tf.cast(pred, tf.int32) == tf.cast(labels1, tf.int32), tf.float32))
         return loss, acc
     
     return loss
@@ -115,20 +109,14 @@ def compute_nce_loss(img_embed, text_embed, temp=0.07, return_acc=False,
 
 
 
-def build_clip_training_step(img_model, text_model, optimizer, temp=0.07, weight_decay=0,
-                             decoupled=False):
+def build_clip_training_step(img_model, text_model, optimizer, temp=0.07, weight_decay=0):
     trainvars = img_model.trainable_variables + text_model.trainable_variables
     def trainstep(img_batch, text_batch):
-        #mask = _build_negative_mask(N)
         with tf.GradientTape() as tape:
             img_embed = img_model(img_batch, training=True)
             text_embed = text_model(text_batch, training=True)
             
-            img_norm = tf.nn.l2_normalize(img_embed, 1)
-            text_norm = tf.nn.l2_normalize(text_embed, 1)
-            
-            nce_loss, acc = _contrastive_loss(img_norm, text_norm, temp,
-                                  decoupled=decoupled)
+            nce_loss = compute_nce_loss(img_embed, text_embed, temp)
             if weight_decay > 0:
                 l2_loss = compute_l2_loss(img_model) + compute_l2_loss(text_model)
             else:
@@ -137,8 +125,7 @@ def build_clip_training_step(img_model, text_model, optimizer, temp=0.07, weight
             loss = nce_loss + weight_decay*l2_loss
         grads = tape.gradient(loss, trainvars)
         optimizer.apply_gradients(zip(grads, trainvars))
-        lossdict = {"loss":loss, "l2_loss":l2_loss, "nce_loss":nce_loss,
-                    "nce_batch_acc":acc}
+        lossdict = {"loss":loss, "l2_loss":l2_loss, "nce_loss":nce_loss}
         return lossdict
     return trainstep
 
@@ -174,7 +161,7 @@ class CLIPTrainer(GenericExtractor):
                  testdata=None, testlabels=None, fcn=None,  augment=True,
                  maxlen=76, embed_dim=512, ff_dim=2048,
                  num_layers=12, num_heads=8,
-                 temperature=0.07, output_dim=64, decoupled=False,
+                 temperature=0.07, output_dim=64,
                  weight_decay=0,
                  lr=0.01, lr_decay=0, decay_type="cosine",
                  opt_type="adam",
@@ -199,7 +186,6 @@ class CLIPTrainer(GenericExtractor):
         :num_heads: int; number of heads in each transformer block in language model
         :temperature: the Boltzmann temperature parameter- rescale the cosine similarities by this factor before computing softmax loss.
         :output_dim: dimension of projection head's output space. 
-        :decoupled: whether to apply decoupled contrastive loss
         :weight_decay: coefficient for L2-norm loss. The original SimCLR paper used 1e-6.
         :lr: (float) initial learning rate
         :lr_decay:  (int) number of steps for one decay period (0 to disable)
@@ -270,8 +256,7 @@ class CLIPTrainer(GenericExtractor):
         # build training step
         self._training_step = build_clip_training_step(full, text, 
                                                        self._optimizer, temp=temperature,
-                                                       weight_decay=weight_decay,
-                                                       decoupled=decoupled)
+                                                       weight_decay=weight_decay)
         
         if testdata is not None:
             self._test_ds = clip_dataset(testdata, testlabels, self._tokenizer,
@@ -285,7 +270,7 @@ class CLIPTrainer(GenericExtractor):
                 text_embed = self._models["text"](y, training=False)
                 img_norm = tf.nn.l2_normalize(img_embed, 1)
                 text_norm = tf.nn.l2_normalize(text_embed, 1)
-                return _contrastive_loss(img_norm, text_norm, temperature, decoupled)
+                return _contrastive_loss(img_norm, text_norm, temperature)
             self._loss_step = loss_step
             self._test = True
         else:
@@ -302,7 +287,7 @@ class CLIPTrainer(GenericExtractor):
                             output_dim=output_dim, weight_decay=weight_decay,
                             num_layers=num_layers, 
                             num_heads=num_heads,
-                            lr=lr, lr_decay=lr_decay,  decoupled=decoupled,
+                            lr=lr, lr_decay=lr_decay,
                             imshape=imshape, num_channels=num_channels,
                             norm=norm, batch_size=batch_size,
                             num_parallel_calls=num_parallel_calls,
