@@ -385,40 +385,8 @@ class SimCLRTrainer(GenericExtractor):
             
             self._record_scalars(alignment=alignment,
                              uniformity=uniformity, metric=True)
-            #metrics=["linear_classification_accuracy",
-            #                     "alignment",
-            #                     "uniformity"]
-        #else:
-        #    metrics=["linear_classification_accuracy"]
-        
+         
         if self._downstream_labels is not None:
-            """
-            # choose the hyperparameters to record
-            if not hasattr(self, "_hparams_config"):
-                from tensorboard.plugins.hparams import api as hp
-                hparams = {
-                    hp.HParam("temperature", hp.RealInterval(0., 10000.)):self.config["temperature"],
-                    hp.HParam("num_hidden", hp.IntInterval(1, 1000000)):self.config["num_hidden"],
-                    hp.HParam("output_dim", hp.IntInterval(1, 1000000)):self.config["output_dim"],
-                    hp.HParam("lr", hp.RealInterval(0., 10000.)):self.config["lr"],
-                    hp.HParam("lr_decay", hp.RealInterval(0., 10000.)):self.config["lr_decay"],
-                    hp.HParam("decay_type", hp.Discrete(["cosine", "exponential"])):self.config["decay_type"],
-                    hp.HParam("weight_decay", hp.RealInterval(0., 10000.)):self.config["weight_decay"],
-                    hp.HParam("batchnorm", hp.Discrete([True, False])):self.config["batchnorm"],
-                    hp.HParam("decoupled", hp.Discrete([True, False])):self.config["decoupled"],
-                    hp.HParam("data_parallel", hp.Discrete([True, False])):self.config["data_parallel"]
-                    }
-                for k in self.augment_config:
-                    if isinstance(self.augment_config[k], float):
-                        hparams[hp.HParam(k, hp.RealInterval(0., 10000.))] = self.augment_config[k]
-            else:
-                hparams=None
-            
-
-            self._linear_classification_test(hparams,
-                        metrics=metrics, avpool=avpool,
-                        query_fig=query_fig)
-            """
             self._linear_classification_test(avpool=avpool,
                         query_fig=query_fig)
         

@@ -80,43 +80,67 @@ def build_image_encoder(fcn, num_channels=3, output_dim=64):
     x = tf.keras.layers.Dense(output_dim)(x)
     return tf.keras.Model(inpt, x)
 
-def compute_nce_loss(img_embed, text_embed, temp=0.07, return_acc=False):
+def compute_nce_loss(img_embed, text_embed, temp=0.07, return_acc=False, decoupled=False):
     """
     Symmetrized NCE loss for paired image/text embeddings
     """
     N = img_embed.shape[0]
     img_norm = tf.nn.l2_normalize(img_embed, 1)
     text_norm = tf.nn.l2_normalize(text_embed, 1)
-    # NOTE this is different from what's described in the paper- check 
-    # pseudocode in figure 3
-    logits1 = tf.matmul(img_norm, text_norm, transpose_b=True)/temp
-    labels1 = tf.range(N)
-    loss1 = tf.reduce_mean(
-        tf.losses.sparse_categorical_crossentropy(labels1, logits1, from_logits=True))
+    if decoupled:
+        pos = tf.reduce_sum(img_norm*text_norm, -1)
+        pos = tf.concat([pos, pos], 0) # (2gbs,)
+        sigma = 0.5 # section 4.2 of paper used this value for one set of experiments
+        factor = tf.exp(pos/sigma) # (2gbs,)
+        weight = tf.stop_gradient(2 - factor/tf.reduce_mean(factor)) # (2gbs,)
+        
+        s0 = tf.matmul(img_norm, text_norm, transpose_b=True) # (gbs,gbs)
+        s = tf.concat([s0,s0,], 0) # (2gbs, gbs)
+        neg_exp = tf.exp(s/temp) 
+        # denominator of decoupled softmax function
+        denom = tf.reduce_sum(neg_exp, -1) - tf.exp(pos/temp)
+        
+        l_dcw = -1*weight*pos/temp + tf.math.log(denom)
+        loss = tf.reduce_mean(l_dcw)
+        if return_acc:
+            pred = tf.argmax(s0, 1)
+            label = tf.range(s0.shape[0])
+            acc = tf.reduce_mean(tf.cast(tf.cast(pred, tf.int32)==tf.cast(label,tf.int32),
+                                         tf.float32))
+            return loss, acc
+    else:
+        # NOTE this is different from what's described in the paper- check 
+        # pseudocode in figure 3
+        logits1 = tf.matmul(img_norm, text_norm, transpose_b=True)/temp
+        labels1 = tf.range(N)
+        loss1 = tf.reduce_mean(
+            tf.losses.sparse_categorical_crossentropy(labels1, logits1, from_logits=True))
     
-    logits2 = tf.matmul(text_norm, img_norm, transpose_b=True)/temp
-    labels2 = tf.range(N)
-    loss2 = tf.reduce_mean(
-        tf.losses.sparse_categorical_crossentropy(labels2, logits2, from_logits=True))
-    loss = 0.5*(loss1 + loss2)
-    if return_acc:
-        pred = tf.argmax(logits1, 1)
-        acc = tf.reduce_mean(tf.cast(tf.cast(pred, tf.int32) == tf.cast(labels1, tf.int32), tf.float32))
-        return loss, acc
+        logits2 = tf.matmul(text_norm, img_norm, transpose_b=True)/temp
+        labels2 = tf.range(N)
+        loss2 = tf.reduce_mean(
+            tf.losses.sparse_categorical_crossentropy(labels2, logits2, from_logits=True))
+        loss = 0.5*(loss1 + loss2)
+        if return_acc:
+            pred = tf.argmax(logits1, 1)
+            acc = tf.reduce_mean(tf.cast(tf.cast(pred, tf.int32) == tf.cast(labels1, tf.int32), tf.float32))
+            return loss, acc
     
     return loss
 
 
 
 
-def build_clip_training_step(img_model, text_model, optimizer, temp=0.07, weight_decay=0):
+def build_clip_training_step(img_model, text_model, optimizer, temp=0.07, weight_decay=0,
+                             decoupled=False):
     trainvars = img_model.trainable_variables + text_model.trainable_variables
     def trainstep(img_batch, text_batch):
         with tf.GradientTape() as tape:
             img_embed = img_model(img_batch, training=True)
             text_embed = text_model(text_batch, training=True)
             
-            nce_loss = compute_nce_loss(img_embed, text_embed, temp)
+            nce_loss = compute_nce_loss(img_embed, text_embed, temp,
+                                        decoupled=decoupled)
             if weight_decay > 0:
                 l2_loss = compute_l2_loss(img_model) + compute_l2_loss(text_model)
             else:
@@ -162,7 +186,7 @@ class CLIPTrainer(GenericExtractor):
                  maxlen=76, embed_dim=512, ff_dim=2048,
                  num_layers=12, num_heads=8,
                  temperature=0.07, output_dim=64,
-                 weight_decay=0,
+                 weight_decay=0, decoupled=False,
                  lr=0.01, lr_decay=0, decay_type="cosine",
                  opt_type="adam",
                  imshape=(256,256), num_channels=3,
@@ -187,6 +211,7 @@ class CLIPTrainer(GenericExtractor):
         :temperature: the Boltzmann temperature parameter- rescale the cosine similarities by this factor before computing softmax loss.
         :output_dim: dimension of projection head's output space. 
         :weight_decay: coefficient for L2-norm loss. The original SimCLR paper used 1e-6.
+        :decoupled: bool; 
         :lr: (float) initial learning rate
         :lr_decay:  (int) number of steps for one decay period (0 to disable)
         :decay_type: (string) how to decay the learning rate- "exponential" (smooth exponential decay), "staircase" (non-smooth exponential decay), or "cosine"
@@ -256,7 +281,8 @@ class CLIPTrainer(GenericExtractor):
         # build training step
         self._training_step = build_clip_training_step(full, text, 
                                                        self._optimizer, temp=temperature,
-                                                       weight_decay=weight_decay)
+                                                       weight_decay=weight_decay,
+                                                       decoupled=decoupled)
         
         if testdata is not None:
             self._test_ds = clip_dataset(testdata, testlabels, self._tokenizer,
@@ -288,6 +314,7 @@ class CLIPTrainer(GenericExtractor):
                             num_layers=num_layers, 
                             num_heads=num_heads,
                             lr=lr, lr_decay=lr_decay,
+                            decoupled=decoupled,
                             imshape=imshape, num_channels=num_channels,
                             norm=norm, batch_size=batch_size,
                             num_parallel_calls=num_parallel_calls,
