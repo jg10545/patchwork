@@ -16,6 +16,7 @@ def _build_embedding_models(fcn, imshape, num_channels, num_hidden=2048, pred_di
     """
     Create Keras models for the projection and prediction heads
     
+    Returns full projection model (fcn+head) and prediction model
     """
     # PROJECTION MODEL
     inpt = tf.keras.layers.Input((imshape[0], imshape[1], num_channels))
@@ -100,121 +101,19 @@ def _build_simsiam_training_step(embed_model, predict_model, optimizer,
 
 
 
-#-------------------------------------- NEW CODE HERE --------------------
 
-
-def _build_simclr_dataset(imfiles, imshape=(256,256), batch_size=256, 
-                      num_parallel_calls=None, norm=255,
-                      num_channels=3, augment=True,
-                      single_channel=False, stratify=None):
+class SimSiamTrainer(GenericExtractor):
     """
-    :stratify: if not None, a list of categories for each element in
-        imfile.
+    Class for training a SimSiam model.
+    
+    Based on "Exploring Simple Siamese Representation Learning" by Chen and He
     """
-    
-    if stratify is not None:
-        categories = list(set(stratify))
-        # SINGLE-INPUT CASE
-        if isinstance(imfiles[0], str):
-            file_lists = [[imfiles[i] for i in range(len(imfiles)) 
-                        if stratify[i] == c]
-                for c in categories
-                ]
-        # DUAL-INPUT
-        else:
-            file_lists = [([imfiles[0][i] for i in range(len(imfiles[0])) 
-                        if stratify[i] == c],
-                            [imfiles[1][i] for i in range(len(imfiles[1])) 
-                        if stratify[i] == c] ) for c in categories ]
-        datasets = [_build_simclr_dataset(f, imshape=imshape, 
-                                          batch_size=batch_size, 
-                                          num_parallel_calls=num_parallel_calls, 
-                                          norm=norm, num_channels=num_channels, 
-                                          augment=augment, 
-                                          single_channel=single_channel,
-                                          stratify=None)
-                    for f in file_lists]
-        return tf.data.experimental.sample_from_datasets(datasets)
-    
-    assert augment != False, "don't you need to augment your data?"
-    
-    
-    ds = _image_file_dataset(imfiles, imshape=imshape, 
-                             num_parallel_calls=num_parallel_calls,
-                             norm=norm, num_channels=num_channels,
-                             shuffle=True, single_channel=single_channel,
-                             augment=False)  
-    
-    # SINGLE-INPUT CASE (DEFAULT)
-    #if isinstance(imfiles, tf.data.Dataset) or isinstance(imfiles[0], str):
-    _aug = augment_function(imshape, augment)
-    @tf.function
-    def _augment_and_stack(*x):
-        # if there's only one input, augment it twice (standard SimCLR).
-        # if there are two, augment them separately (case where user is
-        # trying to express some specific semantics)
-        x0 = tf.reshape(x[0], (imshape[0], imshape[1], num_channels))
-        if len(x) == 2:
-            x1 = tf.reshape(x[1], (imshape[0], imshape[1], num_channels))
-        else:
-            x1 = x0
-        y = tf.constant(np.array([1,-1]).astype(np.int32))
-        return tf.stack([_aug(x0),_aug(x1)]), y
-
-    ds = ds.map(_augment_and_stack, num_parallel_calls=num_parallel_calls)
-        
-    ds = ds.unbatch()
-    ds = ds.batch(2*batch_size, drop_remainder=True)
-    ds = ds.prefetch(1)
-    return ds
-
-
-def _build_embedding_model(fcn, imshape, num_channels, num_hidden, output_dim, batchnorm=True):
-    """
-    Create a Keras model that wraps the base encoder and 
-    the projection head
-    """
-    # SINGLE-INPUT CASE
-    if len(fcn.inputs) == 1:
-        inpt = tf.keras.layers.Input((imshape[0], imshape[1], num_channels))
-    # DUAL-INPUT CASE
-    else:
-        if isinstance(imshape[0], int): imshape = (imshape, imshape)
-        if isinstance(num_channels, int): num_channels=(num_channels, num_channels)
-        inpt0 = tf.keras.layers.Input((imshape[0][0], imshape[0][1], 
-                                       num_channels[0]))
-        inpt1 = tf.keras.layers.Input((imshape[1][0], imshape[1][1], 
-                                       num_channels[1]))
-        inpt = [inpt0, inpt1]
-    net = fcn(inpt)
-    net = tf.keras.layers.Flatten()(net)
-    net = tf.keras.layers.Dense(num_hidden)(net)
-    if batchnorm:
-        net = tf.keras.layers.BatchNormalization()(net)
-    net = tf.keras.layers.Activation("relu")(net)
-    net = tf.keras.layers.Dense(output_dim, use_bias=False)(net)
-    embedding_model = tf.keras.Model(inpt, net)
-    return embedding_model
-
-
-
-
-
-class SimCLRTrainer(GenericExtractor):
-    """
-    Class for training a SimCLR model.
-    
-    Based on "A Simple Framework for Contrastive Learning of Visual
-    Representations" by Chen et al.
-    """
-    modelname = "SimCLR"
+    modelname = "SimSiam"
 
     def __init__(self, logdir, trainingdata, testdata=None, fcn=None, 
-                 augment=True, temperature=0.1, num_hidden=128,
-                 output_dim=64, batchnorm=True, weight_decay=0,
-                 decoupled=False, data_parallel=True,
-                 lr=0.01, lr_decay=100000, decay_type="exponential",
-                 opt_type="adam",
+                 augment=True, num_hidden=2048, pred_dim=512,
+                 weight_decay=0, lr=0.01, lr_decay=100000, 
+                 decay_type="exponential", opt_type="adam",
                  imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, num_parallel_calls=None,
                  single_channel=False, notes="",
@@ -227,13 +126,8 @@ class SimCLRTrainer(GenericExtractor):
         :augment: (dict) dictionary of augmentation parameters, True for defaults
         :temperature: the Boltzmann temperature parameter- rescale the cosine similarities by this factor before computing softmax loss.
         :num_hidden: number of hidden neurons in the network's projection head
-        :output_dim: dimension of projection head's output space. Figure 8 in Chen et al's paper shows that their results did not depend strongly on this value.
-        :batchnorm: whether to include batch normalization in the projection head.
+        :pred_dim:
         :weight_decay: coefficient for L2-norm loss. The original SimCLR paper used 1e-6.
-        :decoupled: if True, use the modified loss function from "Decoupled Contrastive 
-            Learning" by Yeh et al
-        :data_parallel: if True, compute contrastive loss only using negatives from
-            within each replica
         :lr: (float) initial learning rate
         :lr_decay:  (int) number of steps for one decay period (0 to disable)
         :decay_type: (string) how to decay the learning rate- "exponential" (smooth exponential decay), "staircase" (non-smooth exponential decay), or "cosine"
@@ -268,14 +162,14 @@ class SimCLRTrainer(GenericExtractor):
             self.fcn = fcn
             # Create a Keras model that wraps the base encoder and 
             # the projection head
-            embed_model = _build_embedding_model(fcn, imshape, num_channels,
-                                             num_hidden, output_dim, batchnorm)
+            project, predict = _build_embedding_models(fcn, imshape, num_channels,
+                                             num_hidden, num_hidden, pred_dim)
         
         self._models = {"fcn":fcn, 
-                        "full":embed_model}
+                        "full":project,
+                        "predict":predict}
         
         # build training dataset
-        #ds = _build_simclr_dataset(trainingdata, 
         ds = _build_augment_pair_dataset(trainingdata,
                                    imshape=imshape, batch_size=batch_size,
                                    num_parallel_calls=num_parallel_calls, 
@@ -290,10 +184,9 @@ class SimCLRTrainer(GenericExtractor):
         
         
         # build training step
-        step_fn = _build_simclr_training_step(
-                embed_model, self._optimizer, 
-                temperature, weight_decay=weight_decay,
-                decoupled=decoupled, data_parallel=data_parallel)
+        step_fn = _build_simsiam_training_step(project, predict, 
+                                               self._optimizer,
+                                               weight_decay=weight_decay)
         self._training_step = self._distribute_training_function(step_fn)
         
         if testdata is not None:
@@ -303,22 +196,7 @@ class SimCLRTrainer(GenericExtractor):
                                         norm=norm, num_channels=num_channels, 
                                         augment=augment,
                                         single_channel=single_channel)
-            """
-            @tf.function
-            def test_loss(x,y):
-                eye = tf.linalg.eye(y.shape[0])
-                index = tf.range(0, y.shape[0])
-                labels = index+y
 
-                embeddings = self._models["full"](x)
-                embeds_norm = tf.nn.l2_normalize(embeddings, axis=1)
-                sim = tf.matmul(embeds_norm, embeds_norm, transpose_b=True)
-                logits = (sim - BIG_NUMBER*eye)/self.config["temperature"]
-            
-                loss = tf.reduce_mean(
-                    tf.nn.sparse_softmax_cross_entropy_with_logits(labels, logits))
-                return loss, sim
-            self._test_loss = test_loss"""
             self._test = True
         else:
             self._test = False
@@ -326,11 +204,10 @@ class SimCLRTrainer(GenericExtractor):
         self.step = 0
         
         # parse and write out config YAML
-        self._parse_configs(augment=augment, temperature=temperature,
-                            num_hidden=num_hidden, output_dim=output_dim,
-                            weight_decay=weight_decay, batchnorm=batchnorm,
+        self._parse_configs(augment=augment,
+                            num_hidden=num_hidden, pred_dim=pred_dim,
+                            weight_decay=weight_decay, 
                             lr=lr, lr_decay=lr_decay, 
-                            decoupled=decoupled, data_parallel=data_parallel,
                             imshape=imshape, num_channels=num_channels,
                             norm=norm, batch_size=batch_size,
                             num_parallel_calls=num_parallel_calls,
