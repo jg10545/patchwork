@@ -1,17 +1,172 @@
 # -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 import numpy as np
 import tensorflow as tf
 
 from patchwork.feature._generic import GenericExtractor
+from patchwork._augment import augment_function
+from patchwork.loaders import _image_file_dataset
 from patchwork._util import compute_l2_loss, _compute_alignment_and_uniformity
 
 from patchwork.feature._moco import _build_augment_pair_dataset
 from patchwork.feature._contrastive import _contrastive_loss
 
-BIG_NUMBER = 1000.
+
+def _build_embedding_models(fcn, imshape, num_channels, num_hidden=2048, pred_dim=512):
+    """
+    Create Keras models for the projection and prediction heads
+    
+    """
+    # PROJECTION MODEL
+    inpt = tf.keras.layers.Input((imshape[0], imshape[1], num_channels))
+    net = fcn(inpt)
+    net = tf.keras.layers.Flatten()(net)
+    for i in range(3):
+        net = tf.keras.layers.Dense(num_hidden, use_bias=False)(net)
+        net = tf.keras.layers.BatchNormalization()(net)
+        if i < 2:
+            net = tf.keras.layers.Activation("relu")(net)
+            
+    projection = tf.keras.Model(inpt, net)
+    
+    # PREDICTION MODEL
+    inpt = tf.keras.layers.Input((num_hidden))
+    net = tf.keras.layers.Dense(pred_dim, use_bias=False)(inpt)
+    net = tf.keras.layers.BatchNormalization()(net)
+    net  = tf.keras.layers.Activation("relu")(net)
+    net = tf.keras.layers.Dense(num_hidden)(net)
+    prediction = tf.keras.Model(inpt, net)
+    
+    return projection, prediction
+
+
+def _simsiam_loss(p,z):
+    """
+    
+    """
+    z = tf.stop_gradient(z)
+    
+    z = tf.nn.l2_normalize(z,1)
+    p = tf.nn.l2_normalize(p,1)
+    
+    return tf.reduce_mean(
+        tf.reduce_sum(-1*p*z, axis=1)
+        )
+
+
+def _build_simsiam_training_step(embed_model, predict_model, optimizer, 
+                                 weight_decay=0):
+    """
+    Generate a tensorflow function to run the training step for SimSiam
+    
+    :embed_model: full Keras model including both the convnet and 
+        projection head
+    :predict_model: prediction MLP
+    :optimizer: Keras optimizer
+    :weight_decay: coefficient for L2 loss
+    
+    The training function returns:
+    :loss: value of the loss function for training
+    """
+    def training_step(x,y):
+        
+        with tf.GradientTape() as tape:
+            # run images through model and normalize embeddings
+            z1 = embed_model(x, training=True)
+            z2 = embed_model(y, training=True)
+            
+            p1 = predict_model(z1, training=True)
+            p2 = predict_model(z2, training=True)
+            
+            ss_loss = 0.5*_simsiam_loss(p1, z2) + 0.5*_simsiam_loss(p2, z1)
+        
+            if weight_decay > 0:
+                l2_loss = compute_l2_loss(embed_model)
+            else:
+                l2_loss = 0
+                
+            loss = ss_loss + weight_decay*l2_loss
+
+        gradients = tape.gradient(loss, embed_model.trainable_variables)
+        optimizer.apply_gradients(zip(gradients,
+                                      embed_model.trainable_variables))
+
+        
+        return {"simsiam_loss":ss_loss,
+                "l2_loss":l2_loss,
+                "loss":loss}
+    return training_step
 
 
 
+
+#-------------------------------------- NEW CODE HERE --------------------
+
+
+def _build_simclr_dataset(imfiles, imshape=(256,256), batch_size=256, 
+                      num_parallel_calls=None, norm=255,
+                      num_channels=3, augment=True,
+                      single_channel=False, stratify=None):
+    """
+    :stratify: if not None, a list of categories for each element in
+        imfile.
+    """
+    
+    if stratify is not None:
+        categories = list(set(stratify))
+        # SINGLE-INPUT CASE
+        if isinstance(imfiles[0], str):
+            file_lists = [[imfiles[i] for i in range(len(imfiles)) 
+                        if stratify[i] == c]
+                for c in categories
+                ]
+        # DUAL-INPUT
+        else:
+            file_lists = [([imfiles[0][i] for i in range(len(imfiles[0])) 
+                        if stratify[i] == c],
+                            [imfiles[1][i] for i in range(len(imfiles[1])) 
+                        if stratify[i] == c] ) for c in categories ]
+        datasets = [_build_simclr_dataset(f, imshape=imshape, 
+                                          batch_size=batch_size, 
+                                          num_parallel_calls=num_parallel_calls, 
+                                          norm=norm, num_channels=num_channels, 
+                                          augment=augment, 
+                                          single_channel=single_channel,
+                                          stratify=None)
+                    for f in file_lists]
+        return tf.data.experimental.sample_from_datasets(datasets)
+    
+    assert augment != False, "don't you need to augment your data?"
+    
+    
+    ds = _image_file_dataset(imfiles, imshape=imshape, 
+                             num_parallel_calls=num_parallel_calls,
+                             norm=norm, num_channels=num_channels,
+                             shuffle=True, single_channel=single_channel,
+                             augment=False)  
+    
+    # SINGLE-INPUT CASE (DEFAULT)
+    #if isinstance(imfiles, tf.data.Dataset) or isinstance(imfiles[0], str):
+    _aug = augment_function(imshape, augment)
+    @tf.function
+    def _augment_and_stack(*x):
+        # if there's only one input, augment it twice (standard SimCLR).
+        # if there are two, augment them separately (case where user is
+        # trying to express some specific semantics)
+        x0 = tf.reshape(x[0], (imshape[0], imshape[1], num_channels))
+        if len(x) == 2:
+            x1 = tf.reshape(x[1], (imshape[0], imshape[1], num_channels))
+        else:
+            x1 = x0
+        y = tf.constant(np.array([1,-1]).astype(np.int32))
+        return tf.stack([_aug(x0),_aug(x1)]), y
+
+    ds = ds.map(_augment_and_stack, num_parallel_calls=num_parallel_calls)
+        
+    ds = ds.unbatch()
+    ds = ds.batch(2*batch_size, drop_remainder=True)
+    ds = ds.prefetch(1)
+    return ds
 
 
 def _build_embedding_model(fcn, imshape, num_channels, num_hidden, output_dim, batchnorm=True):
@@ -42,64 +197,6 @@ def _build_embedding_model(fcn, imshape, num_channels, num_hidden, output_dim, b
     return embedding_model
 
 
-
-
-
-def _build_simclr_training_step(embed_model, optimizer, temperature=0.1,
-                                weight_decay=0, decoupled=False, 
-                                data_parallel=False):
-    """
-    Generate a tensorflow function to run the training step for SimCLR.
-    
-    :embed_model: full Keras model including both the convnet and 
-        projection head
-    :optimizer: Keras optimizer
-    :temperature: hyperparameter for scaling cosine similarities
-    :weight_decay: coefficient for L2 loss
-    :decoupled:
-    :data_parallel:
-    
-    The training function returns:
-    :loss: value of the loss function for training
-    :avg_cosine_sim: average value of the batch's matrix of dot products
-    """
-    def training_step(x,y):
-        
-        with tf.GradientTape() as tape:
-            # run images through model and normalize embeddings
-            z1 = tf.nn.l2_normalize(embed_model(x, training=True), 1)
-            z2 = tf.nn.l2_normalize(embed_model(y, training=True), 1)
-            
-            if not data_parallel:
-                # get replica context- we'll use this to aggregate embeddings
-                # across different GPUs
-                context = tf.distribute.get_replica_context()
-                # aggregate projections across replicas. z1 and z2 should
-                # now correspond to the global batch size (gbs, d)
-                z1 = context.all_gather(z1, 0)
-                z2 = context.all_gather(z2, 0)
-        
-            xent_loss, batch_acc = _contrastive_loss(z1, z2, temperature, 
-                                          decoupled)
-            
-        
-            if weight_decay > 0:
-                l2_loss = compute_l2_loss(embed_model)
-            else:
-                l2_loss = 0
-                
-            loss = xent_loss + weight_decay*l2_loss
-
-        gradients = tape.gradient(loss, embed_model.trainable_variables)
-        optimizer.apply_gradients(zip(gradients,
-                                      embed_model.trainable_variables))
-
-        
-        return {"nt_xent_loss":xent_loss,
-                "l2_loss":l2_loss,
-                "loss":loss,
-                "nce_batch_acc":batch_acc}
-    return training_step
 
 
 
@@ -178,6 +275,7 @@ class SimCLRTrainer(GenericExtractor):
                         "full":embed_model}
         
         # build training dataset
+        #ds = _build_simclr_dataset(trainingdata, 
         ds = _build_augment_pair_dataset(trainingdata,
                                    imshape=imshape, batch_size=batch_size,
                                    num_parallel_calls=num_parallel_calls, 
@@ -266,3 +364,4 @@ class SimCLRTrainer(GenericExtractor):
                         query_fig=query_fig)
         
         
+
