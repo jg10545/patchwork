@@ -439,6 +439,8 @@ def load_dataset_from_tfrecords(record_dir, imshape, num_channels,
     :num_parallel_calls: number of parallel readers/mappers for loading and parsing
         the dataset
     :map_fn: function to map across dataset during loading (for example, for augmentation)
+    :num_images: number of images to load per record. this will almost always be 1, but
+        if you've saved image pairs for contrastive learning set to 2.
     :gzip: whether tfrecord was saved using GZIP compression
     """
     if gzip:

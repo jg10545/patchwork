@@ -22,46 +22,131 @@ except:
     logging.debug("unable to import sentencepiece- CLIPTrainer won't work.")
 
 
-def clip_dataset(imfiles, labels, encoder, maxlen=76, imshape=(256,256), 
+def clip_dataset(imfiles, labels, encoder=None, maxlen=76, imshape=(256,256), 
                  num_channels=3, num_parallel_calls=None, norm=255, 
                  batch_size=256, augment=False, shuffle=True,
                  single_channel=False):
     """
     Build a tf.data.Dataset object for training CLIP
     
+    :imfiles: list of paths to training images OR path to directory of tfrecords saved
+        with pre-encoded text.
+    :labels: list of strings containing a caption for each image 
+    :encoder: sentencepiece object for mapping strings to byte pair encoded arrays. You
+        don't need this if loading from tfrecords.
+    :maxlen: int; length of sequences. BPE arrays will be padded or truncated to this.
+    """
+    if augment:
+        aug_func = augment_function(imshape, augment)
+    
+    # TFRECORD CASE
+    if isinstance(imfiles, str):
+        # load images from tfrecords
+        ds = load_clip_dataset_from_tfrecords(imfiles, imshape, num_channels,
+                                              num_parallel_calls=num_parallel_calls,
+                                              maxlen=maxlen, gzip=True)
+        # apply augmentation
+        if augment:
+            def _augment(x,y):
+                x = aug_func(x)
+                return x,y
+        ds = ds.map(_augment, num_parallel_calls=num_parallel_calls)
+    # LIST OF IMAGES CASE
+    else:
+        ds = _image_file_dataset(imfiles, ys=labels, imshape=imshape, 
+                                        augment=False, shuffle=shuffle)
+
+        def _encode_text(y):
+            y = str(y)
+            y = encoder.encode(y, out_type=int, add_bos=True, add_eos=True)
+            N = len(y)
+            if N > maxlen:
+                y = y[:maxlen]
+            elif N < maxlen:
+                y += [0]*(maxlen-N)
+            return np.array(y)
+
+        def _augment_and_encode(x,y):
+            if augment:
+                x = aug_func(x)
+            y = tf.py_function(_encode_text, (y,), Tout=tf.int64)
+            return x,y
+    
+        ds = ds.map(_augment_and_encode, num_parallel_calls=num_parallel_calls)
+ 
+    if batch_size > 0:
+        ds = ds.batch(batch_size)
+        ds = ds.prefetch(1)
+    return ds
+
+def save_clip_dataset_to_tfrecords(imfiles, labels, encoder, 
+                                outdir, num_shards=10,
+                                maxlen=76, imshape=(256,256), 
+                 num_channels=3, num_parallel_calls=None, norm=255, 
+                 single_channel=False, gzip=True):
+    """
+    Spool a CLIP dataset to disk as a directory full of tfrecord files
+    
     :imfiles: list of paths to training images
     :labels: list of strings containing a caption for each image 
     :encoder: sentencepiece object for mapping strings to byte pair encoded arrays
+    :outdir: string; directory to save tfrecords to
+    :num_shards: int; number of shards to save
     :maxlen: int; length of sequences. BPE arrays will be padded or truncated to this.
+    :imshape: (H,W) dimensions of image
+    :num_channels: number of channels
+    :num_parallel_calls: number of parallel readers/mappers for loading and parsing
+        the dataset
+    :norm:
+    :single_channel:
+    :gzip: whether tfrecord was saved using GZIP compression
     """
-    ds = _image_file_dataset(imfiles, ys=labels, imshape=imshape, 
-                                        augment=augment, shuffle=shuffle)
+    if gzip:
+        comp = "GZIP"
+    else:
+        comp = "NONE"
+    # build a dataset
+    ds = clip_dataset(imfiles, labels, encoder, maxlen=maxlen, imshape=imshape,
+                      num_channels=num_channels, num_parallel_calls=num_parallel_calls,
+                      norm=norm, batch_size=-1, augment=False, shuffle=True, 
+                      single_channel=single_channel)
+    # save it to disk
+    def _shardfunc(*x):
+        return tf.random.uniform((), minval=0, maxval=num_shards, dtype=tf.int64)
+    tf.data.experimental.save(ds, outdir, compression=comp, shard_func=_shardfunc)
 
-    if augment:
-        aug_func = augment_function(imshape, {"rot90":True})
 
-
-    def _encode_text(y):
-        y = str(y)
-        y = encoder.encode(y, out_type=int, add_bos=True, add_eos=True)
-        N = len(y)
-        if N > maxlen:
-            y = y[:maxlen]
-        elif N < maxlen:
-            y += [0]*(maxlen-N)
-        return np.array(y)
-
-    def _augment_and_encode(x,y):
-        if augment:
-            x = aug_func(x)
-        y = tf.py_function(_encode_text, (y,), Tout=tf.int64)
-        return x,y
+def load_clip_dataset_from_tfrecords(record_dir, imshape, num_channels,
+                                shuffle=2048, num_parallel_calls=None,
+                                maxlen=76, gzip=True):
+    """
+    Load a directory structure of tfrecord files (like you'd build with
+    save_clip_dataset_to_tfrecords) into a tensorflow dataset. Wrapper for
+    tf.data.TFRecordDataset().
     
-    ds = ds.map(_augment_and_encode, num_parallel_calls=num_parallel_calls)
-    ds = ds.batch(batch_size)
-    ds = ds.prefetch(1)
+    :record_dir: top-level directory containing record files
+    :imshape: (H,W) dimensions of image
+    :num_channels: number of channels
+    :shuffle: if not False, size of shuffle queue
+    :num_parallel_calls: number of parallel readers/mappers for loading and parsing
+        the dataset
+    :maxlen: sequence length for encoded text. IT IS SUPER IMPORTANT THAT YOU SET
+        THIS CORRECTLY!
+    :gzip: whether tfrecord was saved using GZIP compression
+    """
+    if gzip:
+        comp = "GZIP"
+    else:
+        comp = "NONE"
+    # define shape/dtype of tensors to be loaded
+    element_spec = (tf.TensorSpec(shape=(imshape[0],imshape[1],num_channels),
+                                     dtype=tf.float32),
+                    tf.TensorSpec(shape=maxlen, dtype=tf.int64))
+    # note that this function may change in the future
+    ds = tf.data.experimental.load(record_dir, element_spec, compression=comp)
+    if shuffle:
+        ds = ds.shuffle(shuffle)
     return ds
-
 
 
 def build_image_encoder(fcn, num_channels=3, output_dim=64):
@@ -197,7 +282,8 @@ class CLIPTrainer(GenericExtractor):
         """
         :logdir: (string) path to log directory
         :tokenizer: (string) path to sentencepiece model file
-        :trainingdata: (list) list of strings; paths to training images
+        :trainingdata: (list or str) list of strings; paths to training images 
+            OR string; path to directory containing path to directory of tfrecord files
         :traininglabels: (list) list of strings; captions for training images
         :testdata: (list) filepaths of a batch of images to use for eval
         :testlabels: (list) list of strings; captions for test images
