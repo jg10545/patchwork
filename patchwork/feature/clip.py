@@ -22,7 +22,7 @@ except:
     logging.debug("unable to import sentencepiece- CLIPTrainer won't work.")
 
 
-def clip_dataset(imfiles, labels, encoder=None, maxlen=76, imshape=(256,256), 
+def clip_dataset(imfiles, labels=None, encoder=None, maxlen=76, imshape=(256,256), 
                  num_channels=3, num_parallel_calls=None, norm=255, 
                  batch_size=256, augment=False, shuffle=True,
                  single_channel=False):
@@ -31,7 +31,8 @@ def clip_dataset(imfiles, labels, encoder=None, maxlen=76, imshape=(256,256),
     
     :imfiles: list of paths to training images OR path to directory of tfrecords saved
         with pre-encoded text.
-    :labels: list of strings containing a caption for each image 
+    :labels: list of strings containing a caption for each image . You don't need this
+        if loading from tfrecords
     :encoder: sentencepiece object for mapping strings to byte pair encoded arrays. You
         don't need this if loading from tfrecords.
     :maxlen: int; length of sequences. BPE arrays will be padded or truncated to this.

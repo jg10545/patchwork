@@ -4,6 +4,7 @@ import tensorflow as tf
 
 from patchwork.feature.clip import build_image_encoder
 from patchwork.feature.clip import compute_nce_loss
+from patchwork.feature.clip import clip_dataset
 from patchwork.feature.clip import save_clip_dataset_to_tfrecords
 from patchwork.feature.clip import load_clip_dataset_from_tfrecords
     
@@ -22,6 +23,31 @@ def test_build_image_encoder():
     assert isinstance(encoder, tf.keras.Model)
     assert encoder.output_shape == (None, 7)
     
+    
+def test_clip_dataset(test_png_path):
+    N = 10
+    maxlen = 13
+    batch_size=2
+    
+    imfiles = [test_png_path]*N
+    labels = ["hey now- you're an all star"]*N
+    encoder = MockEncoder(maxlen)
+    
+    aug = {"flip_left_right":True}
+    
+    ds = clip_dataset(imfiles, labels, encoder, maxlen=maxlen,
+                      imshape=(32,32), num_channels=3, 
+                      batch_size=batch_size,
+                      num_parallel_calls=1, augment=aug)
+    
+    assert isinstance(ds, tf.data.Dataset)
+    
+    for x,y in ds:
+        break
+    assert x.shape == (batch_size, 32, 32, 3)
+    assert y.shape == (batch_size, maxlen)
+    assert x.dtype == tf.float32
+    assert y.dtype == tf.int64
     
 def test_save_and_load_tfrecord(test_png_path, tmp_path_factory):
     N = 10
@@ -51,6 +77,42 @@ def test_save_and_load_tfrecord(test_png_path, tmp_path_factory):
     assert isinstance(ds, tf.data.Dataset)
     assert x.shape == (32,32,3)
     assert y.shape == (maxlen)
+    
+
+def test_save_and_load_tfrecord_with_clip_dataset(test_png_path, tmp_path_factory):
+    N = 10
+    maxlen = 13
+    imshape = (32,32)
+    num_channels = 3
+    num_parallel_calls = 1
+    batch_size = 2
+    aug = {"flip_left_right":True}
+    
+    imfiles = [test_png_path]*N
+    labels = ["somebody once told me, the world is gonna roll me"]*N
+    
+    encoder = MockEncoder(maxlen)
+    
+    # SAVE IT TO TFRECORD FILES
+    fn = str(tmp_path_factory.mktemp("data"))
+    save_clip_dataset_to_tfrecords(imfiles, labels, encoder, fn,
+                                   num_shards=2, maxlen=maxlen, 
+                                   imshape=imshape, num_channels=num_channels,
+                                   num_parallel_calls=num_parallel_calls)
+    # load back in with CLIP dataset
+    ds = clip_dataset(fn, maxlen=maxlen,
+                      imshape=(32,32), num_channels=3, 
+                      batch_size=batch_size,
+                      num_parallel_calls=1, augment=aug)
+    
+    for x,y in ds:
+        break
+    
+    assert isinstance(ds, tf.data.Dataset)
+    assert x.shape == (batch_size, 32, 32, 3)
+    assert y.shape == (batch_size, maxlen)
+    assert x.dtype == tf.float32
+    assert y.dtype == tf.int64
 
     
 """
