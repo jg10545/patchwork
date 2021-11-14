@@ -163,7 +163,7 @@ class SimSiamTrainer(GenericExtractor):
             # Create a Keras model that wraps the base encoder and 
             # the projection head
             project, predict = _build_embedding_models(fcn, imshape, num_channels,
-                                             num_hidden, num_hidden, pred_dim)
+                                             num_hidden, pred_dim)
         
         self._models = {"fcn":fcn, 
                         "full":project,
