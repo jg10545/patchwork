@@ -27,13 +27,14 @@ def _build_negative_mask(batch_size):
     return mask
 
 
-def _simclr_softmax_prob(z1, z2, temp, mask):
+def _simclr_softmax_prob(z1, z2, temp, mask, eps=0):
     """
     Compute SimCLR softmax probability for a pair of batches of normalized
     embeddings. Also compute the batch accuracy.
     
     :z1, z2: normalized embeddings (gbs,d)
     :temp: scalar Gibbs temperature parameter
+    :eps: epsilon parameter for implicit feature modification
     
     Returns:
         :softmax_prob:
@@ -41,7 +42,7 @@ def _simclr_softmax_prob(z1, z2, temp, mask):
     """
     # positive logits: just the dot products between corresponding pairs
     # shape (gbs,)
-    pos = tf.reduce_sum(z1*z2, -1)/temp
+    pos = (tf.reduce_sum(z1*z2, -1) - eps)/temp
     pos = tf.concat([pos,pos], 0) # from HCL code- line 38 in main.py. shape (2gbs,)
     pos_exp = tf.exp(pos)
             
@@ -50,7 +51,7 @@ def _simclr_softmax_prob(z1, z2, temp, mask):
     # shape (2gbs, 2gbs)
     s = tf.matmul(z, z, transpose_b=True)
     # convert negatives to logits
-    neg_exp = mask*tf.exp(s/temp)     
+    neg_exp = mask*tf.exp((s + eps)/temp)     
        
     # COMPUTE BATCH ACCURACY ()
     biggest_neg = tf.reduce_max(neg_exp, -1)
@@ -110,13 +111,15 @@ def _hcl_softmax_prob(z1, z2, temp, beta, tau_plus, mask):
 
 
 
-def _contrastive_loss(z1, z2, temp, decoupled=True):
+def _contrastive_loss(z1, z2, temp, decoupled=True, eps=0):
     """
     Compute contrastive loss for SimCLR or Decoupled Contrastive Learning.
     Also compute the batch accuracy.
     
     :z1, z2: normalized embeddings (gbs,d)
     :temp: scalar Gibbs temperature parameter
+    :decoupled: bool; whether to use the loss function from the DCL paper
+    :eps: epsilon parameter from the IFM paper
     
     Returns:
         :softmax_prob:
@@ -128,7 +131,7 @@ def _contrastive_loss(z1, z2, temp, decoupled=True):
     mask = tf.stop_gradient(_build_negative_mask(z1.shape[0]))
     # positive logits: just the dot products between corresponding pairs
     # shape (gbs,)
-    pos = tf.reduce_sum(z1*z2, -1)/temp
+    pos = (tf.reduce_sum(z1*z2, -1) - eps)/temp
     pos = tf.concat([pos,pos], 0) # from HCL code- line 38 in main.py. shape (2gbs,)
     pos_exp = tf.exp(pos)
             
@@ -137,7 +140,7 @@ def _contrastive_loss(z1, z2, temp, decoupled=True):
     # shape (2gbs, 2gbs)
     s = tf.matmul(z, z, transpose_b=True)
     # convert negatives to logits
-    neg_exp = mask*tf.exp(s/temp)     
+    neg_exp = mask*tf.exp((s + eps)/temp)     
        
     # COMPUTE BATCH ACCURACY ()
     biggest_neg = tf.reduce_max(neg_exp, -1)

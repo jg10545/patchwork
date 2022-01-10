@@ -113,7 +113,7 @@ def _build_embedding_model(fcn, imshape, num_channels, num_hidden, output_dim, b
 
 
 def _build_simclr_training_step(embed_model, optimizer, temperature=0.1,
-                                weight_decay=0, decoupled=False, 
+                                weight_decay=0, decoupled=False, eps=0,
                                 data_parallel=False):
     """
     Generate a tensorflow function to run the training step for SimCLR.
@@ -124,6 +124,7 @@ def _build_simclr_training_step(embed_model, optimizer, temperature=0.1,
     :temperature: hyperparameter for scaling cosine similarities
     :weight_decay: coefficient for L2 loss
     :decoupled:
+    :eps:
     :data_parallel:
     
     The training function returns:
@@ -147,7 +148,7 @@ def _build_simclr_training_step(embed_model, optimizer, temperature=0.1,
                 z2 = context.all_gather(z2, 0)
         
             xent_loss, batch_acc = _contrastive_loss(z1, z2, temperature, 
-                                          decoupled)
+                                          decoupled, eps)
             
         
             if weight_decay > 0:
@@ -239,7 +240,7 @@ class SimCLRTrainer(GenericExtractor):
     def __init__(self, logdir, trainingdata, testdata=None, fcn=None, 
                  augment=True, temperature=0.1, num_hidden=128,
                  output_dim=64, batchnorm=True, weight_decay=0,
-                 decoupled=False, data_parallel=True,
+                 decoupled=False, eps=0, data_parallel=True,
                  lr=0.01, lr_decay=100000, decay_type="exponential",
                  opt_type="adam",
                  imshape=(256,256), num_channels=3,
@@ -259,6 +260,8 @@ class SimCLRTrainer(GenericExtractor):
         :weight_decay: coefficient for L2-norm loss. The original SimCLR paper used 1e-6.
         :decoupled: if True, use the modified loss function from "Decoupled Contrastive 
             Learning" by Yeh et al
+        :eps: epsilon parameter from the Implicit Feature Modification paper ("Can
+             contrastive learning avoid shortcut solutions?" by Robinson et al)
         :data_parallel: if True, compute contrastive loss only using negatives from
             within each replica
         :lr: (float) initial learning rate
@@ -320,7 +323,7 @@ class SimCLRTrainer(GenericExtractor):
         step_fn = _build_simclr_training_step(
                 embed_model, self._optimizer, 
                 temperature, weight_decay=weight_decay,
-                decoupled=decoupled, data_parallel=data_parallel)
+                decoupled=decoupled, eps=eps, data_parallel=data_parallel)
         self._training_step = self._distribute_training_function(step_fn)
         
         if testdata is not None:
@@ -357,7 +360,8 @@ class SimCLRTrainer(GenericExtractor):
                             num_hidden=num_hidden, output_dim=output_dim,
                             weight_decay=weight_decay, batchnorm=batchnorm,
                             lr=lr, lr_decay=lr_decay, 
-                            decoupled=decoupled, data_parallel=data_parallel,
+                            decoupled=decoupled, eps=eps,
+                            data_parallel=data_parallel,
                             imshape=imshape, num_channels=num_channels,
                             norm=norm, batch_size=batch_size,
                             num_parallel_calls=num_parallel_calls,
