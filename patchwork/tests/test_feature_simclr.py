@@ -73,6 +73,24 @@ def test_simclr_dataset_with_custom_dataset():
     assert x.shape[0] == 2*batch_size
     assert (y.numpy() == np.array([1,-1,1,-1,1,-1,1,-1,1,-1])).all()
     
+def test_simclr_dataset_with_custom_pair_dataset():
+    rawdata = np.zeros((10,32,32,3)).astype(np.float32)
+    ds = tf.data.Dataset.from_tensor_slices((rawdata, rawdata))
+    batch_size = 5
+    ds = _build_simclr_dataset(ds, imshape=(32,32),
+                              num_channels=3, norm=255,
+                              augment=True, single_channel=False,
+                              batch_size=batch_size)
+    
+    assert isinstance(ds, tf.data.Dataset)
+    for x,y in ds:
+        break
+    # since SimCLR makes augmented pairs, the batch size
+    # is doubled
+    assert x.shape[0] == 2*batch_size
+    assert (y.numpy() == np.array([1,-1,1,-1,1,-1,1,-1,1,-1])).all()
+    
+    
 def test_build_embedding_model():
     model = _build_embedding_model(fcn, (32,32), 3, 17, 11)
     assert isinstance(model, tf.keras.Model)
@@ -86,12 +104,13 @@ def test_build_simclr_training_step():
     step = _build_simclr_training_step(model, opt, 0.1)
     
     x = tf.zeros((4,32,32,3), dtype=tf.float32)
-    y = np.array([1,-1,1,-1]).astype(np.int32)
+    #y = np.array([1,-1,1,-1]).astype(np.int32)
+    y = x
     lossdict = step(x,y)
     
     assert isinstance(lossdict["loss"].numpy(), np.float32)
     # should include loss and average cosine similarity
-    assert len(lossdict) == 2
+    assert len(lossdict) == 4 #2
     
     
 def test_build_simclr_training_step_with_weight_decay():
@@ -101,7 +120,8 @@ def test_build_simclr_training_step_with_weight_decay():
                                        weight_decay=1e-6)
     
     x = tf.zeros((4,32,32,3), dtype=tf.float32)
-    y = np.array([1,-1,1,-1]).astype(np.int32)
+    #y = np.array([1,-1,1,-1]).astype(np.int32)
+    y = x
     lossdict = step(x,y)
     
     # should include total loss, crossent loss, average cosine

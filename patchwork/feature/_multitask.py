@@ -441,20 +441,7 @@ class MultiTaskTrainer(GenericExtractor):
                                     zip(self._tasks, self._task_weights)})
             
         if self._downstream_labels is not None:
-            # choose the hyperparameters to record
-            if not hasattr(self, "_hparams_config"):
-                from tensorboard.plugins.hparams import api as hp
-                hparams = {
-                    hp.HParam("train_fcn", hp.Discrete([False, True])):self.config["train_fcn"],
-                    hp.HParam("adaptve", hp.Discrete([False, True])):self.config["adaptive"],
-                    hp.HParam("lr", hp.RealInterval(0., 10000.)):self.config["lr"],
-                    hp.HParam("lr_decay", hp.RealInterval(0., 10000.)):self.config["lr_decay"],
-                    hp.HParam("decay_type", hp.Discrete(["cosine", "exponential"])):self.config["decay_type"],
-                    hp.HParam("weight_decay", hp.RealInterval(0., 10000.)):self.config["weight_decay"]
-                    }
-            else:
-                hparams=None
-            self._linear_classification_test(hparams, avpool=avpool, query_fig=query_fig)
+            self._linear_classification_test(avpool=avpool, query_fig=query_fig)
             
                 
   
