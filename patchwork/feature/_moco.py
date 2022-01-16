@@ -62,8 +62,16 @@ def _build_augment_pair_dataset(imfiles, imshape=(256,256), batch_size=256,
     # define an pair augment function 
     if isinstance(imfiles, tf.data.Dataset):
         ds = imfiles
-        def _loader(x):
-            return _aug(x), _aug(x)
+        def _loader(*x):
+            # check to see whether one or two image tensors were passed.
+            # if one, augment it twice (vanilla MoCo). if two, augment
+            # them separately
+            x0 = x[0]
+            if len(x) == 2:
+                x1 = x[1]
+            else:
+                x1 = x0
+            return _aug(x0), _aug(x1)
         
         ds = ds.map(_loader, num_parallel_calls=num_parallel_calls)
         
@@ -72,7 +80,7 @@ def _build_augment_pair_dataset(imfiles, imshape=(256,256), batch_size=256,
     elif isinstance(imfiles, str):
         def _loader(x):
             return _aug(x), _aug(x)
-        ds = load_dataset_from_tfrecords(imfiles, num_parallel_calls=num_parallel_calls,
+        ds = load_dataset_from_tfrecords(imfiles, imshape, num_channels, num_parallel_calls=num_parallel_calls,
                                          map_fn=_loader)
     # CASE 3: User passes a list of filepaths. Turn the list into a Dataset,
     # shuffle, and define a function that both loads and augments each image
@@ -419,33 +427,9 @@ class MomentumContrastTrainer(GenericExtractor):
             
             self._record_scalars(alignment=alignment,
                              uniformity=uniformity, metric=True)
-            metrics=["linear_classification_accuracy",
-                                 "alignment",
-                                 "uniformity"]
-        else:
-            metrics=["linear_classification_accuracy"]
-            
+
         if self._downstream_labels is not None:
-            # choose the hyperparameters to record
-            if not hasattr(self, "_hparams_config"):
-                from tensorboard.plugins.hparams import api as hp
-                hparams = {
-                    hp.HParam("tau", hp.RealInterval(0., 10000.)):self.config["tau"],
-                    hp.HParam("alpha", hp.RealInterval(0., 1.)):self.config["alpha"],
-                    hp.HParam("batches_in_buffer", hp.IntInterval(1, 1000000)):self.config["batches_in_buffer"],
-                    hp.HParam("output_dim", hp.IntInterval(1, 1000000)):self.config["output_dim"],
-                    hp.HParam("num_hidden", hp.IntInterval(1, 1000000)):self.config["num_hidden"],
-                    hp.HParam("weight_decay", hp.RealInterval(0., 10000.)):self.config["weight_decay"],
-                    hp.HParam("N", hp.IntInterval(0, 1000000)):self.config["N"],
-                    hp.HParam("s", hp.IntInterval(0, 1000000)):self.config["s"],
-                    hp.HParam("margin", hp.RealInterval(0., 10000.)):self.config["margin"]
-                    }
-                for k in self.augment_config:
-                    if isinstance(self.augment_config[k], float):
-                        hparams[hp.HParam(k, hp.RealInterval(0., 10000.))] = self.augment_config[k]
-            else:
-                hparams=None
-            self._linear_classification_test(hparams, metrics=metrics, avpool=avpool,
+            self._linear_classification_test(avpool=avpool,
                                              query_fig=query_fig)
         
         

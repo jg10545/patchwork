@@ -13,6 +13,7 @@ from patchwork.feature._generic import GenericExtractor
 from patchwork.feature._text_transformer import build_text_transformer
 from patchwork.loaders import _image_file_dataset
 from patchwork._augment import augment_function
+from patchwork.feature._contrastive import _contrastive_loss, _build_negative_mask
 
 
 try:
@@ -26,7 +27,12 @@ def clip_dataset(imfiles, labels, encoder, maxlen=76, imshape=(256,256),
                  batch_size=256, augment=False, shuffle=True,
                  single_channel=False):
     """
+    Build a tf.data.Dataset object for training CLIP
     
+    :imfiles: list of paths to training images
+    :labels: list of strings containing a caption for each image 
+    :encoder: sentencepiece object for mapping strings to byte pair encoded arrays
+    :maxlen: int; length of sequences. BPE arrays will be padded or truncated to this.
     """
     ds = _image_file_dataset(imfiles, ys=labels, imshape=imshape, 
                                         augment=augment, shuffle=shuffle)
@@ -63,6 +69,10 @@ def build_image_encoder(fcn, num_channels=3, output_dim=64):
     NOT the full version used in OpenAI's paper- just a linear
     projection head after the global average pool, instead of
     a multi-head attention mechanism
+    
+    :fcn: fully convolutional network to build off of
+    :num_channels: int; number of input channels
+    :output_dim: int; output dimension of final dense layer
     """
     inpt = tf.keras.layers.Input((None, None, 3))
     x = fcn(inpt)
@@ -151,21 +161,22 @@ class CLIPTrainer(GenericExtractor):
                  testdata=None, testlabels=None, fcn=None,  augment=True,
                  maxlen=76, embed_dim=512, ff_dim=2048,
                  num_layers=12, num_heads=8,
-                 temperature=0.07, output_dim=64, 
+                 temperature=0.07, output_dim=64,
                  weight_decay=0,
                  lr=0.01, lr_decay=0, decay_type="cosine",
                  opt_type="adam",
                  imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, num_parallel_calls=None,
                  single_channel=False, notes="",
+                 downstream_labels=None,
                  strategy=None):
         """
         :logdir: (string) path to log directory
         :tokenizer: (string) path to sentencepiece model file
-        :trainingdata: (list) list of paths to training images
-        :traininglabels:
+        :trainingdata: (list) list of strings; paths to training images
+        :traininglabels: (list) list of strings; captions for training images
         :testdata: (list) filepaths of a batch of images to use for eval
-        :testlabels:
+        :testlabels: (list) list of strings; captions for test images
         :fcn: (keras Model) fully-convolutional network to train as feature extractor
         :augment: (dict) dictionary of augmentation parameters, True for defaults
         :maxlen: int; length to pad or truncate encoded text queries to
@@ -196,6 +207,7 @@ class CLIPTrainer(GenericExtractor):
         """
         self.logdir = logdir
         self.trainingdata = trainingdata
+        self._downstream_labels = downstream_labels
         self._test_index_updated = False
         if strategy is None:
             strategy = tf.distribute.get_strategy()
@@ -256,7 +268,9 @@ class CLIPTrainer(GenericExtractor):
             def loss_step(x,y):
                 img_embed = self._models["full"](x, training=False)
                 text_embed = self._models["text"](y, training=False)
-                return compute_nce_loss(img_embed, text_embed, temp=temperature, return_acc=True)
+                img_norm = tf.nn.l2_normalize(img_embed, 1)
+                text_norm = tf.nn.l2_normalize(text_embed, 1)
+                return _contrastive_loss(img_norm, text_norm, temperature)
             self._loss_step = loss_step
             self._test = True
         else:
@@ -265,12 +279,15 @@ class CLIPTrainer(GenericExtractor):
         self.step = 0
         
         # parse and write out config YAML
-        self._parse_configs(tokenizer=tokenizer, maxlen=maxlen,
+        metrics= ["linear_classification_accuracy",
+                   "test_acc"]
+        self._parse_configs(metrics=metrics,
+                            tokenizer=tokenizer, maxlen=maxlen,
                             augment=augment, temperature=temperature,
                             output_dim=output_dim, weight_decay=weight_decay,
                             num_layers=num_layers, 
                             num_heads=num_heads,
-                            lr=lr, lr_decay=lr_decay, 
+                            lr=lr, lr_decay=lr_decay,
                             imshape=imshape, num_channels=num_channels,
                             norm=norm, batch_size=batch_size,
                             num_parallel_calls=num_parallel_calls,
@@ -301,46 +318,9 @@ class CLIPTrainer(GenericExtractor):
                 
             self._record_scalars(test_acc=np.mean(test_acc),
                                  test_loss=np.mean(test_loss))
-            # if the user passed out-of-sample data to test- compute
-            # alignment and uniformity measures
-            #alignment, uniformity = _compute_alignment_and_uniformity(
-            #                                self._test_ds, self._models["full"])
-            
-            #self._record_scalars(alignment=alignment,
-            #                 uniformity=uniformity, metric=True)
-            #metrics=["linear_classification_accuracy",
-            #                     "alignment",
-            #                     "uniformity"]
-        #else:
-        #    metrics=["linear_classification_accuracy"]
-        """
-        if self._downstream_labels is not None:
-            # choose the hyperparameters to record
-            if not hasattr(self, "_hparams_config"):
-                from tensorboard.plugins.hparams import api as hp
-                hparams = {
-                    hp.HParam("temperature", hp.RealInterval(0., 10000.)):self.config["temperature"],
-                    hp.HParam("mean_scale", hp.RealInterval(0., 10000.)):self.config["mean_scale"],
-                    hp.HParam("num_samples", hp.IntInterval(1, 1000000)):self.config["num_samples"],
-                    hp.HParam("beta", hp.RealInterval(0., 10000.)):self.config["beta"],
-                    hp.HParam("tau_plus", hp.RealInterval(0., 10000.)):self.config["tau_plus"],
-                    hp.HParam("num_hidden", hp.IntInterval(1, 1000000)):self.config["num_hidden"],
-                    hp.HParam("output_dim", hp.IntInterval(1, 1000000)):self.config["output_dim"],
-                    hp.HParam("lr", hp.RealInterval(0., 10000.)):self.config["lr"],
-                    hp.HParam("lr_decay", hp.RealInterval(0., 10000.)):self.config["lr_decay"],
-                    hp.HParam("decay_type", hp.Discrete(["cosine", "exponential"])):self.config["decay_type"],
-                    hp.HParam("weight_decay", hp.RealInterval(0., 10000.)):self.config["weight_decay"],
-                    hp.HParam("batchnorm", hp.Discrete([True, False])):self.config["batchnorm"],
-                    }
-                for k in self.augment_config:
-                    if isinstance(self.augment_config[k], float):
-                        hparams[hp.HParam(k, hp.RealInterval(0., 10000.))] = self.augment_config[k]
-            else:
-                hparams=None
 
-            self._linear_classification_test(hparams,
-                        metrics=metrics, avpool=avpool, query_fig=query_fig)
-            """
+        if self._downstream_labels is not None:         
+            self._linear_classification_test(avpool=avpool, query_fig=query_fig)
             
     def save(self):
         """

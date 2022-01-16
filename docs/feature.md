@@ -178,13 +178,13 @@ dctrainer.fit(10)
 
 ## SimCLR
 
-*Note: this trainer is redundant with the `HCLTrainer` so I plan on deprecating it.*
-
-`patchwork` contains a TensorFlow implementation of the algorithm in Chen *et al*'s [A Simple Framework for Contrastive Learning of Visual Representations](https://arxiv.org/abs/2002.05709). 
+`patchwork` contains a TensorFlow implementation of the algorithm in Chen *et al*'s [A Simple Framework for Contrastive Learning of Visual Representations](https://arxiv.org/abs/2002.05709). It also implements the modified contrastive loss from Yeh *et al*'s [Decoupled Contrastive Learning](https://arxiv.org/abs/2110.06848) if the `decoupled` argument is set to `True`.
 
 ### Differences between the paper and `patchwork`
 
 I haven't implemented the LARS optimizer used in the paper. Using the `opt_type` kwarg you can choose Adam or momentum optimizers.
+
+If running on multiple GPUs, you can choose whether or not to compare negative examples across replicas using the `data_parallel` kwarg. If `False`, embeddings will be shuffled between replicas like in the SimCLR paper. If `True`, contrastive loss will only be computed using the negatives from that replica's batch.
 
 ### Example code
    
@@ -232,6 +232,8 @@ trainer = pw.feature.SimCLRTrainer(
     temperature=0.1,
     num_hidden=128,
     output_dim=32,
+    decoupled=False,
+    data_parallel=False,
     batch_size=32,
     imshape=(256,256),
     downstream_labels=downstream_labels

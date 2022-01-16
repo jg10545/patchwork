@@ -11,8 +11,8 @@ import yaml
 import numpy as np
 
 import tensorflow as tf
+from tensorboard.plugins.hparams import api as hp
 from tqdm import tqdm
-#from sklearn.svm import LinearSVC
 from sklearn.linear_model import SGDClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import accuracy_score, confusion_matrix
@@ -39,6 +39,49 @@ def _run_this_epoch(flag, e):
         else:
             return False
 
+
+SPECIAL_HPARAMS = {
+    "decay_type":["cosine", "exponential", "staircase"],
+    "opt_type":["adam", "momentum"]
+    }
+
+def _configure_hparams(logdir, dicts, 
+                       metrics=["linear_classification_accuracy",
+                                "alignment", "uniformity"]):
+    """
+    Set up the tensorboard hyperparameter interface
+    
+    :logdir: string; path to log directory
+    :dicts: list of dictionaries containing hyperparameter values
+    :metrics: list of strings; metric names
+    """
+    metrics = [hp.Metric(m) for m in metrics]
+    params = {}
+    # for each parameter dictionary
+    for d in dicts:
+        # for each parameter:
+        for k in d:
+            # is it a categorical?
+            if k in SPECIAL_HPARAMS:
+                params[hp.HParam(k, hp.Discrete(SPECIAL_HPARAMS[k]))] = d[k]
+            elif isinstance(d[k], bool):
+                params[hp.HParam(k, hp.Discrete([True, False]))] = d[k]
+            elif isinstance(d[k], int):
+                params[hp.HParam(k, hp.IntInterval(1, 1000000))] = d[k]
+            elif isinstance(d[k], float):
+                params[hp.HParam(k, hp.RealInterval(0., 10000000.))] = d[k]
+    #
+    hparams_config = hp.hparams_config(
+                        hparams=list(params.keys()), 
+                        metrics=metrics)
+                
+    # get a name for the run
+    base_dir, run_name = os.path.split(logdir)
+    if len(run_name) == 0:
+        base_dir, run_name = os.path.split(base_dir)
+    # record hyperparamers
+    hp.hparams(params, trial_id=run_name)
+    
 
 def linear_classification_test(fcn, downstream_labels, avpool=True, rotation_task=False,
                                query_fig=False, **input_config):
@@ -158,7 +201,8 @@ class GenericExtractor(object):
         
         
         
-    def _parse_configs(self, **kwargs):
+    def _parse_configs(self, metrics=["linear_classification_accuracy",
+                                      "alignment", "uniformity"], **kwargs):
         """
         Organize input parameters and save to a YAML file so you can
         find them later.
@@ -166,7 +210,8 @@ class GenericExtractor(object):
         self.config = {}
         self.input_config = {}
         self.augment_config = False
-        
+        # separate out input params, augmentation params, and model-specific
+        # params
         for k in kwargs:
             if k == "augment":
                 self.augment_config = kwargs[k]
@@ -180,11 +225,18 @@ class GenericExtractor(object):
         else:
             self._notes = None
                 
+        # dump configuration to a YAML file
         config_path = os.path.join(self.logdir, "config.yml")
         config_dict = {"model":self.config, "input":self.input_config, 
                        "augment":self.augment_config}
         yaml.dump(config_dict, open(config_path, "w"), default_flow_style=False)
         
+        # save tensorboard hyperparameters
+        # the only input parameter relevant to most hyperparameter tuning
+        # questions is the batch size.
+        dicts = [self.config, {"batch_size":self.input_config["batch_size"]},
+                 self.augment_config]
+        _configure_hparams(self.logdir, dicts, metrics)
         
     def _build_default_model(self, **kwargs):
         # REPLACE THIS WHEN SUBCLASSING
@@ -270,9 +322,7 @@ class GenericExtractor(object):
         for h in hists:
             tf.summary.histogram(h, hists[h], step=self.step)
             
-    def _linear_classification_test(self, params=None, 
-                                    metrics=["linear_classification_accuracy"],
-                                    avpool=True, query_fig=False):
+    def _linear_classification_test(self, avpool=True, query_fig=False):
         
          results = linear_classification_test(self.fcn, 
                                     self._downstream_labels, 
@@ -287,21 +337,7 @@ class GenericExtractor(object):
          conf_mat = np.expand_dims(np.expand_dims(conf_mat, 0), -1)/conf_mat.max()
          self._record_scalars(linear_classification_accuracy=acc, metric=True)
          self._record_images(linear_classification_confusion_matrix=conf_mat)
-         # if the model passed hyperparameters to record for the
-         # tensorboard hparams interface:
-         if params is not None:
-             # first time- set up hparam config
-             if not hasattr(self, "_hparams_config"):
-                metrics = [hp.Metric(m) for m in metrics]
-                self._hparams_config = hp.hparams_config(
-                        hparams=list(params.keys()), 
-                        metrics=metrics)
-                
-                # record hyperparamters
-                base_dir, run_name = os.path.split(self.logdir)
-                if len(run_name) == 0:
-                    base_dir, run_name = os.path.split(base_dir)
-                hp.hparams(params, trial_id=run_name)
+  
                 
     def rotation_classification_test(self, testdata=None, avpool=False):
         """

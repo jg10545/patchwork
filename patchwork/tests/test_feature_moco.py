@@ -76,6 +76,25 @@ def test_build_augment_pair_dataset_with_custom_dataset():
     
     assert x.shape == (5,32,32,3)
     assert y.shape == (5,32,32,3)
+ 
+    
+def test_build_augment_pair_dataset_with_custom_pair_dataset():
+    rawdata = np.zeros((10,32,32,3)).astype(np.float32)
+    ds = tf.data.Dataset.from_tensor_slices((rawdata,rawdata))
+    batch_size = 5
+    ds = _build_augment_pair_dataset(ds, imshape=(32,32),
+                              num_channels=3, norm=255,
+                              augment={"flip_left_right":True}, 
+                              single_channel=False,
+                              batch_size=batch_size)
+    assert isinstance(ds, tf.data.Dataset)
+    for x,y in ds:
+        x = x.numpy()
+        y = y.numpy()
+        break
+    
+    assert x.shape == (5,32,32,3)
+    assert y.shape == (5,32,32,3)
     
     
 def test_build_logits_no_mochi():
