@@ -218,6 +218,30 @@ def _random_mask(x, prob=0.25,  **kwargs):
 
 
 def _gaussian_blur(x, prob=0.25, imshape=(256,256), **kwargs):
+    if _choose(prob):
+        kernel = np.array([[0.00000067, 0.00002292, 0.00019117, 0.00038771, 0.00019117, 0.00002292, 0.00000067],
+                       [0.00002292, 0.00078633, 0.00655965, 0.01330373, 0.00655965, 0.00078633, 0.00002292],
+                       [0.00019117, 0.00655965, 0.05472157, 0.11098164, 0.05472157, 0.00655965, 0.00019117],
+                       [0.00038771, 0.01330373, 0.11098164, 0.22508352, 0.11098164, 0.01330373, 0.00038771],
+                       [0.00019117, 0.00655965, 0.05472157, 0.11098164, 0.05472157, 0.00655965, 0.00019117],
+                       [0.00002292, 0.00078633, 0.00655965, 0.01330373, 0.00655965, 0.00078633, 0.00002292],
+                       [0.00000067, 0.00002292, 0.00019117, 0.00038771, 0.00019117, 0.00002292, 0.00000067]])
+        zeros = np.zeros((7,7))
+        kernel = np.sqrt(kernel)
+        kernel /=kernel.sum()
+        kernel = np.stack([
+            np.stack([kernel, zeros, zeros], -1),
+            np.stack([zeros, kernel, zeros], -1),
+            np.stack([zeros, zeros, kernel], -1)
+        ], -1)
+        conv = tf.nn.conv2d(tf.expand_dims(x,0), kernel, strides=[1, 1, 1, 1], padding="SAME")
+        # add a chance to blur again
+        if _choose(prob):
+            conv = tf.nn.conv2d(conv, kernel, strides=[1, 1, 1, 1], padding="SAME")
+        x = tf.squeeze(conv, 0)
+    return x
+
+def _gaussian_blur_DEPRECATED(x, prob=0.25, imshape=(256,256), **kwargs):
     """
     based on SimCLR implementation https://github.com/google-research/simclr/blob/3fb622131d1b6dee76d0d5f6aac67db84dab3800/data_util.py#L397
     """
