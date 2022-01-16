@@ -80,7 +80,7 @@ def _build_augment_pair_dataset(imfiles, imshape=(256,256), batch_size=256,
     elif isinstance(imfiles, str):
         def _loader(x):
             return _aug(x), _aug(x)
-        ds = load_dataset_from_tfrecords(imfiles, num_parallel_calls=num_parallel_calls,
+        ds = load_dataset_from_tfrecords(imfiles, imshape, num_channels, num_parallel_calls=num_parallel_calls,
                                          map_fn=_loader)
     # CASE 3: User passes a list of filepaths. Turn the list into a Dataset,
     # shuffle, and define a function that both loads and augments each image
