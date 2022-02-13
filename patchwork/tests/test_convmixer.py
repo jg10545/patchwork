@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import tensorflow as tf
 
-from patchwork.feature._convmixer import build_convmixer_fcn
+from patchwork._convmixer import build_convmixer_fcn
 
 
 def test_build_convmixer_fcn():
