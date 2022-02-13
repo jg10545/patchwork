@@ -5,7 +5,7 @@
 Model definitions to use for building feature extractors
 """
 import tensorflow as tf
-
+from patchwork.feature._convmixer import build_convmixer_fcn
 
 _alex_layers = [
         (96, 11, 4),
