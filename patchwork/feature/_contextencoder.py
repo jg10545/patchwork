@@ -13,7 +13,7 @@ from patchwork._augment import augment_function
 from patchwork.loaders import _image_file_dataset
 from patchwork._util import _load_img
 from patchwork._layers import ChannelWiseDense
-from patchwork.feature._models import build_encoder, build_decoder, build_discriminator
+from patchwork.feature.models import build_encoder, build_decoder, build_discriminator
 from patchwork.feature._generic import GenericExtractor
 
 
