@@ -6,7 +6,6 @@ Model definitions to use for building feature extractors
 """
 import tensorflow as tf
 
-
 _alex_layers = [
         (96, 11, 4),
         "M",

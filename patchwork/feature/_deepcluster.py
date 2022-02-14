@@ -4,7 +4,7 @@ import sklearn.preprocessing, sklearn.cluster, sklearn.decomposition
 from sklearn.metrics.cluster import normalized_mutual_info_score
 import warnings
 
-from patchwork.feature._models import BNAlexNetFCN
+from patchwork.feature.models import BNAlexNetFCN
 from patchwork.loaders import stratified_training_dataset, dataset
 from patchwork.feature._generic import GenericExtractor
 
