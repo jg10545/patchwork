@@ -38,11 +38,9 @@ def _gen_figs(arrays, dim=3, lw=5):
         fig, ax = plt.subplots(dim, dim)
         ax = ax.ravel()
         
-        #for j, a in enumerate(arrays):
         for j in range(dim**2):
             if j < len(arrays):
                 ax[j].imshow(arrays[j])
-            #ax[j].axis(False)
                 if i == j:
                     a = ax[j].axis()
                     rect = Rectangle((lw,lw),a[1]-2*lw,a[2]-2*lw,
@@ -272,6 +270,8 @@ class Labeler():
         :logdir: path to save labels to
         """
         self._classes = classes
+        if "subset" in df.columns:
+            self._subset_types = df["subset"].unique()
         self._dim = dim
         self._df = df
         self._pred_df = pred_df
@@ -299,13 +299,18 @@ class Labeler():
         for e in ["high: ", "low: ", "maxent: "]:
             for c in self._classes:
                 sort_opts.append(e+c)
-            
+                
         # generate all subsetting options
         subset_opts = ["unlabeled", "fully labeled", "partially labeled", 
                        "excluded", "not excluded", "validation"]
         for e in ["unlabeled: ", "contains: ", "doesn't contain: "]:
             for c in self._classes:
                 subset_opts.append(e+c)
+                
+        if hasattr(self, "_subset_types"):
+            for s in self._subset_types:
+                subset_opts.append(f"subset: {s}")
+            
         
             
         self._sort_by = pn.widgets.Select(name="Sort by", options=sort_opts,

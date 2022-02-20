@@ -190,12 +190,12 @@ class GUI(object):
                        ("Train", self.trainmanager.panel())
                        )
     
-    def serve(self):
+    def serve(self, **kwargs):
         """
         wrapper for panel.serve()
         """
         p = self.panel()
-        pn.serve(p, title="patchwork labeling adventure")
+        pn.serve(p, title="patchwork labeling adventure", **kwargs)
         
     
     def _training_dataset(self, batch_size=32, num_samples=None):

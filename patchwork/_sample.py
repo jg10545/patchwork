@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 
-PROTECTED_COLUMN_NAMES = ["filepath", "exclude", "viewpath", "validation"]
+PROTECTED_COLUMN_NAMES = ["filepath", "exclude", "viewpath", "validation", "subset"]
 
 
 def find_unlabeled(df):
@@ -76,6 +76,9 @@ def find_subset(df, s):
         elif "doesn't contain" in s:
             s = s.replace("doesn't contain:", "").strip()
             return not_excluded&(df[s] == 0)
+        elif "subset" in s:
+            s = s.replace("subset:", "").strip()
+            return not_excluded&(df["subset"].astype(str) == s)
         elif s == "validation":
             return not_excluded&(df["validation"] == True)
         else:

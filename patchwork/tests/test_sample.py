@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 
 from patchwork._sample import find_unlabeled, find_fully_labeled
-from patchwork._sample import find_partially_labeled
+from patchwork._sample import find_partially_labeled, find_subset
 from patchwork._sample import stratified_sample, unlabeled_sample
 
 
@@ -12,7 +12,8 @@ testdf = pd.DataFrame({
         "exclude":[True,  False, False, False, False],
         "validation":[False,  False, False, False, False],
         "class1":[None, 1, 0, 1, 1],
-        "class2":[None, 0, 1, None, None]
+        "class2":[None, 0, 1, None, None],
+        "subset":[0,0,1,1,1]
         })
 
 
@@ -32,7 +33,16 @@ def test_partially_unlabeled():
     assert plab.sum() == 2
     assert "d.jpg" in testdf["filepath"][plab].values
 
-
+def test_find_subset_subset_column():
+    s0 = find_subset(testdf, "subset: 0")
+    assert s0.sum() == 1
+    assert "b.jpg" in testdf["filepath"][s0].values # a.jpg is excluded
+    
+    s1 = find_subset(testdf, "subset: 1")
+    assert s1.sum() == 3
+    for f in ["c.jpg", "d.jpg", "e.jpg"]:
+        assert f in testdf["filepath"][s1].values
+        
 
 
 def test_stratified_sampler():
