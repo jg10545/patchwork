@@ -11,6 +11,7 @@ from patchwork._modelpicker import ModelPicker
 from patchwork._trainmanager import TrainManager, _auc
 from patchwork._sample import stratified_sample, find_unlabeled, find_excluded_indices
 from patchwork._sample import _build_in_memory_dataset, find_labeled_indices
+from patchwork._sample import PROTECTED_COLUMN_NAMES
 from patchwork._training_functions import build_training_function
 from patchwork.loaders import dataset, _fixmatch_unlab_dataset
 from patchwork._losses import entropy_loss, masked_binary_crossentropy
@@ -83,7 +84,7 @@ class GUI(object):
         for c in classes:
             if c not in df.columns:
                 df[c] = np.nan
-        self.classes = [x for x in df.columns if x not in ["filepath", "exclude", "viewpath", "validation"]]
+        self.classes = [x for x in df.columns if x not in PROTECTED_COLUMN_NAMES]
         # initialize dataframe of predictions
         self.pred_df = pd.DataFrame(
                 {c:np.random.uniform(0,1,len(df)) for c in self.classes},
@@ -188,6 +189,13 @@ class GUI(object):
                        ("Model", self.modelpicker.panel()), 
                        ("Train", self.trainmanager.panel())
                        )
+    
+    def serve(self):
+        """
+        wrapper for panel.serve()
+        """
+        p = self.panel()
+        pn.serve(p, title="patchwork labeling adventure")
         
     
     def _training_dataset(self, batch_size=32, num_samples=None):
