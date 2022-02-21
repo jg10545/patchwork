@@ -17,7 +17,7 @@ import warnings
 
 
 from patchwork._sample import find_subset
-from patchwork._util import shannon_entropy#, tiff_to_array
+from patchwork._util import shannon_entropy
 
 
 
@@ -36,13 +36,13 @@ def _gen_figs(arrays, dim=3, lw=5):
     
     for i in range(len(arrays)):
         fig, ax = plt.subplots(dim, dim)
+        fig.set_figwidth(6)
+        fig.set_figheight(6)
         ax = ax.ravel()
         
-        #for j, a in enumerate(arrays):
         for j in range(dim**2):
             if j < len(arrays):
-                ax[j].imshow(arrays[j])
-            #ax[j].axis(False)
+                ax[j].imshow(arrays[j], aspect="equal")
                 if i == j:
                     a = ax[j].axis()
                     rect = Rectangle((lw,lw),a[1]-2*lw,a[2]-2*lw,
@@ -61,7 +61,8 @@ def _single_class_radiobuttons(width=125, height=25):
     Generate buttons for a single class label: None, 0, and 1
     """
     return pn.widgets.RadioButtonGroup(options=["None", "0", "1"], width=width, align="center", 
-                                       height=height, value="None")
+                                       #height=height, value="None")
+                                       value="None")
 
 
 
@@ -87,6 +88,7 @@ class ButtonPanel(object):
 
         self._figpanel = pn.pane.Matplotlib(height_policy="fit",
                                             width_policy="fit",
+                                            aspect_ratio=1,
                                             width=size, height=size)
         
         self._value_map = {'None': np.nan, '0': 0., '1': 1., None:np.nan,
@@ -110,6 +112,7 @@ class ButtonPanel(object):
                                             pn.pane.Markdown(c, align="center"), 
                                             height=30)
                                      for c in classes],
+                                      pn.Spacer(height=10),
                                      pn.Row(self._back_button, self._forward_button),
                                       self.label_counts) 
         
@@ -210,19 +213,22 @@ def _generate_label_summary(df, classes):
 
 
 
-def pick_indices(df, pred_df, M, sort_by, subset_by, sampler=None):
+def pick_indices(df, pred_df, M, label_status, exclude_status,
+                 sort_by, subset_by, sampler=None):
     """
     Function to handle selecting indices of images to label
     
     :df: dataframe containing labels
     :pred_df: dataframe containing current model predictions
     :M: number of indices to retrieve
+    :label_status: "unlabeled", "partial", or "labeled"
+    :exclude_status: "not excluded", "excluded", or "validation"
     :sort_by: method for ordering results
     :subset_by: method for subsetting df before ordering
     :sampler: optional; custom sampling object for BADGE
     """
     # take a subset of the data to sort through
-    subset = find_subset(df, subset_by)
+    subset = find_subset(df, label_status, exclude_status, subset_by)
     if subset.sum() == 0:
         warnings.warn("empty subset")
     df = df[subset]
@@ -272,6 +278,8 @@ class Labeler():
         :logdir: path to save labels to
         """
         self._classes = classes
+        if "subset" in df.columns:
+            self._subset_types = df["subset"].unique()
         self._dim = dim
         self._df = df
         self._pred_df = pred_df
@@ -299,25 +307,35 @@ class Labeler():
         for e in ["high: ", "low: ", "maxent: "]:
             for c in self._classes:
                 sort_opts.append(e+c)
-            
+                
         # generate all subsetting options
-        subset_opts = ["unlabeled", "fully labeled", "partially labeled", 
-                       "excluded", "not excluded", "validation"]
+        #subset_opts = ["unlabeled", "fully labeled", "partially labeled", 
+        #               "excluded", "not excluded", "validation"]
+        subset_opts = ["all"]
         for e in ["unlabeled: ", "contains: ", "doesn't contain: "]:
             for c in self._classes:
                 subset_opts.append(e+c)
+                
+        if hasattr(self, "_subset_types"):
+            for s in self._subset_types:
+                subset_opts.append(f"subset: {s}")
+            
         
             
         self._sort_by = pn.widgets.Select(name="Sort by", options=sort_opts,
                                           value="random")
-        self._retrieve_button = pn.widgets.Button(name="Sample")
+        self._retrieve_button = pn.widgets.Button(name="Sample", align="end")
         self._retrieve_button.on_click(self._retrieve_callback)
         self._subset_by = pn.widgets.Select(name="Subset by", options=subset_opts,
                                             value="unlabeled")
+        self._label_status = pn.widgets.RadioBoxGroup(options=["unlabeled", "partial", "labeled"], inline=False, width=100, value="unlabeled")
+        self._exclude_status = pn.widgets.RadioBoxGroup(options=["not excluded", "excluded", "validation"], inline=False, width=100, value="not excluded")
         
         self._update_label_button = pn.widgets.Button(name="Update Labels")
         self._label_counts = pn.pane.Markdown("")
         self._select_controls = pn.Row(
+            self._label_status,
+            self._exclude_status,
             self._subset_by, 
             self._sort_by,
             self._retrieve_button
@@ -333,7 +351,10 @@ class Labeler():
         """
         sort_by = self._sort_by.value
         subset_by = self._subset_by.value
+        label_status = self._label_status.value
+        exclude_status = self._exclude_status.value
         indices = pick_indices(self._df, self._pred_df, self._dim**2, 
+                               label_status, exclude_status,
                                sort_by, subset_by, self._pw._badge_sampler)
         if len(indices) > 0:
             self._buttonpanel.load(indices)
