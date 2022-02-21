@@ -59,7 +59,8 @@ def _single_class_radiobuttons(width=125, height=25):
     Generate buttons for a single class label: None, 0, and 1
     """
     return pn.widgets.RadioButtonGroup(options=["None", "0", "1"], width=width, align="center", 
-                                       height=height, value="None")
+                                       #height=height, value="None")
+                                       value="None")
 
 
 
@@ -108,6 +109,7 @@ class ButtonPanel(object):
                                             pn.pane.Markdown(c, align="center"), 
                                             height=30)
                                      for c in classes],
+                                      pn.Spacer(height=10),
                                      pn.Row(self._back_button, self._forward_button),
                                       self.label_counts) 
         
