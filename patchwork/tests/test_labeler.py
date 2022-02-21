@@ -51,12 +51,16 @@ def test_pick_indices():
     pred_df = pred_df.assign(foo=np.linspace(0,1,N))
     pred_df = pred_df.assign(bar = np.ones(N))
     
-    assert len(pick_indices(df, pred_df, 10, "random", "unlabeled")) == 10
-    assert len(pick_indices(df, pred_df, 10, "max entropy", "unlabeled")) == 10
-    assert len(pick_indices(df, pred_df, 10, "maxent: foo", "unlabeled")) == 10
-    assert len(pick_indices(df, pred_df, 10, 
-                            "maxent: bar", "partially labeled")) == 10
-    assert len(pick_indices(df, pred_df, 100, "maxent: foo", "unlabeled")) == 50
+    assert len(pick_indices(df, pred_df, 10, "unlabeled", "not excluded", 
+                            "random", "all")) == 10
+    assert len(pick_indices(df, pred_df, 10, "unlabeled", "not excluded",
+                            "max entropy", "all")) == 10
+    assert len(pick_indices(df, pred_df, 10, "unlabeled", "not excluded",
+                            "maxent: foo", "all")) == 10
+    assert len(pick_indices(df, pred_df, 10, "partial", "not excluded",
+                            "maxent: bar", "all")) == 10
+    assert len(pick_indices(df, pred_df, 100, "unlabeled", "not excluded",
+                            "maxent: foo", "all")) == 50
     
     
     
