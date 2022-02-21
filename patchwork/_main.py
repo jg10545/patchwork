@@ -32,7 +32,7 @@ class GUI(object):
                  classes=[],
                  imshape=(256,256), num_channels=3, norm=255,
                  num_parallel_calls=2, logdir=None, aug=True, 
-                 fixmatch_aug=DEFAULT_FIXMATCH_AUGMENT, dim=3,
+                 fixmatch_aug=DEFAULT_FIXMATCH_AUGMENT, dim=4,
                  tracking_uri=None, experiment_name=None):
         """
         Initialize either with a set of feature vectors or a feature extractor
