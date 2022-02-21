@@ -17,7 +17,7 @@ import warnings
 
 
 from patchwork._sample import find_subset
-from patchwork._util import shannon_entropy#, tiff_to_array
+from patchwork._util import shannon_entropy
 
 
 
@@ -36,11 +36,13 @@ def _gen_figs(arrays, dim=3, lw=5):
     
     for i in range(len(arrays)):
         fig, ax = plt.subplots(dim, dim)
+        fig.set_figwidth(6)
+        fig.set_figheight(6)
         ax = ax.ravel()
         
         for j in range(dim**2):
             if j < len(arrays):
-                ax[j].imshow(arrays[j])
+                ax[j].imshow(arrays[j], aspect="equal")
                 if i == j:
                     a = ax[j].axis()
                     rect = Rectangle((lw,lw),a[1]-2*lw,a[2]-2*lw,
@@ -86,6 +88,7 @@ class ButtonPanel(object):
 
         self._figpanel = pn.pane.Matplotlib(height_policy="fit",
                                             width_policy="fit",
+                                            aspect_ratio=1,
                                             width=size, height=size)
         
         self._value_map = {'None': np.nan, '0': 0., '1': 1., None:np.nan,
