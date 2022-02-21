@@ -33,6 +33,56 @@ def test_partially_unlabeled():
     assert plab.sum() == 2
     assert "d.jpg" in testdf["filepath"][plab].values
 
+
+def test_find_subset_unlabeled_all():
+    s0 = find_subset(testdf, "unlabeled", "not excluded", "all")
+    assert s0.sum() == 0
+
+
+def test_find_subset_labeled_all():
+    s0 = find_subset(testdf, "labeled", "not excluded", "all")
+    assert s0.sum() == 2
+    
+    
+
+def test_find_subset_unlabeled_excluded_all():
+    s0 = find_subset(testdf, "unlabeled", "excluded", "all")
+    assert s0.sum() == 1
+    assert "a.jpg" in testdf[s0].filepath.values
+    
+
+def test_find_subset_partial_all():
+    s0 = find_subset(testdf, "partial", "not excluded", "all")
+    assert s0.sum() == 2
+    for f in ["d.jpg", "e.jpg"]:
+        assert f in testdf[s0].filepath.values
+
+def test_find_subset_labeled_subset():
+    s0 = find_subset(testdf, "labeled", "not excluded", "subset: 0")
+    assert s0.sum() == 1
+    assert "b.jpg" in testdf[s0].filepath.values
+    
+
+def test_find_subset_partial_subset():
+    s0 = find_subset(testdf, "partial", "not excluded", "subset: 1")
+    assert s0.sum() == 2
+    assert "d.jpg" in testdf[s0].filepath.values
+    assert "e.jpg" in testdf[s0].filepath.values
+    
+
+def test_find_subset_partial_contains():
+    s0 = find_subset(testdf, "partial", "not excluded", "contains: class1")
+    assert s0.sum() == 2
+    assert "d.jpg" in testdf[s0].filepath.values
+    assert "e.jpg" in testdf[s0].filepath.values
+    
+    
+def test_find_subset_labeled_doesnt_contain():
+    s0 = find_subset(testdf, "labeled", "not excluded", "doesn't contain: class1")
+    assert s0.sum() == 1
+    assert "c.jpg" in testdf[s0].filepath.values
+    
+"""
 def test_find_subset_subset_column():
     s0 = find_subset(testdf, "subset: 0")
     assert s0.sum() == 1
@@ -41,7 +91,7 @@ def test_find_subset_subset_column():
     s1 = find_subset(testdf, "subset: 1")
     assert s1.sum() == 3
     for f in ["c.jpg", "d.jpg", "e.jpg"]:
-        assert f in testdf["filepath"][s1].values
+        assert f in testdf["filepath"][s1].values"""
         
 
 

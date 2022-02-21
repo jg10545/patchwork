@@ -38,51 +38,56 @@ def find_excluded_indices(df):
     excluded = df["exclude"] == True
     return np.arange(len(df))[excluded]
 
-def find_subset(df, s):
+def find_subset(df, label_status, exclude_status, s):
     """
     Macro to return a Boolean Series defining a subset of a dataframe
     
     :df: the dataframe
+    :label_status: "unlabeled", "partial", or "labeled"
+    :exclude_status: "not excluded", "excluded", or "validation"
     :s: string; how to subset it. values could be:
-        -unlabeled
-        -fully labeled
-        -partially labeled
-        -excluded
-        -not excluded
+        -all
         -unlabeled X (for class X)
         -contains X (for class X)
         -doesn't contain X (for class X)
+        -subset Y (for subsetting category Y)
     """
-    if s == "excluded":
-        return df["exclude"] == True
+    if label_status == "unlabeled":
+        lab = find_unlabeled(df)
+    elif label_status == "partial":
+        lab = find_partially_labeled(df)
+    elif label_status == "labeled":
+        lab = find_fully_labeled(df)
     else:
-        not_excluded = df["exclude"] != True
+        assert False, f"i don't recognize label_status '{label_status}'"
         
+    if exclude_status == "not excluded":
+        ex = df["exclude"] != True
+    elif exclude_status == "excluded":
+        ex = df["exclude"] == True
+    elif exclude_status == "validation":
+        ex = df["validation"] == True
+    
+    #if s == "excluded":
+    #    return df["exclude"] == True
+    #else:
+    #    not_excluded = df["exclude"] != True
         
-        if s == "unlabeled":
-            return not_excluded&find_unlabeled(df)
-        elif s == "fully labeled":
-            return not_excluded&find_fully_labeled(df)
-        elif s == "partially labeled":
-            return not_excluded&find_partially_labeled(df)
-        elif s == "not excluded":
-            return not_excluded
-        elif "unlabeled:" in s:
-            s = s.replace("unlabeled:", "").strip()
-            return not_excluded&pd.isnull(df[s])
-        elif "contains" in s:
-            s = s.replace("contains:", "").strip()
-            return not_excluded&(df[s] == 1)
-        elif "doesn't contain" in s:
-            s = s.replace("doesn't contain:", "").strip()
-            return not_excluded&(df[s] == 0)
-        elif "subset" in s:
-            s = s.replace("subset:", "").strip()
-            return not_excluded&(df["subset"].astype(str) == s)
-        elif s == "validation":
-            return not_excluded&(df["validation"] == True)
-        else:
-            assert False, "sorry can't help you"
+    
+    if s == "all":
+        return lab & ex
+    elif "contains" in s:
+        s = s.replace("contains:", "").strip()
+        return lab & ex & (df[s] == 1)
+    elif "doesn't contain" in s:
+        s = s.replace("doesn't contain:", "").strip()
+        return lab & ex & (df[s] == 0)
+    elif "subset" in s:
+        s = s.replace("subset:", "").strip()
+        return lab & ex & (df["subset"].astype(str) == s)
+    else:
+        assert False, "sorry can't help you"
+        
 
 
 

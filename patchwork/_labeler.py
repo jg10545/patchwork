@@ -208,19 +208,22 @@ def _generate_label_summary(df, classes):
 
 
 
-def pick_indices(df, pred_df, M, sort_by, subset_by, sampler=None):
+def pick_indices(df, pred_df, M, label_status, exclude_status,
+                 sort_by, subset_by, sampler=None):
     """
     Function to handle selecting indices of images to label
     
     :df: dataframe containing labels
     :pred_df: dataframe containing current model predictions
     :M: number of indices to retrieve
+    :label_status: "unlabeled", "partial", or "labeled"
+    :exclude_status: "not excluded", "excluded", or "validation"
     :sort_by: method for ordering results
     :subset_by: method for subsetting df before ordering
     :sampler: optional; custom sampling object for BADGE
     """
     # take a subset of the data to sort through
-    subset = find_subset(df, subset_by)
+    subset = find_subset(df, label_status, exclude_status, subset_by)
     if subset.sum() == 0:
         warnings.warn("empty subset")
     df = df[subset]
@@ -301,8 +304,9 @@ class Labeler():
                 sort_opts.append(e+c)
                 
         # generate all subsetting options
-        subset_opts = ["unlabeled", "fully labeled", "partially labeled", 
-                       "excluded", "not excluded", "validation"]
+        #subset_opts = ["unlabeled", "fully labeled", "partially labeled", 
+        #               "excluded", "not excluded", "validation"]
+        subset_opts = ["all"]
         for e in ["unlabeled: ", "contains: ", "doesn't contain: "]:
             for c in self._classes:
                 subset_opts.append(e+c)
@@ -315,14 +319,18 @@ class Labeler():
             
         self._sort_by = pn.widgets.Select(name="Sort by", options=sort_opts,
                                           value="random")
-        self._retrieve_button = pn.widgets.Button(name="Sample")
+        self._retrieve_button = pn.widgets.Button(name="Sample", align="end")
         self._retrieve_button.on_click(self._retrieve_callback)
         self._subset_by = pn.widgets.Select(name="Subset by", options=subset_opts,
                                             value="unlabeled")
+        self._label_status = pn.widgets.RadioBoxGroup(options=["unlabeled", "partial", "labeled"], inline=False, width=100, value="unlabeled")
+        self._exclude_status = pn.widgets.RadioBoxGroup(options=["not excluded", "excluded", "validation"], inline=False, width=100, value="not excluded")
         
         self._update_label_button = pn.widgets.Button(name="Update Labels")
         self._label_counts = pn.pane.Markdown("")
         self._select_controls = pn.Row(
+            self._label_status,
+            self._exclude_status,
             self._subset_by, 
             self._sort_by,
             self._retrieve_button
@@ -338,7 +346,10 @@ class Labeler():
         """
         sort_by = self._sort_by.value
         subset_by = self._subset_by.value
+        label_status = self._label_status.value
+        exclude_status = self._exclude_status.value
         indices = pick_indices(self._df, self._pred_df, self._dim**2, 
+                               label_status, exclude_status,
                                sort_by, subset_by, self._pw._badge_sampler)
         if len(indices) > 0:
             self._buttonpanel.load(indices)
