@@ -14,7 +14,7 @@ with open('HISTORY.rst') as history_file:
 requirements = [
         "numpy",
         "pandas",
-        "tensorflow",
+        "tensorflow==2.4",
         "panel",
         "param",
         "pillow",
