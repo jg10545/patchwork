@@ -126,6 +126,7 @@ class TrainManager():
         self._batch_size = pn.widgets.LiteralInput(name='Batch size', value=16, type=int)
         self._batches_per_epoch = pn.widgets.LiteralInput(name='Batches per epoch', value=100, type=int)
         self._epochs = pn.widgets.LiteralInput(name='Epochs', value=10, type=int)
+        self._pred_batch_size = pn.widgets.LiteralInput(name='Prediction batch size', value=64, type=int)
         
         self._eval_after_training = pn.widgets.Checkbox(name="Update predictions after training?", value=True)
         #self._compute_badge_gradients = pn.widgets.Checkbox(name="Update BADGE gradients?", value=False)
@@ -138,8 +139,8 @@ class TrainManager():
         self._footer = pn.pane.Markdown("")
         
         # objects to hold figures
-        self._loss_fig = pn.pane.Matplotlib(_empty_fig())
-        self._hist_fig = pn.pane.Matplotlib(_empty_fig())
+        self._loss_fig = pn.pane.Matplotlib(_empty_fig(), width=500, height=300)
+        self._hist_fig = pn.pane.Matplotlib(_empty_fig(), width=500, height=300)
         self._hist_selector = pn.widgets.Select(name="Class", options=self.pw.classes)
         self._hist_watcher = self._hist_selector.param.watch(
                         self._hist_callback, ["value"])
@@ -155,6 +156,7 @@ class TrainManager():
                          self._batch_size, 
                          self._batches_per_epoch,
                          self._epochs,
+                         self._pred_batch_size,
                         self._eval_after_training,
                         self._train_button,
                         self._compute_badge_gradients,
@@ -208,7 +210,7 @@ class TrainManager():
             
         if self._eval_after_training.value:
             self._footer.object = "### EVALUATING"
-            self.pw.predict_on_all(self._batch_size.value)
+            self.pw.predict_on_all(self._pred_batch_size.value)
             self.pw._mlflow_track_run()
 
         self._hist_callback()
