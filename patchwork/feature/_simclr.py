@@ -99,7 +99,8 @@ def _build_embedding_model(fcn, imshape, num_channels, num_hidden, output_dim, b
                                        num_channels[1]))
         inpt = [inpt0, inpt1]
     net = fcn(inpt)
-    net = tf.keras.layers.Flatten()(net)
+    #net = tf.keras.layers.Flatten()(net)
+    net = tf.keras.layers.GlobalAvgPool2D()(net)
     net = tf.keras.layers.Dense(num_hidden)(net)
     if batchnorm:
         net = tf.keras.layers.BatchNormalization()(net)
