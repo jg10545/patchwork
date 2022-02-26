@@ -295,7 +295,7 @@ class SimCLRTrainer(GenericExtractor):
         # if no FCN is passed- build one
         with self.scope():
             if fcn is None:
-                fcn = tf.keras.applications.ResNet50V2(weights=None, include_top=False)
+                fcn = tf.keras.applications.ResNet50(weights=None, include_top=False)
             self.fcn = fcn
             # Create a Keras model that wraps the base encoder and 
             # the projection head
