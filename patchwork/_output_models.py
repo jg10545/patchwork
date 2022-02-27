@@ -34,7 +34,7 @@ class SigmoidCrossEntropy(param.Parameterized):
         dense = tf.keras.layers.Dense(num_classes, activation="sigmoid")(net)
         def loss(y_true, y_pred):
             return masked_binary_crossentropy(y_true, y_pred, label_smoothing=self.label_smoothing)
-        self._model = tf.keras.Model(inpt, dense)
+        self._model = tf.keras.Model(inpt, dense, name="output")
         return self._model, loss
     
     def model_params(self):
@@ -63,7 +63,7 @@ class SigmoidFocalLoss(param.Parameterized):
         dense = tf.keras.layers.Dense(num_classes, activation="sigmoid")(net)
         def loss(y_true, y_pred):
             return masked_binary_focal_loss(y_true, y_pred, self.gamma)
-        self._model = tf.keras.Model(inpt, dense)
+        self._model = tf.keras.Model(inpt, dense, name="output")
         return self._model, loss
     
     def model_params(self):
@@ -87,7 +87,7 @@ class CosineOutput(param.Parameterized):
         inpt = tf.keras.layers.Input((inpt_channels))
         dense = CosineDense(num_classes)(inpt)
         
-        self._model = tf.keras.Model(inpt, dense)
+        self._model = tf.keras.Model(inpt, dense, name="output")
         return self._model, masked_binary_crossentropy
     
     def model_params(self):

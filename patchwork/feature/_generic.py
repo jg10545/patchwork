@@ -37,7 +37,7 @@ _TENSORBOARD_DESCRIPTIONS = {
     "l2_loss":"Total squared magnitude of training weights for L2 loss computation. This is the value **before** rescaling by your weight decay parameter.",
     "linear_classification_accuracy":"Downstream task test accuracy. Feature vectors for labeled images are average-pooled and used to train a multinomial regression model. Labeled points are deterministically split into 2/3 train, 1/3 test.",
     "first_convolution_filters":"Kernels from the first convolutional layer of the feature extractor.",
-    
+    "closest_feature_vectors":"Image retrieval test. Each image in the leftmost column is from a different class in your labeled dataset; the images to the right are the images whose features had the smallest cosine simlarity."
 }
 
 

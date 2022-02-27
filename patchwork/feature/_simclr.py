@@ -3,7 +3,7 @@ import numpy as np
 import tensorflow as tf
 from tqdm import tqdm
 
-from patchwork.feature._generic import GenericExtractor
+from patchwork.feature._generic import GenericExtractor, _TENSORBOARD_DESCRIPTIONS
 from patchwork._augment import augment_function
 from patchwork.loaders import _image_file_dataset
 from patchwork._util import compute_l2_loss, _compute_alignment_and_uniformity
@@ -13,6 +13,12 @@ from patchwork.feature._contrastive import _contrastive_loss, _build_negative_ma
 
 BIG_NUMBER = 1000.
 
+
+_DESCRIPTIONS = {
+    "nt_xent_loss":"Contrastive crossentropy loss"
+}
+for d in _TENSORBOARD_DESCRIPTIONS:
+    _DESCRIPTIONS[d] = _TENSORBOARD_DESCRIPTIONS[d]
 
 
 def _build_simclr_dataset(imfiles, imshape=(256,256), batch_size=256, 
@@ -288,6 +294,7 @@ class SimCLRTrainer(GenericExtractor):
         self.trainingdata = trainingdata
         self._downstream_labels = downstream_labels
         self.strategy = strategy
+        self._description = _DESCRIPTIONS
         
         self._file_writer = tf.summary.create_file_writer(logdir, flush_millis=10000)
         self._file_writer.set_as_default()
