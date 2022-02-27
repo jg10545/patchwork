@@ -111,8 +111,9 @@ def _build_simsiam_training_step(embed_model, predict_model, optimizer,
         # let's check for output collapse- compute the standard deviation of
         # normalized embeddings along each direction in feature space. the average
         # should be close to 1/sqrt(d)
+        d = z1.shape[-1]
         output_std = tf.reduce_mean(
-                    tf.math.reduce_std(tf.nn.l2_normalize(z1,1),0))
+                    tf.math.reduce_std(tf.nn.l2_normalize(z1,1),0))*np.sqrt(d)
 
         return {"simsiam_loss":ss_loss,
                 "l2_loss":l2_loss,
