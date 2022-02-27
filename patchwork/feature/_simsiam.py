@@ -108,10 +108,16 @@ def _build_simsiam_training_step(embed_model, predict_model, optimizer,
         gradients = tape.gradient(loss, trainvars)
         optimizer.apply_gradients(zip(gradients, trainvars))
 
-        
+        # let's check for output collapse- compute the standard deviation of
+        # normalized embeddings along each direction in feature space. the average
+        # should be close to 1/sqrt(d)
+        output_std = tf.reduce_mean(
+                    tf.math.reduce_std(tf.nn.l2_normalize(z1,1),0))
+
         return {"simsiam_loss":ss_loss,
                 "l2_loss":l2_loss,
-                "loss":loss}
+                "loss":loss,
+                "output_std":output_std}
     return training_step
 
 
@@ -129,7 +135,7 @@ class SimSiamTrainer(GenericExtractor):
     def __init__(self, logdir, trainingdata, testdata=None, fcn=None, 
                  augment=True, num_hidden=2048, pred_dim=512,
                  weight_decay=0, lr=0.01, lr_decay=100000, 
-                 decay_type="exponential", opt_type="adam",
+                 decay_type="exponential", opt_type="momentum",
                  imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, num_parallel_calls=None,
                  single_channel=False, notes="",
