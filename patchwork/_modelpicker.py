@@ -68,11 +68,7 @@ class ModelPicker(object):
         self._semisup_panel = pn.Column(*[semisup_widgets[x] for x in
                                           ["header", "lambda", "tau", 
                                            "mu"]])
-        #self._entropy_reg = pn.widgets.LiteralInput(name='Entropy Regularization Weight', 
-        #                                            value=0., type=float)
-        #self._mean_teacher_alpha = pn.widgets.LiteralInput(name='Mean Teacher alpha (0 to disable)', 
-                                                    #value=0., type=float)
-                                                    
+                                
         
     def panel(self):
         """
@@ -135,8 +131,6 @@ class ModelPicker(object):
             4) if doing mean-teacher semi-supervision, set up teacher model
             5) reset the lists for recording training loss in the GUI object
         """
-        #input_shape = (self._pw._imshape[0], self._pw._imshape[1],
-        #               self._pw._num_channels)
         # 1) BUILD THE FINE-TUNING MODEL
         fine_tuning_model = self._fine_tuning_chooser.value.build(self._feature_shape)
         tuning_output_channels = fine_tuning_model.output_shape[-1]

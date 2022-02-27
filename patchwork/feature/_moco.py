@@ -242,7 +242,7 @@ def _build_momentum_contrast_training_step(model, mo_model, optimizer, buffer, b
                                                               axis=1)==0, tf.float32))
         
         return {"loss":loss, "weight_diff":weight_diff,
-                "nce_batch_accuracy":nce_batch_accuracy}
+                "nce_batch_acc":nce_batch_accuracy}
     return training_step
 
 
