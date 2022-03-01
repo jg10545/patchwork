@@ -11,7 +11,12 @@ from patchwork._util import compute_l2_loss, _compute_alignment_and_uniformity
 from patchwork.feature._moco import _build_augment_pair_dataset
 from patchwork.feature._contrastive import _contrastive_loss, _build_negative_mask
 
-BIG_NUMBER = 1000.
+try:
+    bnorm = tf.keras.layers.experimental.SyncBatchNormalization
+except:
+    bnorm = tf.keras.layers.BatchNormalization
+
+
 
 
 _DESCRIPTIONS = {
@@ -109,7 +114,8 @@ def _build_embedding_model(fcn, imshape, num_channels, num_hidden, output_dim, b
     net = tf.keras.layers.GlobalAvgPool2D()(net)
     net = tf.keras.layers.Dense(num_hidden)(net)
     if batchnorm:
-        net = tf.keras.layers.BatchNormalization()(net)
+        #net = tf.keras.layers.BatchNormalization()(net)
+        net = bnorm()(net)
     net = tf.keras.layers.Activation("relu")(net)
     net = tf.keras.layers.Dense(output_dim, use_bias=False)(net)
     embedding_model = tf.keras.Model(inpt, net)
@@ -192,47 +198,6 @@ def random_adjust_aug_params(a, sigma=0.05):
     return new_aug
 
 
-def find_new_aug_params(trainer, testfiles, num_trials=25, sigma=0.05):
-    """
-    EXPERIMENTAL
-    
-    Pass a trained SimCLRTrainer object and a list of test files, 
-    and try to guess at a better set of augmentation parameters.
-    
-    The method will randomly jitter the existing parameters [num_trials]
-    times with a standard deviation of [sigma], and return whichever
-    set of params has the highest NCE loss on the test files.
-    """
-    aug_params = trainer.augment_config
-    
-    @tf.function
-    def test_loss(x,y):
-        eye = tf.linalg.eye(y.shape[0])
-        index = tf.range(0, y.shape[0])
-        labels = index+y
-
-        embeddings = trainer._models["full"](x)
-        embeds_norm = tf.nn.l2_normalize(embeddings, axis=1)
-        sim = tf.matmul(embeds_norm, embeds_norm, transpose_b=True)
-        logits = (sim - BIG_NUMBER*eye)/trainer.config["temperature"]
-            
-        loss = tf.reduce_mean(
-            tf.nn.sparse_softmax_cross_entropy_with_logits(labels, logits))
-        return loss
-    
-    results = []
-
-    for i in tqdm(range(num_trials)):
-        loss = 0
-        aug = random_adjust_aug_params(aug_params, sigma)
-        ds = _build_simclr_dataset(testfiles, augment=aug,
-                                   **trainer.input_config)
-        for x, y in ds:
-            loss += test_loss(x,y).numpy()
-        
-        results.append((aug, loss))
-    argmax = np.argmax([x[1] for x in results])
-    return results[argmax][0], results
 
 
 class SimCLRTrainer(GenericExtractor):
@@ -341,22 +306,7 @@ class SimCLRTrainer(GenericExtractor):
                                         norm=norm, num_channels=num_channels, 
                                         augment=augment,
                                         single_channel=single_channel)
-            """
-            @tf.function
-            def test_loss(x,y):
-                eye = tf.linalg.eye(y.shape[0])
-                index = tf.range(0, y.shape[0])
-                labels = index+y
-
-                embeddings = self._models["full"](x)
-                embeds_norm = tf.nn.l2_normalize(embeddings, axis=1)
-                sim = tf.matmul(embeds_norm, embeds_norm, transpose_b=True)
-                logits = (sim - BIG_NUMBER*eye)/self.config["temperature"]
             
-                loss = tf.reduce_mean(
-                    tf.nn.sparse_softmax_cross_entropy_with_logits(labels, logits))
-                return loss, sim
-            self._test_loss = test_loss"""
             self._test = True
         else:
             self._test = False

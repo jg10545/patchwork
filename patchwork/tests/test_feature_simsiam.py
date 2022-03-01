@@ -56,7 +56,7 @@ def test_build_simsiam_training_step():
     x = np.random.normal(0, 1, (N, 13, 13, 3)).astype(np.float32)
     lossdict = step(x,x)
     assert isinstance(lossdict, dict)
-    assert len(lossdict) == 3
+    assert len(lossdict) == 4
     
     
     
@@ -75,6 +75,6 @@ def test_build_simsiam_training_step_no_weight_decay():
     x = np.random.normal(0, 1, (N, 13, 13, 3)).astype(np.float32)
     lossdict = step(x,x)
     assert isinstance(lossdict, dict)
-    assert len(lossdict) == 3
+    assert len(lossdict) == 4
     assert lossdict["l2_loss"] == 0
     
