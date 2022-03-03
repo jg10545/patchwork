@@ -89,7 +89,7 @@ def _build_trainstep(model, optimizer, strategy, temp=1, tau_plus=0, beta=0, wei
         optimizer.apply_gradients(zip(grad, model.trainable_variables))
         return {"loss":loss, "nt_xent_loss":softmax_loss, 
                 "l2_loss":l2_loss,
-               "nce_batch_accuracy":nce_batch_acc}
+               "nce_batch_acc":nce_batch_acc}
         
     @tf.function
     def trainstep(x,y):
@@ -113,7 +113,7 @@ class HCLTrainer(GenericExtractor):
     modelname = "HCL"
 
     def __init__(self, logdir, trainingdata, testdata=None, fcn=None, 
-                 augment=True, temperature=1., beta=0, tau_plus=0,
+                 augment=True, temperature=0.07, beta=0.5, tau_plus=0.1,
                  num_hidden=128, output_dim=64, 
                  batchnorm=True, weight_decay=0,
                  lr=0.01, lr_decay=0, decay_type="exponential",
@@ -167,7 +167,7 @@ class HCLTrainer(GenericExtractor):
         # if no FCN is passed- build one
         with self.scope():
             if fcn is None:
-                fcn = tf.keras.applications.ResNet50V2(weights=None, include_top=False)
+                fcn = tf.keras.applications.ResNet50(weights=None, include_top=False)
             self.fcn = fcn
             # Create a Keras model that wraps the base encoder and 
             # the projection head
@@ -247,5 +247,4 @@ class HCLTrainer(GenericExtractor):
         if self._downstream_labels is not None:
             self._linear_classification_test(avpool=avpool, query_fig=query_fig)
         
-# -*- coding: utf-8 -*-
 

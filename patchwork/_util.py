@@ -10,7 +10,7 @@ def shannon_entropy(x, how="max"):
     
     :how: str; aggregate across columns by "max" or "sum"
     """
-    xprime = np.maximum(np.minimum(x, 1-1e-8), 1e-8)
+    xprime = np.maximum(np.minimum(x, 1-1e-5), 1e-5)
     elemwise_ent = -1*(xprime*np.log2(xprime)+(1-xprime)*np.log2(1-xprime))
     if how == "sum":
         return np.sum(elemwise_ent, axis=1)
