@@ -202,11 +202,15 @@ def build_inpainter_training_step(opt, inpainter, discriminator,
             # compute difference between inpainted image and original
             reconstruction_residual = mask*(img - inpainted_img)
             reconstructed_loss = K.mean(K.abs(reconstruction_residual))
-            # compute adversarial loss
-            disc_output_on_inpainted = discriminator(inpainted_img)
+            # only run through the adversarial step if we're doing that.
+            if adv_weight > 0:
+                # compute adversarial loss
+                disc_output_on_inpainted = discriminator(inpainted_img)
 
-            # is the above line correct?
-            disc_loss_on_inpainted = -1*K.mean(K.log(_stabilize(disc_output_on_inpainted)))
+                # is the above line correct?
+                disc_loss_on_inpainted = -1*K.mean(K.log(_stabilize(disc_output_on_inpainted)))
+            else:
+                disc_loss_on_inpainted = 0
             # total loss
             total_loss = recon_weight*reconstructed_loss + adv_weight*disc_loss_on_inpainted
             lossdict["inpainter_recon_loss"] = reconstructed_loss
