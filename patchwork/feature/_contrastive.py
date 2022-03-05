@@ -111,7 +111,7 @@ def _hcl_softmax_prob(z1, z2, temp, beta, tau_plus, mask):
 
 
 
-def _contrastive_loss(z1, z2, temp, decoupled=True, eps=0, q=0, lam=0.01):
+def _contrastive_loss(z1, z2, temp, decoupled=False, eps=0, q=0, lam=0.01):
     """
     Compute contrastive loss for SimCLR or Decoupled Contrastive Learning.
     Also compute the batch accuracy.
