@@ -112,12 +112,13 @@ def _compute_alignment_and_uniformity(dataset, model, alpha=2, t=2):
     
     Returns alignment, uniformity
     """
+    pool = tf.keras.layers.GlobalAvgPool2D()
     batch_alignment = []
     vectors = []
     for x1,x2 in dataset:
         # compute normalized embedding vectors for each
-        z1 = tf.nn.l2_normalize(model(x1), axis=1)
-        z2 = tf.nn.l2_normalize(model(x2), axis=1)
+        z1 = tf.nn.l2_normalize(pool(model(x1)), axis=1)
+        z2 = tf.nn.l2_normalize(pool(model(x2)), axis=1)
         batch_alignment.append(tf.reduce_sum((z1-z2)**alpha, axis=1).numpy())
         vectors.append(z1.numpy())
 

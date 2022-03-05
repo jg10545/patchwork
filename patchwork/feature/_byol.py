@@ -385,7 +385,7 @@ class BYOLTrainer(GenericExtractor):
             # if the user passed out-of-sample data to test- compute
             # alignment and uniformity measures
             alignment, uniformity = _compute_alignment_and_uniformity(
-                                            self._test_ds, self._models["online"])
+                                            self._test_ds, self._models["fcn"])
             
             self._record_scalars(alignment=alignment,
                              uniformity=uniformity, metric=True)
