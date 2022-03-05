@@ -174,6 +174,6 @@ def _contrastive_loss(z1, z2, temp, decoupled=True, eps=0, q=0, lam=0.01):
             loss = tf.reduce_mean(-1*tf.math.log(softmax_prob + EPSILON))
         else:
             logging.info("using RINCE learning objective")
-            loss = -1*(pos_exp**q)/q + (lam*(pos_exp + neg_exp)**q)/q
+            loss = tf.reduce_mean(-1*(pos_exp**q)/q + (lam*(pos_exp + neg_exp)**q)/q)
         
     return loss, nce_batch_acc
