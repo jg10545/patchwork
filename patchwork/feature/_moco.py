@@ -129,10 +129,11 @@ def _build_logits(q, k, buffer, N=0, s=0, s_prime=0, margin=0, compare_batch=Fal
         positive_logits = tf.matmul(q, k, transpose_b=True)
     else:
         # compute positive logits- (batch_size,1)
-        positive_logits = tf.squeeze(
-                tf.matmul(tf.expand_dims(q,1), 
-                      tf.expand_dims(k,1), transpose_b=True),
-                axis=-1) - margin
+        #positive_logits = tf.squeeze(
+        #        tf.matmul(tf.expand_dims(q,1), 
+        #              tf.expand_dims(k,1), transpose_b=True),
+        #        axis=-1) - margin
+        positive_logits = tf.reduce_sum(q*k, -1) - margin
     # and negative logits- (batch_size, buffer_size)
     negative_logits = tf.matmul(q, buffer, transpose_b=True)
     # assemble positive and negative- (batch_size, buffer_size+1)
@@ -324,7 +325,7 @@ class MomentumContrastTrainer(GenericExtractor):
             # MoCoV2 paper adds a hidden layer
             dense = tf.keras.layers.Dense(num_hidden)(pooled)
             dense = tf.keras.layers.BatchNormalization()(dense)
-            dense = tf.keras.layers.Activation("relu")(net)
+            dense = tf.keras.layers.Activation("relu")(dense)
             outpt = tf.keras.layers.Dense(output_dim)(dense)
             full_model = tf.keras.Model(inpt, outpt)
         
