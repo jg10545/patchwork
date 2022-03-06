@@ -322,7 +322,9 @@ class MomentumContrastTrainer(GenericExtractor):
             features = fcn(inpt)
             pooled = tf.keras.layers.GlobalAvgPool2D()(features)
             # MoCoV2 paper adds a hidden layer
-            dense = tf.keras.layers.Dense(num_hidden, activation="relu")(pooled)
+            dense = tf.keras.layers.Dense(num_hidden)(pooled)
+            dense = tf.keras.layers.BatchNormalization()(dense)
+            dense = tf.keras.layers.Activation("relu")(net)
             outpt = tf.keras.layers.Dense(output_dim)(dense)
             full_model = tf.keras.Model(inpt, outpt)
         
