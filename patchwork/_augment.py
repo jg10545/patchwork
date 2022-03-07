@@ -59,8 +59,6 @@ def _jitter(x, strength=1., **kwargs):
                                        tf.maximum(1.0-delta, 0),
                                        1.0+delta)
             return img*factor
-            #print("USING ADDITIVE RANDOM_BRIGHTNESS")
-            #return tf.image.random_brightness(x, delta)
         elif i == 1:
             delta = 0.8*strength
             return tf.image.random_contrast(img, 1-delta, 1+delta)
@@ -177,8 +175,12 @@ def _random_zoom(x, scale=0.1, imshape=(256,256), **kwargs):
     return x
 
 def _center_crop(x, scale=0.1, imshape=(256,256), **kwargs):
+    # pick a random number between scale and 1
     z = tf.random.uniform(np.array([1]), scale, 1)
-    edges = tf.random.uniform(np.array([1,4]), 0.25, 1.)
+    # pick 4 edges between 0.25 and 1
+    #edges = tf.random.uniform(np.array([1,4]), 0.25, 1.)
+    edges = tf.random.uniform(np.array([1,4]), 0.5, 1.)
+    # rescale so average edge is 1
     edges /= tf.reduce_mean(edges)
     #box = (1-z**2)*tf.random.uniform(np.array([1,4]), 0, 0.5) * np.array([[1,1,-1,-1]], dtype=np.float32) 
     box = (1-z)*edges * np.array([[1,1,-1,-1]], dtype=np.float32) 

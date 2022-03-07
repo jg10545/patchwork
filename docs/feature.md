@@ -4,7 +4,11 @@ The `patchwork.feature` module has several models implemented for unsupervised o
 
 * [Context Encoders](https://arxiv.org/abs/1604.07379)
 * [DeepCluster](https://arxiv.org/abs/1807.05520)
-* [SimCLR](https://arxiv.org/abs/2002.05709) (along with multi-GPU version)
+* [SimCLR](https://arxiv.org/abs/2002.05709), including several variants:
+  * Modified loss function from [Decoupled Contrastive Learning](https://arxiv.org/abs/2110.06848)
+  * Modified loss function from [Implicit Feature Modification](https://arxiv.org/abs/2106.11230)
+  * Modified loss function from [RINCE](https://arxiv.org/abs/2201.04309)
+  * Modified projection head from [DirectCLR](https://arxiv.org/abs/2110.09348)
 * [MoCo](https://arxiv.org/abs/1911.05722), including several variants:
   * nonlinear projection head from [MocoV2](https://arxiv.org/abs/2003.04297)
   * option to modify noise-contrastive loss function using margin term from [EqCo](https://arxiv.org/abs/2010.01929)
@@ -124,6 +128,7 @@ Tensorboard logs will be stored for the loss function on `testfiles` as well as 
 ### Some notes on using Context Encoders
 
 * CE can overfit easily on small datasets (and increasing the noise added by augmentation can help considerably). Reserving a small out-of-sample dataset to measure reconstruction loss on can help you identify when this is happening.
+* It's not in the paper, but I saw a talk where Pathak said that the adversarial part of CE doesn't actually help build a better representation for downstream tasks. If you initialize the trainer with `adv_weight=0` it will skip the adversarial updates during training.
 
 
 
@@ -178,13 +183,19 @@ dctrainer.fit(10)
 
 ## SimCLR
 
-`patchwork` contains a TensorFlow implementation of the algorithm in Chen *et al*'s [A Simple Framework for Contrastive Learning of Visual Representations](https://arxiv.org/abs/2002.05709). It also implements the modified contrastive loss from Yeh *et al*'s [Decoupled Contrastive Learning](https://arxiv.org/abs/2110.06848) if the `decoupled` argument is set to `True`.
+**This trainer requires TensorFlow >= 2.4**
+
+`patchwork` contains a TensorFlow implementation of the algorithm in Chen *et al*'s [A Simple Framework for Contrastive Learning of Visual Representations](https://arxiv.org/abs/2002.05709). It also implements a number of variants:
+
+  * Modified loss function from [Decoupled Contrastive Learning](https://arxiv.org/abs/2110.06848): set kwarg `decoupled=True`
+  * Modified loss function from [Implicit Feature Modification](https://arxiv.org/abs/2106.11230): set kwarg `eps` above zero. Values used in the IFM paper were between 0.1 and 0.5.
+  * Modified loss function from [RINCE](https://arxiv.org/abs/2201.04309): set kwarg `q` above zero. The RINCE paper used `q=1`.
+  * Modified projection head from [DirectCLR](https://arxiv.org/abs/2110.09348): set kwarg `num_hidden=0`.
 
 ### Differences between the paper and `patchwork`
 
 I haven't implemented the LARS optimizer used in the paper. Using the `opt_type` kwarg you can choose Adam or momentum optimizers.
 
-If running on multiple GPUs, you can choose whether or not to compare negative examples across replicas using the `data_parallel` kwarg. If `False`, embeddings will be shuffled between replicas like in the SimCLR paper. If `True`, contrastive loss will only be computed using the negatives from that replica's batch.
 
 ### Example code
    
@@ -248,10 +259,6 @@ trainer.fit(10)
 Note that SimCLR is much more critically dependent on image augmentation for its learning than Context Encoders or DeepCluster, so it's worth the time to experiment to find a good set of augmentation parameters. My experience so far is that SimCLR benefits from more aggressive augmentation than you'd use for supervised learning.
      
     
-## Distributed Training
-
-**Update:** don't do distributed training with this trainer. It does not give the full benefit of larger batches for SimCLR (e.g. increased number of negative examples) because each replica only compares against negative examples from within that replica. Use `HCLTrainer` to train SimCLR on a multi-GPU system.
-    
               
 ## Momentum Contrast
 
@@ -302,7 +309,7 @@ trainer = pw.feature..MomentumContrastTrainer(
         decay_type="staircase",
         lr_decay=10000,
         alpha=0.999,
-        tau=0.07,
+        temperature=0.07,
         batches_in_buffer=50,
         num_hidden=512,
         output_dim=64, 
@@ -321,7 +328,7 @@ trainer.fit(10)
 
 **This trainer requires TensorFlow >= 2.4**
 
-The paper [Contrastive Learning with Hard Negative Samples](https://arxiv.org/abs/2010.04592) modifies SimCLR to better-handle negative examples by attempting to suppress both trivial negatives and false negatives. Their paper reports results on smaller batch sizes than the SimCLR paper, which is great for those of us not working on TPUs. It definitely benefits from bigger batches, however.
+The paper [Contrastive Learning with Hard Negative Samples](https://arxiv.org/abs/2010.04592) modifies SimCLR to better-handle negative examples by attempting to suppress both trivial negatives and false negatives. Their paper reports results on smaller batch sizes than the SimCLR paper, which is great for those of us not working on TPUs. It definitely still benefits from bigger batches, however.
 
 ### Differences between the paper and `patchwork`
 
@@ -329,7 +336,7 @@ So far I think this one is pretty close to the paper and Robinson *et al*'s [PyT
 
 ### SimCLR is a special case of HCL
 
-The two methods are identical when `beta = 0` and `tau_plus = 0`. My plan is to deprecate the `SimCLRTrainer`.
+The two methods are identical when `beta = 0` and `tau_plus = 0`. 
 
 ### Example code
 

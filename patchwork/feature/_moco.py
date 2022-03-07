@@ -260,7 +260,7 @@ class MomentumContrastTrainer(GenericExtractor):
 
     def __init__(self, logdir, trainingdata, testdata=None, fcn=None, 
                  augment=True, batches_in_buffer=10, alpha=0.999, 
-                 tau=0.07, output_dim=128, num_hidden=2048, 
+                 temperature=0.07, output_dim=128, num_hidden=2048, 
                  copy_weights=False, weight_decay=0,
                  N=0, s=0, s_prime=0, margin=0,
                  lr=0.01, lr_decay=100000, decay_type="exponential",
@@ -277,7 +277,7 @@ class MomentumContrastTrainer(GenericExtractor):
         :augment: (dict) dictionary of augmentation parameters, True for defaults
         :batches_in_buffer:
         :alpha: momentum parameter for updating the momentum encoder
-        :tau: temperature parameter for noise-contrastive loss
+        :temperature: temperature parameter for noise-contrastive loss
         :output_dim: dimension for features to be projected into for NCE loss
         :num_hidden: number of neurons in the projection head's hidden layer (from the MoCoV2 paper)
         :copy_weights: if True, copy the query model weights at the beginning as well 
@@ -322,7 +322,9 @@ class MomentumContrastTrainer(GenericExtractor):
             features = fcn(inpt)
             pooled = tf.keras.layers.GlobalAvgPool2D()(features)
             # MoCoV2 paper adds a hidden layer
-            dense = tf.keras.layers.Dense(num_hidden, activation="relu")(pooled)
+            dense = tf.keras.layers.Dense(num_hidden)(pooled)
+            dense = tf.keras.layers.BatchNormalization()(dense)
+            dense = tf.keras.layers.Activation("relu")(dense)
             outpt = tf.keras.layers.Dense(output_dim)(dense)
             full_model = tf.keras.Model(inpt, outpt)
         
@@ -356,7 +358,7 @@ class MomentumContrastTrainer(GenericExtractor):
                 momentum_encoder, 
                 self._optimizer, 
                 self._buffer, 
-                batches_in_buffer, alpha, tau, weight_decay,
+                batches_in_buffer, alpha, temperature, weight_decay,
                 N, s, s_prime, margin)
         # build evaluation dataset
         if testdata is not None:
@@ -380,7 +382,7 @@ class MomentumContrastTrainer(GenericExtractor):
         # parse and write out config YAML
         self._parse_configs(augment=augment, 
                             batches_in_buffer=batches_in_buffer, 
-                            alpha=alpha, tau=tau, output_dim=output_dim,
+                            alpha=alpha, temperature=temperature, output_dim=output_dim,
                             num_hidden=num_hidden, weight_decay=weight_decay,
                             N=N, s=s, s_prime=s_prime, margin=margin,
                             lr=lr, lr_decay=lr_decay, opt_type=opt_type,
@@ -423,7 +425,7 @@ class MomentumContrastTrainer(GenericExtractor):
             # if the user passed out-of-sample data to test- compute
             # alignment and uniformity measures
             alignment, uniformity = _compute_alignment_and_uniformity(
-                                            self._test_ds, self._models["full"])
+                                            self._test_ds, self._models["fcn"])
             
             self._record_scalars(alignment=alignment,
                              uniformity=uniformity, metric=True)
