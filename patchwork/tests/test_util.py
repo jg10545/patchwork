@@ -108,12 +108,12 @@ def test_l2_loss():
     
     
 def test_compute_alignment_and_uniformity():
-    X = np.random.normal(0,1, size=(32,16)).astype(np.float32)
+    X = np.random.normal(0, 1, size=(32, 5,5,3)).astype(np.float32)
     ds = tf.data.Dataset.from_tensor_slices((X,X))
     ds = ds.batch(8)
 
-    inpt = tf.keras.layers.Input((16,))
-    net = tf.keras.layers.Dense(2)(inpt)
+    inpt = tf.keras.layers.Input((None, None, 3))
+    net = tf.keras.layers.Conv2D(7,1)(inpt)
     mod = tf.keras.Model(inpt,net)
     
     al, un = _compute_alignment_and_uniformity(ds, mod)

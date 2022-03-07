@@ -129,11 +129,10 @@ def _build_logits(q, k, buffer, N=0, s=0, s_prime=0, margin=0, compare_batch=Fal
         positive_logits = tf.matmul(q, k, transpose_b=True)
     else:
         # compute positive logits- (batch_size,1)
-        #positive_logits = tf.squeeze(
-        #        tf.matmul(tf.expand_dims(q,1), 
-        #              tf.expand_dims(k,1), transpose_b=True),
-        #        axis=-1) - margin
-        positive_logits = tf.reduce_sum(q*k, -1) - margin
+        positive_logits = tf.squeeze(
+                tf.matmul(tf.expand_dims(q,1), 
+                      tf.expand_dims(k,1), transpose_b=True),
+                axis=-1) - margin
     # and negative logits- (batch_size, buffer_size)
     negative_logits = tf.matmul(q, buffer, transpose_b=True)
     # assemble positive and negative- (batch_size, buffer_size+1)
@@ -261,7 +260,7 @@ class MomentumContrastTrainer(GenericExtractor):
 
     def __init__(self, logdir, trainingdata, testdata=None, fcn=None, 
                  augment=True, batches_in_buffer=10, alpha=0.999, 
-                 tau=0.07, output_dim=128, num_hidden=2048, 
+                 temperature=0.07, output_dim=128, num_hidden=2048, 
                  copy_weights=False, weight_decay=0,
                  N=0, s=0, s_prime=0, margin=0,
                  lr=0.01, lr_decay=100000, decay_type="exponential",
@@ -278,7 +277,7 @@ class MomentumContrastTrainer(GenericExtractor):
         :augment: (dict) dictionary of augmentation parameters, True for defaults
         :batches_in_buffer:
         :alpha: momentum parameter for updating the momentum encoder
-        :tau: temperature parameter for noise-contrastive loss
+        :temperature: temperature parameter for noise-contrastive loss
         :output_dim: dimension for features to be projected into for NCE loss
         :num_hidden: number of neurons in the projection head's hidden layer (from the MoCoV2 paper)
         :copy_weights: if True, copy the query model weights at the beginning as well 
@@ -359,7 +358,7 @@ class MomentumContrastTrainer(GenericExtractor):
                 momentum_encoder, 
                 self._optimizer, 
                 self._buffer, 
-                batches_in_buffer, alpha, tau, weight_decay,
+                batches_in_buffer, alpha, temperature, weight_decay,
                 N, s, s_prime, margin)
         # build evaluation dataset
         if testdata is not None:
@@ -383,7 +382,7 @@ class MomentumContrastTrainer(GenericExtractor):
         # parse and write out config YAML
         self._parse_configs(augment=augment, 
                             batches_in_buffer=batches_in_buffer, 
-                            alpha=alpha, tau=tau, output_dim=output_dim,
+                            alpha=alpha, temperature=temperature, output_dim=output_dim,
                             num_hidden=num_hidden, weight_decay=weight_decay,
                             N=N, s=s, s_prime=s_prime, margin=margin,
                             lr=lr, lr_decay=lr_decay, opt_type=opt_type,
