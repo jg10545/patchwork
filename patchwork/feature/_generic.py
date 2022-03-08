@@ -29,6 +29,17 @@ INPUT_PARAMS = ["imshape", "num_channels", "norm", "batch_size",
                 "shuffle", "num_parallel_calls", "single_channel",
                 "global_batch_size"]
 
+_TENSORBOARD_DESCRIPTIONS = {
+    "loss":"Total training loss",
+    "nce_batch_acc":"Accuracy of the contrastive training batch. *Hard Negative Mixing for Contrastive Learning* by Kalantidis *et al* uses this plot to gain some insight into differences between variations on MoCo.",
+    "alignment":"Alignment measure from Wang and Isola's *Understanding Contrastive Representation Learning through Alignment and Uniformity on the Hypersphere*. Measures how well-aligned positive pairs are (higher is better). Computes on test files.",
+    "uniformity":"Uniformity measure from Wang and Isola's *Understanding Contrastive Representation Learning through Alignment and Uniformity on the Hypersphere*. Measures how well spread feature vectors are over the unit hypersphere (lower is better). Computes on test files.",
+    "l2_loss":"Total squared magnitude of training weights for L2 loss computation. This is the value **before** rescaling by your weight decay parameter.",
+    "linear_classification_accuracy":"Downstream task test accuracy. Feature vectors for labeled images are average-pooled and used to train a multinomial regression model. Labeled points are deterministically split into 2/3 train, 1/3 test.",
+    "first_convolution_filters":"Kernels from the first convolutional layer of the feature extractor.",
+    "closest_feature_vectors":"Image retrieval test. Each image in the leftmost column is from a different class in your labeled dataset; the images to the right are the images whose features had the smallest cosine simlarity."
+}
+
 
 def _run_this_epoch(flag, e): 
     if isinstance(flag, bool):
@@ -161,6 +172,7 @@ class GenericExtractor(object):
         evaluate
     """
     modelname = "GenericExtractor"
+    _description = _TENSORBOARD_DESCRIPTIONS
     
     
     def __init__(self, logdir=None, trainingdata=[], fcn=None, augment=False, 
@@ -308,7 +320,8 @@ class GenericExtractor(object):
             
     def _record_scalars(self, metric=False, **scalars):
         for s in scalars:
-            tf.summary.scalar(s, scalars[s], step=self.step)
+            desc = self._description.get(s, None)
+            tf.summary.scalar(s, scalars[s], step=self.step, description=desc)
             
             if metric:
                 if hasattr(self, "_mlflow"):
@@ -316,11 +329,15 @@ class GenericExtractor(object):
             
     def _record_images(self, **images):
         for i in images:
-            tf.summary.image(i, images[i], step=self.step)
+            desc = self._description.get(i, None)
+            tf.summary.image(i, images[i], step=self.step,
+                             description=desc)
             
     def _record_hists(self, **hists):
         for h in hists:
-            tf.summary.histogram(h, hists[h], step=self.step)
+            desc = self._description.get(h, None)
+            tf.summary.histogram(h, hists[h], step=self.step,
+                                 description=desc)
             
     def _linear_classification_test(self, avpool=True, query_fig=False):
         
@@ -336,7 +353,9 @@ class GenericExtractor(object):
          
          conf_mat = np.expand_dims(np.expand_dims(conf_mat, 0), -1)/conf_mat.max()
          self._record_scalars(linear_classification_accuracy=acc, metric=True)
-         self._record_images(linear_classification_confusion_matrix=conf_mat)
+         # commenting out the confusion matrix record- I don't think I've ever found
+         # this actually useful
+         #self._record_images(linear_classification_confusion_matrix=conf_mat)
   
                 
     def rotation_classification_test(self, testdata=None, avpool=False):

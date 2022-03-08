@@ -67,12 +67,7 @@ def find_subset(df, label_status, exclude_status, s):
         ex = df["exclude"] == True
     elif exclude_status == "validation":
         ex = df["validation"] == True
-    
-    #if s == "excluded":
-    #    return df["exclude"] == True
-    #else:
-    #    not_excluded = df["exclude"] != True
-        
+
     
     if s == "all":
         return lab & ex
@@ -85,6 +80,9 @@ def find_subset(df, label_status, exclude_status, s):
     elif "subset" in s:
         s = s.replace("subset:", "").strip()
         return lab & ex & (df["subset"].astype(str) == s)
+    elif "unlabeled" in s:
+        s = s.replace("unlabeled: ", "")
+        return lab & ex & pd.isnull(df[s])
     else:
         assert False, "sorry can't help you"
         

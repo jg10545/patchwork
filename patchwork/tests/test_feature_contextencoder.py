@@ -80,11 +80,11 @@ mock_discriminator = tf.keras.Model(inpt, outpt)
 
     
 def test_context_encoder_inpainter_training_step(test_png_path):
-    inpainter_training_step = ce.build_inpainter_training_step()
+    inpainter_training_step = ce.build_inpainter_training_step(opt,
+                                                               mock_inpainter,
+                                                               mock_discriminator)
     x, y = ce._build_test_dataset([test_png_path], input_shape=(64,64,3))
-    losses = inpainter_training_step(opt, 
-                                     mock_inpainter, 
-                                     mock_discriminator, x, y)
+    losses = inpainter_training_step(x, y)
     assert len(losses) == 3
     for i in ["inpainter_recon_loss", "inpainter_disc_loss", "inpainter_total_loss"]:
         assert losses[i].numpy().size == 1
@@ -92,11 +92,11 @@ def test_context_encoder_inpainter_training_step(test_png_path):
 
 
 def test_context_encoder_discriminator_training_step(test_png_path):
-    discriminator_training_step = ce.build_discriminator_training_step()
+    discriminator_training_step = ce.build_discriminator_training_step(opt,
+                                                                       mock_inpainter,
+                                                                       mock_discriminator)
     x, y = ce._build_test_dataset([test_png_path], input_shape=(64,64,3))
-    loss = discriminator_training_step(opt,
-                                       mock_inpainter, 
-                                       mock_discriminator, x, y)
+    loss = discriminator_training_step(x, y)
     assert loss["disc_loss"].numpy().size == 1
     assert loss["disc_loss"].dtype == tf.float32
     

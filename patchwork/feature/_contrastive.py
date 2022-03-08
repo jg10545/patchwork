@@ -111,7 +111,7 @@ def _hcl_softmax_prob(z1, z2, temp, beta, tau_plus, mask):
 
 
 
-def _contrastive_loss(z1, z2, temp, decoupled=True, eps=0):
+def _contrastive_loss(z1, z2, temp, decoupled=False, eps=0, q=0, lam=0.01):
     """
     Compute contrastive loss for SimCLR or Decoupled Contrastive Learning.
     Also compute the batch accuracy.
@@ -120,6 +120,8 @@ def _contrastive_loss(z1, z2, temp, decoupled=True, eps=0):
     :temp: scalar Gibbs temperature parameter
     :decoupled: bool; whether to use the loss function from the DCL paper
     :eps: epsilon parameter from the IFM paper
+    :q: q parameter for RINCE loss in "Robust Contrastive Learning against Noisy Views"
+    :lam: lambda parameter for RINCE loss in "Robust Contrastive Learning against Noisy Views"
     
     Returns:
         :softmax_prob:
@@ -127,6 +129,12 @@ def _contrastive_loss(z1, z2, temp, decoupled=True, eps=0):
         :decoupled: if True, compute the weighted decoupled loss from equation 6
             of "Decoupled Contrastive Learning" by Yeh et al
     """
+    if decoupled & (eps > 0):
+        logging.warn("mixing decoupled contrastive learning with implicit feature modification? you're out of control, man.")
+    if decoupled & (q>0):
+        logging.error("you can have RINCE or DCL but not both")
+    if (eps > 0)&(q > 0):
+        logging.warn("mixing IFM and RINCE seems weird but i'm not going to stop you.")
     # construct mask
     mask = tf.stop_gradient(_build_negative_mask(z1.shape[0]))
     # positive logits: just the dot products between corresponding pairs
@@ -140,30 +148,32 @@ def _contrastive_loss(z1, z2, temp, decoupled=True, eps=0):
     # shape (2gbs, 2gbs)
     s = tf.matmul(z, z, transpose_b=True)
     # convert negatives to logits
-    neg_exp = mask*tf.exp((s + eps)/temp)     
-       
+    neg_exps = mask*tf.exp((s + eps)/temp)     
+    neg_exp = tf.reduce_sum(neg_exps, -1)
+    
     # COMPUTE BATCH ACCURACY ()
-    biggest_neg = tf.reduce_max(neg_exp, -1)
+    biggest_neg = tf.reduce_max(neg_exps, -1)
     nce_batch_acc = tf.reduce_mean(tf.cast(pos_exp > biggest_neg, tf.float32))
+    
     
     if decoupled:
         logging.info("using decoupled contrastive learning objective")
         # compute mises-fisher weighting function (gbs,)
-        #print("using weighted decoupled loss without gradients")
-        
         sigma = 0.5 # section 4.2 of paper used this value for one set of experiments
         factor = tf.exp(tf.reduce_sum(z1*z2, -1)/sigma) # (gbs,)
         factor = tf.concat([factor, factor], 0) # (2gbs,)
         weight = tf.stop_gradient(2 - factor/tf.reduce_mean(factor)) # (2gbs,)
-        #weight = 2 - factor/tf.reduce_mean(factor) # (2gbs,)
-        #weight = 1
-        l_dcw = -1*weight*pos + tf.math.log(tf.reduce_sum(neg_exp, -1))
+        l_dcw = -1*weight*pos + tf.math.log(neg_exp)
         loss = tf.reduce_mean(l_dcw)
     
     else:
-        logging.info("using standard contrastive learning objective")
-        # COMPUTE SOFTMAX PROBABILITY (gbs,)
-        softmax_prob = pos_exp/(pos_exp + tf.reduce_sum(neg_exp, -1))
-        loss = tf.reduce_mean(-1*tf.math.log(softmax_prob + EPSILON))
+        if q == 0:  
+            logging.info("using standard contrastive learning objective")
+            # COMPUTE SOFTMAX PROBABILITY (gbs,)
+            softmax_prob = pos_exp/(pos_exp + neg_exp)
+            loss = tf.reduce_mean(-1*tf.math.log(softmax_prob + EPSILON))
+        else:
+            logging.info("using RINCE learning objective")
+            loss = tf.reduce_mean(-1*(pos_exp**q)/q + (lam*(pos_exp + neg_exp)**q)/q)
         
     return loss, nce_batch_acc

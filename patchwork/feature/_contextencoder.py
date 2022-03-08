@@ -114,7 +114,7 @@ def _build_test_dataset(filepaths, input_shape=(256,256,3), norm=255,
 
 def build_inpainting_network(input_shape=(256,256,3), disc_loss=0.001, 
                              learn_rate=1e-4, encoder=None, 
-                             decoder=None, discriminator=None):
+                             decoder=None, discriminator=None, channelwise=True):
     """
     Build an inpainting network as described in the supplementary 
     material of Pathak et al's paper.
@@ -127,6 +127,8 @@ def build_inpainting_network(input_shape=(256,256,3), disc_loss=0.001,
     :encoder: encoder model (if not specified one will be built)
     :decoder: decoder model
     :discriminator: discriminator model
+    :channelwise: if False, use a depthwise convolution instead of Pathak's
+        custom Channelwise Dense layer
     
     Returns inpainter, encoder, and discriminator models.
     """
@@ -140,9 +142,15 @@ def build_inpainting_network(input_shape=(256,256,3), disc_loss=0.001,
     encoded = encoder(inpt)
     # Pathak's structure runs images through the encoder, then a dense
     # channel-wise layer, then dropout and a 1x1 Convolution before decoding.
-    dense = ChannelWiseDense()(encoded)
-    dropout = tf.keras.layers.Dropout(0.5)(dense)
-    conv1d = tf.keras.layers.Conv2D(512,1)(dropout)
+    if channelwise:
+        dense = ChannelWiseDense()(encoded)
+        dense = tf.keras.layers.Dropout(0.5)(dense)
+    else:
+        # on larger images the ChannelWiseDense layer might not scale well- let's
+        # try just replacing it with a depthwise convolution with a large filter.
+        dense = tf.keras.layers.DepthwiseConv2D(5, padding="same")(encoded)
+    
+    conv1d = tf.keras.layers.Conv2D(512,1)(dense)
     decoded = decoder(conv1d)
     
     # NOW FOR THE ADVERSARIAL PART
@@ -162,10 +170,10 @@ def _stabilize(x):
     x = K.maximum(x, K.epsilon())
     return x
 
-def build_inpainter_training_step():
-    @tf.function
-    def inpainter_training_step(opt, inpainter, discriminator, img, mask, 
+def build_inpainter_training_step(opt, inpainter, discriminator,  
                                 recon_weight=1, adv_weight=1e-3, imshape=(256,256)):
+    @tf.function
+    def inpainter_training_step(img, mask):
         
         """
         Tensorflow function for updating inpainter weights
@@ -194,11 +202,15 @@ def build_inpainter_training_step():
             # compute difference between inpainted image and original
             reconstruction_residual = mask*(img - inpainted_img)
             reconstructed_loss = K.mean(K.abs(reconstruction_residual))
-            # compute adversarial loss
-            disc_output_on_inpainted = discriminator(inpainted_img)
+            # only run through the adversarial step if we're doing that.
+            if adv_weight > 0:
+                # compute adversarial loss
+                disc_output_on_inpainted = discriminator(inpainted_img)
 
-            # is the above line correct?
-            disc_loss_on_inpainted = -1*K.mean(K.log(_stabilize(disc_output_on_inpainted)))
+                # is the above line correct?
+                disc_loss_on_inpainted = -1*K.mean(K.log(_stabilize(disc_output_on_inpainted)))
+            else:
+                disc_loss_on_inpainted = 0
             # total loss
             total_loss = recon_weight*reconstructed_loss + adv_weight*disc_loss_on_inpainted
             lossdict["inpainter_recon_loss"] = reconstructed_loss
@@ -214,9 +226,9 @@ def build_inpainter_training_step():
         return lossdict
     return inpainter_training_step
 
-def build_discriminator_training_step():
+def build_discriminator_training_step(opt, inpainter, discriminator):
     @tf.function
-    def discriminator_training_step(opt, inpainter, discriminator, img, mask):
+    def discriminator_training_step(img, mask):
         """
         Tensorflow function for updating discriminator weights
         
@@ -258,7 +270,7 @@ class ContextEncoderTrainer(GenericExtractor):
 
     def __init__(self, logdir, trainingdata, testdata=None, fcn=None, inpainter=None,
                  discriminator=None, augment=True, 
-                 recon_weight=1, adv_weight=1e-3, lr=1e-4,
+                 recon_weight=1, adv_weight=1e-3, lr=1e-4, channelwise=True,
                   imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, shuffle=True, num_parallel_calls=None,
                  single_channel=False, notes="",
@@ -298,7 +310,7 @@ class ContextEncoderTrainer(GenericExtractor):
         if (fcn is None) or (inpainter is None) or (discriminator is None):
             inpainter, fcn, discriminator = build_inpainting_network(
                     input_shape=input_shape,
-                    encoder=fcn)
+                    encoder=fcn, channelwise=channelwise)
         self.fcn = fcn
         self._models = {"fcn":fcn, "inpainter":inpainter, 
                         "discriminator":discriminator}
@@ -309,8 +321,12 @@ class ContextEncoderTrainer(GenericExtractor):
                 "disc":tf.keras.optimizers.Adam(0.1*lr)
                 }
         
-        self._inpainter_training_step = build_inpainter_training_step()
-        self._discriminator_training_step = build_discriminator_training_step()
+        self._inpainter_training_step = build_inpainter_training_step(
+            self._optimizer["inpaint"], self._models["inpainter"],
+            self._models["discriminator"], recon_weight, adv_weight, imshape)
+        self._discriminator_training_step = build_discriminator_training_step(
+            self._optimizer["disc"], self._models["inpainter"], 
+            self._models["discriminator"])
         
         # build training dataset
         if isinstance(trainingdata, list):
@@ -361,21 +377,11 @@ class ContextEncoderTrainer(GenericExtractor):
         """
         for img, mask in self._train_ds:
             # alternatve between inpainter and discriminator training
-            if self.step % 2 == 0:
-                lossdict = self._inpainter_training_step(
-                        self._optimizer["inpaint"], 
-                        self._models["inpainter"],
-                        self._models["discriminator"],
-                        img, mask,
-                        recon_weight=self.config["recon_weight"],
-                        adv_weight=self.config["adv_weight"],
-                        imshape=self.input_config["imshape"])
+            if (self.step % 2 == 0)|(self.config["adv_weight"] == 0):
+                lossdict = self._inpainter_training_step(img, mask)
                 self._record_scalars(**lossdict)
-            else:
+            else:   
                 disc_loss = self._discriminator_training_step(
-                                self._optimizer["disc"], 
-                                self._models["inpainter"], 
-                                self._models["discriminator"],
                                 img, mask)
                 self._record_scalars(**disc_loss)
             self.step += 1

@@ -25,7 +25,7 @@ class GlobalPooling(param.Parameterized):
         else:
             pool = tf.keras.layers.Flatten()
         # store a reference to the model in case we need it later
-        self._model = tf.keras.Model(inpt, pool(inpt))
+        self._model = tf.keras.Model(inpt, pool(inpt), name="finetuning")
         return self._model
     
     def model_params(self):
@@ -73,7 +73,7 @@ class ConvNet(param.Parameterized):
         else:
             net = tf.keras.layers.Flatten()(net)
         # store reference to model in case we need it later
-        self._model = tf.keras.Model(inpt, net)
+        self._model = tf.keras.Model(inpt, net, name="finetuning")
         return self._model
     
     def model_params(self):

@@ -20,9 +20,9 @@ requirements = [
         "pillow",
         "matplotlib",
         "tqdm",
-        "sklearn",
+        "scikit-learn",
         "scipy",
-        "skimage"
+        "scikit-image"
         ]
 
 setup_requirements = [ ]

@@ -46,7 +46,8 @@ def build_encoder(num_channels=3):
     """
     inpt = tf.keras.layers.Input((None, None, num_channels))
     net = inpt
-    for k in [64, 64, 128, 256, 512]:
+    #for k in [64, 64, 128, 256, 512]:
+    for k in [32, 64, 128, 256, 512]:
         net = tf.keras.layers.Conv2D(k, 4, strides=2, padding="same")(net)
         net = tf.keras.layers.LeakyReLU(alpha=0.2)(net)
         net = tf.keras.layers.BatchNormalization()(net)
@@ -60,7 +61,8 @@ def build_decoder(input_channels=512, num_channels=3):
     inpt = tf.keras.layers.Input((None, None, input_channels))
     net = inpt
 
-    for k in [512, 256, 128, 64, 64]:
+    #for k in [512, 256, 128, 64, 64]:
+    for k in [512, 256, 128, 64, 32]:
         net = tf.keras.layers.Conv2DTranspose(k, 4, strides=2, 
                                               padding="same",
                                 activation=tf.keras.activations.relu)(net)

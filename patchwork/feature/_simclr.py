@@ -3,7 +3,7 @@ import numpy as np
 import tensorflow as tf
 from tqdm import tqdm
 
-from patchwork.feature._generic import GenericExtractor
+from patchwork.feature._generic import GenericExtractor, _TENSORBOARD_DESCRIPTIONS
 from patchwork._augment import augment_function
 from patchwork.loaders import _image_file_dataset
 from patchwork._util import compute_l2_loss, _compute_alignment_and_uniformity
@@ -11,74 +11,20 @@ from patchwork._util import compute_l2_loss, _compute_alignment_and_uniformity
 from patchwork.feature._moco import _build_augment_pair_dataset
 from patchwork.feature._contrastive import _contrastive_loss, _build_negative_mask
 
-BIG_NUMBER = 1000.
+try:
+    bnorm = tf.keras.layers.experimental.SyncBatchNormalization
+except:
+    bnorm = tf.keras.layers.BatchNormalization
 
 
 
-def _build_simclr_dataset(imfiles, imshape=(256,256), batch_size=256, 
-                      num_parallel_calls=None, norm=255,
-                      num_channels=3, augment=True,
-                      single_channel=False, stratify=None):
-    """
-    :stratify: if not None, a list of categories for each element in
-        imfile.
-    """
-    
-    if stratify is not None:
-        categories = list(set(stratify))
-        # SINGLE-INPUT CASE
-        if isinstance(imfiles[0], str):
-            file_lists = [[imfiles[i] for i in range(len(imfiles)) 
-                        if stratify[i] == c]
-                for c in categories
-                ]
-        # DUAL-INPUT
-        else:
-            file_lists = [([imfiles[0][i] for i in range(len(imfiles[0])) 
-                        if stratify[i] == c],
-                            [imfiles[1][i] for i in range(len(imfiles[1])) 
-                        if stratify[i] == c] ) for c in categories ]
-        datasets = [_build_simclr_dataset(f, imshape=imshape, 
-                                          batch_size=batch_size, 
-                                          num_parallel_calls=num_parallel_calls, 
-                                          norm=norm, num_channels=num_channels, 
-                                          augment=augment, 
-                                          single_channel=single_channel,
-                                          stratify=None)
-                    for f in file_lists]
-        return tf.data.experimental.sample_from_datasets(datasets)
-    
-    assert augment != False, "don't you need to augment your data?"
-    
-    
-    ds = _image_file_dataset(imfiles, imshape=imshape, 
-                             num_parallel_calls=num_parallel_calls,
-                             norm=norm, num_channels=num_channels,
-                             shuffle=True, single_channel=single_channel,
-                             augment=False)  
-    
-    # SINGLE-INPUT CASE (DEFAULT)
-    #if isinstance(imfiles, tf.data.Dataset) or isinstance(imfiles[0], str):
-    _aug = augment_function(imshape, augment)
-    @tf.function
-    def _augment_and_stack(*x):
-        # if there's only one input, augment it twice (standard SimCLR).
-        # if there are two, augment them separately (case where user is
-        # trying to express some specific semantics)
-        x0 = tf.reshape(x[0], (imshape[0], imshape[1], num_channels))
-        if len(x) == 2:
-            x1 = tf.reshape(x[1], (imshape[0], imshape[1], num_channels))
-        else:
-            x1 = x0
-        y = tf.constant(np.array([1,-1]).astype(np.int32))
-        return tf.stack([_aug(x0),_aug(x1)]), y
 
-    ds = ds.map(_augment_and_stack, num_parallel_calls=num_parallel_calls)
-        
-    ds = ds.unbatch()
-    ds = ds.batch(2*batch_size, drop_remainder=True)
-    ds = ds.prefetch(1)
-    return ds
+_DESCRIPTIONS = {
+    "nt_xent_loss":"Contrastive crossentropy loss"
+}
+for d in _TENSORBOARD_DESCRIPTIONS:
+    _DESCRIPTIONS[d] = _TENSORBOARD_DESCRIPTIONS[d]
+
 
 
 def _build_embedding_model(fcn, imshape, num_channels, num_hidden, output_dim, batchnorm=True):
@@ -99,12 +45,18 @@ def _build_embedding_model(fcn, imshape, num_channels, num_hidden, output_dim, b
                                        num_channels[1]))
         inpt = [inpt0, inpt1]
     net = fcn(inpt)
-    net = tf.keras.layers.Flatten()(net)
-    net = tf.keras.layers.Dense(num_hidden)(net)
-    if batchnorm:
-        net = tf.keras.layers.BatchNormalization()(net)
-    net = tf.keras.layers.Activation("relu")(net)
-    net = tf.keras.layers.Dense(output_dim, use_bias=False)(net)
+    #net = tf.keras.layers.Flatten()(net)
+    net = tf.keras.layers.GlobalAvgPool2D()(net)
+    # NORMAL SimCLR CASE
+    if num_hidden > 0:
+        net = tf.keras.layers.Dense(num_hidden)(net)
+        if batchnorm:
+            net = bnorm()(net)
+        net = tf.keras.layers.Activation("relu")(net)
+        net = tf.keras.layers.Dense(output_dim, use_bias=False)(net)
+    else:
+        # DirectCLR CASE
+        net = tf.keras.layers.Lambda(lambda x: x[:,:output_dim])(net)
     embedding_model = tf.keras.Model(inpt, net)
     return embedding_model
 
@@ -114,7 +66,7 @@ def _build_embedding_model(fcn, imshape, num_channels, num_hidden, output_dim, b
 
 def _build_simclr_training_step(embed_model, optimizer, temperature=0.1,
                                 weight_decay=0, decoupled=False, eps=0,
-                                data_parallel=False):
+                                q=0):
     """
     Generate a tensorflow function to run the training step for SimCLR.
     
@@ -138,17 +90,16 @@ def _build_simclr_training_step(embed_model, optimizer, temperature=0.1,
             z1 = tf.nn.l2_normalize(embed_model(x, training=True), 1)
             z2 = tf.nn.l2_normalize(embed_model(y, training=True), 1)
             
-            if not data_parallel:
-                # get replica context- we'll use this to aggregate embeddings
-                # across different GPUs
-                context = tf.distribute.get_replica_context()
-                # aggregate projections across replicas. z1 and z2 should
-                # now correspond to the global batch size (gbs, d)
-                z1 = context.all_gather(z1, 0)
-                z2 = context.all_gather(z2, 0)
+            # get replica context- we'll use this to aggregate embeddings
+            # across different GPUs
+            context = tf.distribute.get_replica_context()
+            # aggregate projections across replicas. z1 and z2 should
+            # now correspond to the global batch size (gbs, d)
+            z1 = context.all_gather(z1, 0)
+            z2 = context.all_gather(z2, 0)
         
             xent_loss, batch_acc = _contrastive_loss(z1, z2, temperature, 
-                                          decoupled, eps)
+                                          decoupled, eps=eps, q=q)
             
         
             if weight_decay > 0:
@@ -185,47 +136,6 @@ def random_adjust_aug_params(a, sigma=0.05):
     return new_aug
 
 
-def find_new_aug_params(trainer, testfiles, num_trials=25, sigma=0.05):
-    """
-    EXPERIMENTAL
-    
-    Pass a trained SimCLRTrainer object and a list of test files, 
-    and try to guess at a better set of augmentation parameters.
-    
-    The method will randomly jitter the existing parameters [num_trials]
-    times with a standard deviation of [sigma], and return whichever
-    set of params has the highest NCE loss on the test files.
-    """
-    aug_params = trainer.augment_config
-    
-    @tf.function
-    def test_loss(x,y):
-        eye = tf.linalg.eye(y.shape[0])
-        index = tf.range(0, y.shape[0])
-        labels = index+y
-
-        embeddings = trainer._models["full"](x)
-        embeds_norm = tf.nn.l2_normalize(embeddings, axis=1)
-        sim = tf.matmul(embeds_norm, embeds_norm, transpose_b=True)
-        logits = (sim - BIG_NUMBER*eye)/trainer.config["temperature"]
-            
-        loss = tf.reduce_mean(
-            tf.nn.sparse_softmax_cross_entropy_with_logits(labels, logits))
-        return loss
-    
-    results = []
-
-    for i in tqdm(range(num_trials)):
-        loss = 0
-        aug = random_adjust_aug_params(aug_params, sigma)
-        ds = _build_simclr_dataset(testfiles, augment=aug,
-                                   **trainer.input_config)
-        for x, y in ds:
-            loss += test_loss(x,y).numpy()
-        
-        results.append((aug, loss))
-    argmax = np.argmax([x[1] for x in results])
-    return results[argmax][0], results
 
 
 class SimCLRTrainer(GenericExtractor):
@@ -240,7 +150,7 @@ class SimCLRTrainer(GenericExtractor):
     def __init__(self, logdir, trainingdata, testdata=None, fcn=None, 
                  augment=True, temperature=0.1, num_hidden=128,
                  output_dim=64, batchnorm=True, weight_decay=0,
-                 decoupled=False, eps=0, data_parallel=True,
+                 decoupled=False, eps=0, q=0,
                  lr=0.01, lr_decay=100000, decay_type="exponential",
                  opt_type="adam",
                  imshape=(256,256), num_channels=3,
@@ -254,7 +164,9 @@ class SimCLRTrainer(GenericExtractor):
         :fcn: (keras Model) fully-convolutional network to train as feature extractor
         :augment: (dict) dictionary of augmentation parameters, True for defaults
         :temperature: the Boltzmann temperature parameter- rescale the cosine similarities by this factor before computing softmax loss.
-        :num_hidden: number of hidden neurons in the network's projection head
+        :num_hidden: number of hidden neurons in the network's projection head. Set to 0 to 
+            use the DirectCLR method from "Understanding Dimesnional Collapse in Contrastive
+            Self-Supervised Learning"
         :output_dim: dimension of projection head's output space. Figure 8 in Chen et al's paper shows that their results did not depend strongly on this value.
         :batchnorm: whether to include batch normalization in the projection head.
         :weight_decay: coefficient for L2-norm loss. The original SimCLR paper used 1e-6.
@@ -262,8 +174,8 @@ class SimCLRTrainer(GenericExtractor):
             Learning" by Yeh et al
         :eps: epsilon parameter from the Implicit Feature Modification paper ("Can
              contrastive learning avoid shortcut solutions?" by Robinson et al)
-        :data_parallel: if True, compute contrastive loss only using negatives from
-            within each replica
+        :q: RINCE loss parameter from "Robust Contrastive Learning against Noisy Views"
+            by Chuang et al
         :lr: (float) initial learning rate
         :lr_decay:  (int) number of steps for one decay period (0 to disable)
         :decay_type: (string) how to decay the learning rate- "exponential" (smooth exponential decay), "staircase" (non-smooth exponential decay), or "cosine"
@@ -287,6 +199,7 @@ class SimCLRTrainer(GenericExtractor):
         self.trainingdata = trainingdata
         self._downstream_labels = downstream_labels
         self.strategy = strategy
+        self._description = _DESCRIPTIONS
         
         self._file_writer = tf.summary.create_file_writer(logdir, flush_millis=10000)
         self._file_writer.set_as_default()
@@ -294,7 +207,7 @@ class SimCLRTrainer(GenericExtractor):
         # if no FCN is passed- build one
         with self.scope():
             if fcn is None:
-                fcn = tf.keras.applications.ResNet50V2(weights=None, include_top=False)
+                fcn = tf.keras.applications.ResNet50(weights=None, include_top=False)
             self.fcn = fcn
             # Create a Keras model that wraps the base encoder and 
             # the projection head
@@ -305,7 +218,6 @@ class SimCLRTrainer(GenericExtractor):
                         "full":embed_model}
         
         # build training dataset
-        #ds = _build_simclr_dataset(trainingdata, 
         ds = _build_augment_pair_dataset(trainingdata,
                                    imshape=imshape, batch_size=batch_size,
                                    num_parallel_calls=num_parallel_calls, 
@@ -323,7 +235,7 @@ class SimCLRTrainer(GenericExtractor):
         step_fn = _build_simclr_training_step(
                 embed_model, self._optimizer, 
                 temperature, weight_decay=weight_decay,
-                decoupled=decoupled, eps=eps, data_parallel=data_parallel)
+                decoupled=decoupled, eps=eps, q=q)
         self._training_step = self._distribute_training_function(step_fn)
         
         if testdata is not None:
@@ -333,22 +245,7 @@ class SimCLRTrainer(GenericExtractor):
                                         norm=norm, num_channels=num_channels, 
                                         augment=augment,
                                         single_channel=single_channel)
-            """
-            @tf.function
-            def test_loss(x,y):
-                eye = tf.linalg.eye(y.shape[0])
-                index = tf.range(0, y.shape[0])
-                labels = index+y
-
-                embeddings = self._models["full"](x)
-                embeds_norm = tf.nn.l2_normalize(embeddings, axis=1)
-                sim = tf.matmul(embeds_norm, embeds_norm, transpose_b=True)
-                logits = (sim - BIG_NUMBER*eye)/self.config["temperature"]
             
-                loss = tf.reduce_mean(
-                    tf.nn.sparse_softmax_cross_entropy_with_logits(labels, logits))
-                return loss, sim
-            self._test_loss = test_loss"""
             self._test = True
         else:
             self._test = False
@@ -360,8 +257,7 @@ class SimCLRTrainer(GenericExtractor):
                             num_hidden=num_hidden, output_dim=output_dim,
                             weight_decay=weight_decay, batchnorm=batchnorm,
                             lr=lr, lr_decay=lr_decay, 
-                            decoupled=decoupled, eps=eps,
-                            data_parallel=data_parallel,
+                            decoupled=decoupled, eps=eps, q=q,
                             imshape=imshape, num_channels=num_channels,
                             norm=norm, batch_size=batch_size,
                             num_parallel_calls=num_parallel_calls,
@@ -385,7 +281,7 @@ class SimCLRTrainer(GenericExtractor):
             # if the user passed out-of-sample data to test- compute
             # alignment and uniformity measures
             alignment, uniformity = _compute_alignment_and_uniformity(
-                                            self._test_ds, self._models["full"])
+                                            self._test_ds, self._models["fcn"])
             
             self._record_scalars(alignment=alignment,
                              uniformity=uniformity, metric=True)
