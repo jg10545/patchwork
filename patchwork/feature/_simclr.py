@@ -54,6 +54,8 @@ def _build_embedding_model(fcn, imshape, num_channels, num_hidden, output_dim, b
             net = bnorm()(net)
         net = tf.keras.layers.Activation("relu")(net)
         net = tf.keras.layers.Dense(output_dim, use_bias=False)(net)
+        if batchnorm:
+            net = bnorm()(net)
     else:
         # DirectCLR CASE
         net = tf.keras.layers.Lambda(lambda x: x[:,:output_dim])(net)

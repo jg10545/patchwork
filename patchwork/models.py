@@ -2,6 +2,7 @@
 import tensorflow as tf
 from patchwork._convmixer import build_convmixer_fcn
 from patchwork._convnext import build_convnext_fcn
+from patchwork._resnet import build_resnet50
 
 def build_wide_resnet(n=16, k=1, num_channels=3, dropout=0.5, inputshape=None,
                       syncbn=False):
