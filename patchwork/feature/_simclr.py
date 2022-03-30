@@ -86,8 +86,8 @@ def _build_simclr_training_step(embed_model, optimizer, temperature=0.1,
     def training_step(x,y):
         
         if alpha > 0:
-            p1 = tf.py_function(patch_shuffle, x, tf.float32)
-            p2 = tf.py_function(patch_shuffle, y, tf.float32)
+            p1 = tf.py_function(patch_shuffle, [x], tf.float32)
+            p2 = tf.py_function(patch_shuffle, [y], tf.float32)
         
         with tf.GradientTape() as tape:
             # run images through model and normalize embeddings
