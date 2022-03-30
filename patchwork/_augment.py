@@ -362,3 +362,33 @@ def augment_function(imshape, params=True):
     return _aug
 
 
+
+def patch_shuffle(batch):
+    """
+    Input a batch of images, return the batch cut into
+    pieces, randomly shuffled and reassembled
+    """
+    assert len(batch.shape) == 4
+    h = batch.shape[1]
+    w = batch.shape[2]
+
+    # randomly choose size of patches
+    d = tf.random.uniform((), minval=16, maxval=72, dtype=tf.int32)
+    nh = h//d
+    nw = w//d  
+    
+    patches = []
+    for i in range(nh):
+        for j in range(nw):
+            patches.append(batch[:,i*d:(i+1)*d, j*d:(j+1)*d])
+        
+    perm = tf.random.shuffle(tf.range(nh*nw))
+    rows = []
+    for i in range(nh):
+        row = []
+        for j in range(nw):
+            row.append(patches[perm[i*nh + j]])
+        row = tf.concat(row, 1)
+        rows.append(row)
+    shuffled = tf.concat(rows, 2)
+    return shuffled

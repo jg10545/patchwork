@@ -5,7 +5,7 @@ import tensorflow as tf
 from patchwork._augment import augment_function, _poisson, _random_zoom, _choose
 from patchwork._augment import _center_crop, _jitter, _random_jpeg_degrade, _gaussian_blur
 from patchwork._augment import _random_autocontrast, _random_shear, _random_solarize
-from patchwork._augment import SINGLE_AUG_FUNC
+from patchwork._augment import SINGLE_AUG_FUNC, patch_shuffle
 
 
 test_shape = (64,64,3)
@@ -92,4 +92,14 @@ def test_random_solarize():
     solarized = _random_solarize(img, 1.)
     assert img.shape == solarized.shape
     assert (solarized.numpy() == img).all() == False
+    
+def test_patch_shuffle():
+    foo = np.random.uniform(0,1, size=(5,128,128,3))
+    bar = patch_shuffle(foo)
+    
+    assert len(bar.shape) == 4
+    assert bar.shape[0] == foo.shape[0]
+    assert bar.shape[1] <= foo.shape[1]
+    assert bar.shape[2] <= foo.shape[2]
+    assert bar.shape[3] == 3
     

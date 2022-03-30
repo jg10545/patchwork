@@ -1,15 +1,13 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 import tensorflow as tf
-from tqdm import tqdm
 
 from patchwork.feature._generic import GenericExtractor, _TENSORBOARD_DESCRIPTIONS
-from patchwork._augment import augment_function
-from patchwork.loaders import _image_file_dataset
 from patchwork._util import compute_l2_loss, _compute_alignment_and_uniformity
 
 from patchwork.feature._moco import _build_augment_pair_dataset
-from patchwork.feature._contrastive import _contrastive_loss, _build_negative_mask
+from patchwork.feature._contrastive import _contrastive_loss#, _build_negative_mask
+from patchwork._augment import patch_shuffle
 
 try:
     bnorm = tf.keras.layers.experimental.SyncBatchNormalization
@@ -68,7 +66,7 @@ def _build_embedding_model(fcn, imshape, num_channels, num_hidden, output_dim, b
 
 def _build_simclr_training_step(embed_model, optimizer, temperature=0.1,
                                 weight_decay=0, decoupled=False, eps=0,
-                                q=0):
+                                q=0, alpha=0):
     """
     Generate a tensorflow function to run the training step for SimCLR.
     
@@ -87,10 +85,16 @@ def _build_simclr_training_step(embed_model, optimizer, temperature=0.1,
     """
     def training_step(x,y):
         
+        if alpha > 0:
+            p1 = patch_shuffle(x)
+            p2 = patch_shuffle(y)
+        
         with tf.GradientTape() as tape:
             # run images through model and normalize embeddings
             z1 = tf.nn.l2_normalize(embed_model(x, training=True), 1)
             z2 = tf.nn.l2_normalize(embed_model(y, training=True), 1)
+            
+            
             
             # get replica context- we'll use this to aggregate embeddings
             # across different GPUs
@@ -99,9 +103,18 @@ def _build_simclr_training_step(embed_model, optimizer, temperature=0.1,
             # now correspond to the global batch size (gbs, d)
             z1 = context.all_gather(z1, 0)
             z2 = context.all_gather(z2, 0)
+            
+            if alpha > 0:
+                zns1 = tf.nn.l2_normalize(embed_model(p1, training=True), 1)
+                zns2 = tf.nn.l2_normalize(embed_model(p2, training=True), 1)
+                zns1 = context.all_gather(zns1, 0)
+                zns2 = context.all_gather(zns2, 0)
+            else:
+                zns1, zns2 = None, None
         
             xent_loss, batch_acc = _contrastive_loss(z1, z2, temperature, 
-                                          decoupled, eps=eps, q=q)
+                                          decoupled, eps=eps, q=q, 
+                                          alpha=alpha, zns1=zns1, zns2=zns2)
             
         
             if weight_decay > 0:
@@ -152,7 +165,7 @@ class SimCLRTrainer(GenericExtractor):
     def __init__(self, logdir, trainingdata, testdata=None, fcn=None, 
                  augment=True, temperature=0.1, num_hidden=128,
                  output_dim=64, batchnorm=True, weight_decay=0,
-                 decoupled=False, eps=0, q=0,
+                 decoupled=False, eps=0, q=0, alpha=0, 
                  lr=0.01, lr_decay=100000, decay_type="exponential",
                  opt_type="adam",
                  imshape=(256,256), num_channels=3,
@@ -178,6 +191,7 @@ class SimCLRTrainer(GenericExtractor):
              contrastive learning avoid shortcut solutions?" by Robinson et al)
         :q: RINCE loss parameter from "Robust Contrastive Learning against Noisy Views"
             by Chuang et al
+        :alpha: parameter for non-semantic negative weight from "Robust Contrastive Learning Using Negative Samples with Diminished Semantics" by Ge et al
         :lr: (float) initial learning rate
         :lr_decay:  (int) number of steps for one decay period (0 to disable)
         :decay_type: (string) how to decay the learning rate- "exponential" (smooth exponential decay), "staircase" (non-smooth exponential decay), or "cosine"
@@ -237,7 +251,7 @@ class SimCLRTrainer(GenericExtractor):
         step_fn = _build_simclr_training_step(
                 embed_model, self._optimizer, 
                 temperature, weight_decay=weight_decay,
-                decoupled=decoupled, eps=eps, q=q)
+                decoupled=decoupled, eps=eps, q=q, alpha=alpha)
         self._training_step = self._distribute_training_function(step_fn)
         
         if testdata is not None:
@@ -259,7 +273,7 @@ class SimCLRTrainer(GenericExtractor):
                             num_hidden=num_hidden, output_dim=output_dim,
                             weight_decay=weight_decay, batchnorm=batchnorm,
                             lr=lr, lr_decay=lr_decay, 
-                            decoupled=decoupled, eps=eps, q=q,
+                            decoupled=decoupled, eps=eps, q=q, alpha=alpha,
                             imshape=imshape, num_channels=num_channels,
                             norm=norm, batch_size=batch_size,
                             num_parallel_calls=num_parallel_calls,

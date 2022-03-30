@@ -111,7 +111,8 @@ def _hcl_softmax_prob(z1, z2, temp, beta, tau_plus, mask):
 
 
 
-def _contrastive_loss(z1, z2, temp, decoupled=False, eps=0, q=0, lam=0.01):
+def _contrastive_loss(z1, z2, temp, decoupled=False, eps=0, q=0, lam=0.01,
+                      alpha=0, zns1=None, zns2=None):
     """
     Compute contrastive loss for SimCLR or Decoupled Contrastive Learning.
     Also compute the batch accuracy.
@@ -150,6 +151,13 @@ def _contrastive_loss(z1, z2, temp, decoupled=False, eps=0, q=0, lam=0.01):
     # convert negatives to logits
     neg_exps = mask*tf.exp((s + eps)/temp)     
     neg_exp = tf.reduce_sum(neg_exps, -1)
+    
+    if alpha > 0:
+        ns1 = tf.reduce_sum(z1*zns1, -1)
+        ns2 = tf.reduce_sum(z2*zns2, -1)
+        ns = tf.concat([ns1, ns2],0)
+        ns_logit = alpha*ns/temp
+        neg_exp += tf.exp(ns_logit)
     
     # COMPUTE BATCH ACCURACY ()
     biggest_neg = tf.reduce_max(neg_exps, -1)
