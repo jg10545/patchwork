@@ -22,7 +22,7 @@ def ResNet(stack_fn,input_shape=None):
 
 
 
-def block1(x, filters, kernel_size=3, stride=1, conv_shortcut=True):
+def block1(x, filters, kernel_size=3, stride=1, conv_shortcut=True, final=False):
     """
     A residual block.
     """
@@ -45,17 +45,24 @@ def block1(x, filters, kernel_size=3, stride=1, conv_shortcut=True):
     x = tf.keras.layers.Conv2D(4 * filters, 1)(x)
     x = BN()(x)
 
-    x = tf.keras.layers.Add()([shortcut, x])
-    x = tf.keras.layers.Activation('relu')(x)
+    if final:
+        x = tf.keras.layers.Add(dtype="float32")([shortcut, x])
+        x = tf.keras.layers.Activation('relu', dtype="float32")(x)
+    else:
+        x = tf.keras.layers.Add()([shortcut, x])
+        x = tf.keras.layers.Activation('relu')(x)
     return x
 
-def stack1(x, filters, blocks, stride1=2):
+def stack1(x, filters, blocks, stride1=2, final=False):
     """
     A set of stacked residual blocks.
     """
     x = block1(x, filters, stride=stride1)
     for i in range(2, blocks + 1):
-        x = block1(x, filters, conv_shortcut=False)
+        if i == blocks and final:
+            x = block1(x, filters, conv_shortcut=False, final=True)
+        else:
+            x = block1(x, filters, conv_shortcut=False)
     return x
 
 def build_resnet50(input_shape=None):
@@ -67,7 +74,7 @@ def build_resnet50(input_shape=None):
         x = stack1(x, 64, 3, stride1=1)
         x = stack1(x, 128, 4)
         x = stack1(x, 256, 6)
-        return stack1(x, 512, 3)
+        return stack1(x, 512, 3, final=True)
 
     return ResNet(stack_fn, input_shape)
 
