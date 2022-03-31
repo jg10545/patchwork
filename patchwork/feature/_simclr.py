@@ -46,13 +46,13 @@ def _build_embedding_model(fcn, imshape, num_channels, num_hidden, output_dim, b
         inpt = [inpt0, inpt1]
     net = fcn(inpt)
     #net = tf.keras.layers.Flatten()(net)
-    net = tf.keras.layers.GlobalAvgPool2D()(net)
+    net = tf.keras.layers.GlobalAvgPool2D(dtype="float32")(net)
     # NORMAL SimCLR CASE
     if num_hidden > 0:
-        net = tf.keras.layers.Dense(num_hidden)(net)
+        net = tf.keras.layers.Dense(num_hidden, dtype="float32")(net)
         if batchnorm:
-            net = bnorm()(net)
-        net = tf.keras.layers.Activation("relu")(net)
+            net = bnorm(dtype="float32")(net)
+        net = tf.keras.layers.Activation("relu", dtype="float32")(net)
         net = tf.keras.layers.Dense(output_dim, use_bias=False, dtype="float32")(net)
         if batchnorm:
             net = bnorm(dtype="float32")(net)
