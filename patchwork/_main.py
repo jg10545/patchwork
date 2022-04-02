@@ -288,7 +288,7 @@ class GUI(object):
         # PRE-EXTRACTED FEATURE CASE
         else:
             ds = tf.data.Dataset.from_tensor_slices(self.feature_vecs
-                                                      ).batch(batch_size), num_steps
+                                                      ).batch(batch_size)#, num_steps
         return self._strategy.experimental_distribute_dataset(ds), num_steps
             
         
@@ -324,7 +324,7 @@ class GUI(object):
         #opt = tf.keras.optimizers.Adam(lr)
         opt = build_optimizer(lr, lr_decay=lr_decay, opt_type=opt_type,
                               decay_type=decay_type)
-        self._training_function = build_training_function(self.loss_fn, opt,
+        trainfunc = build_training_function(self.loss_fn, opt,
                                         self.models["fine_tuning"],
                                         self.models["output"],
                                         feature_extractor=self.feature_extractor,
@@ -332,6 +332,27 @@ class GUI(object):
                                         tau=self._model_params["fixmatch"]["tau"],
                                         weight_decay=weight_decay
                                         )
+        if self._model_params["fixmatch"]["lambda"] == 0:
+            @tf.function
+            def training_step(x,y):
+                per_example_losses = self._strategy.run(trainfunc, args=(x,y))
+
+                losses = [self._strategy.reduce(
+                    tf.distribute.ReduceOp.MEAN, 
+                    k, axis=None) for k in per_example_losses]
+                return losses
+        else:
+            @tf.function
+            def training_step(x, y, x_unlab_wk, x_unlab_str):
+                per_example_losses = self._strategy.run(trainfunc, 
+                                                        args=(x,y, x_unlab_wk, x_unlab_str))
+
+                losses = [self._strategy.reduce(
+                    tf.distribute.ReduceOp.MEAN, 
+                    k, axis=None) for k in per_example_losses]
+                return losses
+        
+        self._training_function = training_step
 
     def _run_one_training_epoch(self, batch_size=32, num_samples=None):
         """
