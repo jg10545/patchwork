@@ -27,9 +27,8 @@ def test_training_step_preextracted_no_semisupervised():
     fn = build_training_function(loss_fn, opt, fine_tuning, output)
     # run on a batch of data
     trainloss, entloss = fn(xb,yb)
-    assert entloss.shape == ()
+    assert entloss == 0.
     assert trainloss.shape == ()
-    assert entloss.numpy() == 0.
     assert trainloss.numpy() > 0.
     
     
@@ -81,9 +80,8 @@ def test_training_step_feature_extractor_no_semisupervised():
                                  feature_extractor=fcn)
     # run on a batch of data
     trainloss, entloss = fn(xb,yb)
-    assert entloss.shape == ()
     assert trainloss.shape == ()
-    assert entloss.numpy() == 0.
+    assert entloss == 0.
     assert trainloss.numpy() > 0.
     
     
