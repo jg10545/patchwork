@@ -33,7 +33,7 @@ class GUI(object):
                  imshape=(256,256), num_channels=3, norm=255,
                  num_parallel_calls=2, logdir=None, aug=True, 
                  fixmatch_aug=DEFAULT_FIXMATCH_AUGMENT, dim=4,
-                 tracking_uri=None, experiment_name=None):
+                 tracking_uri=None, experiment_name=None, strategy=None):
         """
         Initialize either with a set of feature vectors or a feature extractor
         
@@ -62,6 +62,10 @@ class GUI(object):
         self._aug = aug
         self._badge_sampler = None
         self._fixmatch_aug = fixmatch_aug
+        
+        if strategy is None:
+            strategy = tf.distribute.get_strategy()
+        self._strategy = strategy
 
 
         self._imshape = imshape
@@ -254,7 +258,7 @@ class GUI(object):
                 # stitch together the labeled and unlabeled datasets
                 ds = tf.data.Dataset.zip((ds, unlab_ds))
                 
-            return ds
+            
 
         # PRE-EXTRACTED FEATURE CASE
         else:
@@ -264,9 +268,10 @@ class GUI(object):
             else:
                 unlabeled_indices = None
                 
-            return _build_in_memory_dataset(self.feature_vecs, 
+            ds = _build_in_memory_dataset(self.feature_vecs, 
                                           inds, ys, batch_size=batch_size,
                                           unlabeled_indices=unlabeled_indices)
+        return self._strategy.experimental_distribute_dataset(ds)
 
     def _pred_dataset(self, batch_size=32):
         """
@@ -275,15 +280,17 @@ class GUI(object):
         num_steps = int(np.ceil(len(self.df)/batch_size))
         if self.feature_vecs is None:
             files = self.df["filepath"].values
-            return dataset(files, imshape=self._imshape, 
+            ds, num_steps = dataset(files, imshape=self._imshape, 
                        num_channels=self._num_channels,
                        num_parallel_calls=self._num_parallel_calls, 
                        batch_size=batch_size, shuffle=False,
                        augment=False)
         # PRE-EXTRACTED FEATURE CASE
         else:
-            return tf.data.Dataset.from_tensor_slices(self.feature_vecs
+            ds = tf.data.Dataset.from_tensor_slices(self.feature_vecs
                                                       ).batch(batch_size), num_steps
+        return self._strategy.experimental_distribute_dataset(ds), num_steps
+            
         
         
     def _val_dataset(self, batch_size=32):
@@ -296,7 +303,7 @@ class GUI(object):
         
         if self.feature_vecs is None:
             files = val_df["filepath"].values
-            return dataset(files, ys=ys, imshape=self._imshape, 
+            ds, _ =  dataset(files, ys=ys, imshape=self._imshape, 
                        num_channels=self._num_channels,
                        num_parallel_calls=self._num_parallel_calls, 
                        batch_size=batch_size, shuffle=False,
@@ -304,8 +311,9 @@ class GUI(object):
         # PRE-EXTRACTED FEATURE CASE
         else:
             vecs = self.feature_vecs[self.df.validation.values]
-            return tf.data.Dataset.from_tensor_slices((vecs, ys)
-                                                      ).batch(batch_size),
+            ds = tf.data.Dataset.from_tensor_slices((vecs, ys)
+                                                      ).batch(batch_size)
+        return self._strategy.experimental_distribute_dataset(ds)
 
         
     def build_training_step(self, weight_decay=0, opt_type="adam", lr=1e-3, 
