@@ -434,16 +434,16 @@ class GenericExtractor(object):
         else:
             return EmptyContextManager()
         
-    def _distribute_training_function(self, step_fn):
+    def _distribute_training_function(self, step_fn, jitcompile=False):
         """
         Pass a tensorflow function and distribute if necessary
         """
         if self.strategy is None:
-            @tf.function
+            @tf.function(experimental_compile=jitcompile)
             def training_step(x,y):
                 return step_fn(x,y)
         else:
-            @tf.function
+            @tf.function(experimental_compile=jitcompile)
             def training_step(x,y):
                 per_example_losses = self.strategy.run(step_fn, args=(x,y))
 

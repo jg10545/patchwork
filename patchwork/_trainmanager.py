@@ -116,6 +116,7 @@ class TrainManager():
         """
         :pw: patchwork object
         """
+        self._abort = False
         self.pw = pw
         self._header = pn.pane.Markdown("#### Train model on current set of labeled patches")
         self._opt_chooser = pn.widgets.Select(name="Optimizer", options=["adam", "momentum"],
@@ -127,9 +128,9 @@ class TrainManager():
         self._batches_per_epoch = pn.widgets.LiteralInput(name='Batches per epoch', value=100, type=int)
         self._epochs = pn.widgets.LiteralInput(name='Epochs', value=10, type=int)
         self._pred_batch_size = pn.widgets.LiteralInput(name='Prediction batch size', value=64, type=int)
+        self._abort_condition = pn.widgets.LiteralInput(name='Abort if no improvement in X epochs', value=0, type=int)
         
         self._eval_after_training = pn.widgets.Checkbox(name="Update predictions after training?", value=True)
-        #self._compute_badge_gradients = pn.widgets.Checkbox(name="Update BADGE gradients?", value=False)
         self._train_button = pn.widgets.Button(name="Make it so")
         self._train_button.on_click(self._train_callback)
         
@@ -157,6 +158,7 @@ class TrainManager():
                          self._batches_per_epoch,
                          self._epochs,
                          self._pred_batch_size,
+                         self._abort_condition,
                         self._eval_after_training,
                         self._train_button,
                         self._compute_badge_gradients,
@@ -171,6 +173,11 @@ class TrainManager():
     
     
     def _train_callback(self, *event):
+        # check for abort condition
+        abort = False
+        epochs_since_improving = 0
+        abort_condition = self._abort_condition.value
+        
         # update the training function
         lr = self._learn_rate.value
         opt_type = self._opt_chooser.value
@@ -188,11 +195,18 @@ class TrainManager():
         
         # tensorflow function for computing test loss
         meanloss = self.pw._build_loss_tf_fn()
-        val_ds = self.pw._val_dataset(self._batch_size.value)[0]
+        val_ds = self.pw._val_dataset(self._batch_size.value)
         
         # for each epoch
         epochs = self._epochs.value
         for e in range(epochs):
+            # check to see if user aborted the run
+            print("CHECKING", self._abort)
+            if self._abort:
+                print("USER ABORTED")
+                self._footer.object = "### GIVING UP"
+                break
+            print("ANYWAY %s"%e)
             self._footer.object = "### TRAININ (%s / %s)"%(e+1, epochs)
             N = self._batch_size.value * self._batches_per_epoch.value
             self.pw._run_one_training_epoch(self._batch_size.value, N)
@@ -207,15 +221,31 @@ class TrainManager():
                                           self.pw.semisup_loss,
                                           self.pw.test_loss,
                                           self.pw.test_loss_step)
+            # CHECK TO SEE IF WE SHOULD ABORT
+            if len(self.pw.test_loss) >= 2:
+                # if loss went down this epoch
+                if self.pw.test_loss[-1] < self.pw.test_loss[-2]:
+                    epochs_since_improving = 0
+                else:
+                    epochs_since_improving += 1
+                    
+            if (abort_condition > 0)&(epochs_since_improving >= abort_condition):
+                abort = True
+                self._footer.object = f"### ABORTING AT EPOCH {e}"
+                break
+            
             
         if self._eval_after_training.value:
-            self._footer.object = "### EVALUATING"
-            self.pw.predict_on_all(self._pred_batch_size.value)
-            self.pw._mlflow_track_run()
+            # skip this if we're aborting
+            if not abort:
+                self._footer.object = "### EVALUATING"
+                self.pw.predict_on_all(self._pred_batch_size.value)
+                self.pw._mlflow_track_run()
 
-        self._hist_callback()
-        self._footer.object = "### DONE"
-        self.pw.save()
+        if not abort:
+            self._hist_callback()
+            self.pw.save()
+            self._footer.object = "### DONE"
         
     def _badge_callback(self, *events):
         self._footer.object = "### COMPUTING BADGE GRADIENTS"
@@ -227,6 +257,10 @@ class TrainManager():
         self._hist_fig.object = _hist_fig(self.pw.df, 
                                           self.pw.pred_df,
                                           self._hist_selector.value)
+        
+    def _abort_callback(self, *events):
+        print("abortiiiing")
+        self._abort = True
         
 
             

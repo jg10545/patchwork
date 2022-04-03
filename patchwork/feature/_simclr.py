@@ -46,16 +46,16 @@ def _build_embedding_model(fcn, imshape, num_channels, num_hidden, output_dim, b
         inpt = [inpt0, inpt1]
     net = fcn(inpt)
     #net = tf.keras.layers.Flatten()(net)
-    net = tf.keras.layers.GlobalAvgPool2D()(net)
+    net = tf.keras.layers.GlobalAvgPool2D(dtype="float32")(net)
     # NORMAL SimCLR CASE
     if num_hidden > 0:
-        net = tf.keras.layers.Dense(num_hidden)(net)
+        net = tf.keras.layers.Dense(num_hidden, dtype="float32")(net)
         if batchnorm:
-            net = bnorm()(net)
-        net = tf.keras.layers.Activation("relu")(net)
-        net = tf.keras.layers.Dense(output_dim, use_bias=False)(net)
+            net = bnorm(dtype="float32")(net)
+        net = tf.keras.layers.Activation("relu", dtype="float32")(net)
+        net = tf.keras.layers.Dense(output_dim, use_bias=False, dtype="float32")(net)
         if batchnorm:
-            net = bnorm()(net)
+            net = bnorm(dtype="float32")(net)
     else:
         # DirectCLR CASE
         net = tf.keras.layers.Lambda(lambda x: x[:,:output_dim])(net)
@@ -85,6 +85,8 @@ def _build_simclr_training_step(embed_model, optimizer, temperature=0.1,
     :loss: value of the loss function for training
     :avg_cosine_sim: average value of the batch's matrix of dot products
     """
+    # check whether we're in mixed-precision mode
+    mixed = tf.keras.mixed_precision.global_policy().name == 'mixed_float16'
     def training_step(x,y):
         
         with tf.GradientTape() as tape:
@@ -110,8 +112,12 @@ def _build_simclr_training_step(embed_model, optimizer, temperature=0.1,
                 l2_loss = 0
                 
             loss = xent_loss + weight_decay*l2_loss
+            if mixed:
+                loss = optimizer.get_scaled_loss(loss)
 
         gradients = tape.gradient(loss, embed_model.trainable_variables)
+        if mixed:
+            gradients = optimizer.get_unscaled_gradients(gradients)
         optimizer.apply_gradients(zip(gradients,
                                       embed_model.trainable_variables))
 
@@ -158,7 +164,7 @@ class SimCLRTrainer(GenericExtractor):
                  imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, num_parallel_calls=None,
                  single_channel=False, notes="",
-                 downstream_labels=None, strategy=None):
+                 downstream_labels=None, strategy=None, jitcompile=False):
         """
         :logdir: (string) path to log directory
         :trainingdata: (list) list of paths to training images
@@ -238,7 +244,8 @@ class SimCLRTrainer(GenericExtractor):
                 embed_model, self._optimizer, 
                 temperature, weight_decay=weight_decay,
                 decoupled=decoupled, eps=eps, q=q)
-        self._training_step = self._distribute_training_function(step_fn)
+        self._training_step = self._distribute_training_function(step_fn,
+                                                                 jitcompile=jitcompile)
         
         if testdata is not None:
             self._test_ds =  _build_augment_pair_dataset(testdata, 

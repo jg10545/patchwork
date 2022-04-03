@@ -318,7 +318,7 @@ def _get_features(fcn, downstream_labels, avpool=False,
         features.append(fcn(x).numpy())
         labels.append(y.numpy())
         if return_images: images.append(x)
-    features = np.concatenate(features, 0)
+    features = np.concatenate(features, 0).astype(np.float32)
     labels = np.concatenate(labels, 0)
     labels = np.array([str(l) for l in labels.ravel()])
     if return_images: images = np.concatenate(images, 0)
