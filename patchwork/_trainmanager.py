@@ -128,6 +128,7 @@ class TrainManager():
         self._batches_per_epoch = pn.widgets.LiteralInput(name='Batches per epoch', value=100, type=int)
         self._epochs = pn.widgets.LiteralInput(name='Epochs', value=10, type=int)
         self._pred_batch_size = pn.widgets.LiteralInput(name='Prediction batch size', value=64, type=int)
+        self._abort_condition = pn.widgets.LiteralInput(name='Abort if no improvement in X epochs', value=0, type=int)
         
         self._eval_after_training = pn.widgets.Checkbox(name="Update predictions after training?", value=True)
         self._train_button = pn.widgets.Button(name="Make it so")
@@ -135,9 +136,6 @@ class TrainManager():
         
         self._compute_badge_gradients = pn.widgets.Button(name="Update BADGE gradients")
         self._compute_badge_gradients.on_click(self._badge_callback)
-        #self._abort = pn.widgets.Checkbox(name="ABORT TRAINING", value=False)
-        self._abort_button = pn.widgets.Button(name="ABORT TRAINING")
-        self._abort_button.on_click(self._abort_callback)
         
         self._footer = pn.pane.Markdown("")
         
@@ -160,10 +158,10 @@ class TrainManager():
                          self._batches_per_epoch,
                          self._epochs,
                          self._pred_batch_size,
+                         self._abort_condition,
                         self._eval_after_training,
                         self._train_button,
                         self._compute_badge_gradients,
-                        self._abort_button,
                         self._footer)
         
         figures = pn.Column(pn.pane.Markdown("### Training Loss"),
@@ -175,8 +173,10 @@ class TrainManager():
     
     
     def _train_callback(self, *event):
-        # make sure ABORT isn't checked
-        self._abort = False
+        # check for abort condition
+        abort = False
+        epochs_since_improving = 0
+        abort_condition = self._abort_condition.value
         
         # update the training function
         lr = self._learn_rate.value
@@ -221,19 +221,31 @@ class TrainManager():
                                           self.pw.semisup_loss,
                                           self.pw.test_loss,
                                           self.pw.test_loss_step)
+            # CHECK TO SEE IF WE SHOULD ABORT
+            if len(self.pw.test_loss) >= 2:
+                # if loss went down this epoch
+                if self.pw.test_loss[-1] < self.pw.test_loss[-2]:
+                    epochs_since_improving = 0
+                else:
+                    epochs_since_improving += 1
+                    
+            if (abort_condition > 0)&(epochs_since_improving >= abort_condition):
+                abort = True
+                self._footer.object = f"### ABORTING AT EPOCH {e}"
+                break
+            
             
         if self._eval_after_training.value:
             # skip this if we're aborting
-            if not self._abort:
+            if not abort:
                 self._footer.object = "### EVALUATING"
                 self.pw.predict_on_all(self._pred_batch_size.value)
                 self.pw._mlflow_track_run()
 
-        if not self._abort:
+        if not abort:
             self._hist_callback()
             self.pw.save()
-            
-        self._footer.object = "### DONE"
+            self._footer.object = "### DONE"
         
     def _badge_callback(self, *events):
         self._footer.object = "### COMPUTING BADGE GRADIENTS"
