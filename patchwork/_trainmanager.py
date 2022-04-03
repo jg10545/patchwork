@@ -200,13 +200,6 @@ class TrainManager():
         # for each epoch
         epochs = self._epochs.value
         for e in range(epochs):
-            # check to see if user aborted the run
-            print("CHECKING", self._abort)
-            if self._abort:
-                print("USER ABORTED")
-                self._footer.object = "### GIVING UP"
-                break
-            print("ANYWAY %s"%e)
             self._footer.object = "### TRAININ (%s / %s)"%(e+1, epochs)
             N = self._batch_size.value * self._batches_per_epoch.value
             self.pw._run_one_training_epoch(self._batch_size.value, N)
