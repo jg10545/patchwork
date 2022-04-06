@@ -64,7 +64,24 @@ def _build_embedding_model(fcn, imshape, num_channels, num_hidden, output_dim, b
 
 
 
+def _gather(tensor):
+    context = tf.distribute.get_replica_context()
+    rep_id = context.replica_id_in_sync_group
+    
+    strategy =  tf.distribute.get_strategy()
+    num_replicas = strategy.num_replicas_in_sync
+    
+    if num_replicas < 2:
+        return tensor
+  
+    ext_tensor = tf.scatter_nd(
+        indices=[[rep_id]],
+        updates=[tensor],
+        shape=tf.concat([[num_replicas], tf.shape(tensor)], axis=0))
 
+    ext_tensor = context.all_reduce(tf.distribute.ReduceOp.SUM,
+                                            ext_tensor)
+    return tf.reshape(ext_tensor, [-1] + ext_tensor.shape.as_list()[2:])
 
 def _build_simclr_training_step(embed_model, optimizer, temperature=0.1,
                                 weight_decay=0, decoupled=False, eps=0,
@@ -96,11 +113,14 @@ def _build_simclr_training_step(embed_model, optimizer, temperature=0.1,
             
             # get replica context- we'll use this to aggregate embeddings
             # across different GPUs
-            context = tf.distribute.get_replica_context()
+            #context = tf.distribute.get_replica_context()
             # aggregate projections across replicas. z1 and z2 should
             # now correspond to the global batch size (gbs, d)
-            z1 = context.all_gather(z1, 0)
-            z2 = context.all_gather(z2, 0)
+            #z1 = context.all_gather(z1, 0)
+            #z2 = context.all_gather(z2, 0)
+            z1 = _gather(z1)
+            z2 = _gather(z2)
+        
         
             xent_loss, batch_acc = _contrastive_loss(z1, z2, temperature, 
                                           decoupled, eps=eps, q=q)
