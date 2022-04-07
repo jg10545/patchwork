@@ -375,7 +375,7 @@ class GUI(object):
     
     def _build_loss_tf_fn(self):
         # convenience function we'll use for computing test loss
-        @tf.function
+        #@tf.function
         def meanloss(x,y):
             if self.models["feature_extractor"] is not None:
                 x = self.models["feature_extractor"](x)
@@ -383,7 +383,14 @@ class GUI(object):
             y_pred = self.models["output"](x)
             loss = self.loss_fn(y, y_pred)
             return tf.reduce_mean(loss)
-        return meanloss
+        
+        @tf.function
+        def meanloss_distributed(x,y):
+                per_example_loss = self._strategy.run(meanloss, args=(x,y))
+                return self._strategy.reduce(
+                    tf.distribute.ReduceOp.MEAN, 
+                    per_example_loss, axis=None)
+        return meanloss_distributed
             
     
     def predict_on_all(self, batch_size=32):
