@@ -23,10 +23,10 @@ def _build_embedding_models(fcn, imshape, num_channels, num_hidden=2048, pred_di
     
     Returns full projection model (fcn+head) and prediction model
     """
-    # PROJECTION MODEL
+    # PROJECTION MODEL f; z = f(x)
     inpt = tf.keras.layers.Input((imshape[0], imshape[1], num_channels))
     net = fcn(inpt)
-    net = tf.keras.layers.GlobalAvgPool2D()(net)
+    net = tf.keras.layers.GlobalAvgPool2D(dtype="float32")(net)
     # first layer
     #net = tf.keras.layers.Dense(num_hidden, use_bias=False)(net)
     #net = tf.keras.layers.BatchNormalization()(net)
@@ -37,19 +37,19 @@ def _build_embedding_models(fcn, imshape, num_channels, num_hidden=2048, pred_di
     #net = tf.keras.layers.Activation("relu")(net)
     
     for i in range(3):
-        net = tf.keras.layers.Dense(num_hidden, use_bias=False)(net)
-        net = batchnorm()(net)
+        net = tf.keras.layers.Dense(num_hidden, use_bias=False, dtype="float32")(net)
+        net = batchnorm(dtype="float32")(net)
         if i < 2:
-            net = tf.keras.layers.Activation("relu")(net)
+            net = tf.keras.layers.Activation("relu", dtype="float32")(net)
             
     projection = tf.keras.Model(inpt, net)
     
-    # PREDICTION MODEL
+    # PREDICTION MODEL h; p = h(z)
     inpt = tf.keras.layers.Input((num_hidden))
-    net = tf.keras.layers.Dense(pred_dim, use_bias=False)(inpt)
-    net = batchnorm()(net)
-    net  = tf.keras.layers.Activation("relu")(net)
-    net = tf.keras.layers.Dense(num_hidden)(net)
+    net = tf.keras.layers.Dense(pred_dim, use_bias=False, dtype="float32")(inpt)
+    net = batchnorm(dtype="float32")(net)
+    net  = tf.keras.layers.Activation("relu", dtype="float32")(net)
+    net = tf.keras.layers.Dense(num_hidden, dtype="float32")(net)
     
     prediction = tf.keras.Model(inpt, net)
     
@@ -61,8 +61,7 @@ def _simsiam_loss(p,z):
     Normalize embeddings, stop gradients through z 
     and compute dot product
     """
-    z = tf.stop_gradient(z)
-    z = tf.nn.l2_normalize(z,1)
+    z = tf.stop_gradient(tf.nn.l2_normalize(z,1))
     
     p = tf.nn.l2_normalize(p,1)
     
@@ -136,7 +135,7 @@ class SimSiamTrainer(GenericExtractor):
     def __init__(self, logdir, trainingdata, testdata=None, fcn=None, 
                  augment=True, num_hidden=2048, pred_dim=512,
                  weight_decay=0, lr=0.01, lr_decay=100000, 
-                 decay_type="exponential", opt_type="momentum",
+                 decay_type="cosine", opt_type="momentum",
                  imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, num_parallel_calls=None,
                  single_channel=False, notes="",

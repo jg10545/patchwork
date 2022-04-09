@@ -1,15 +1,12 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 import tensorflow as tf
-from tqdm import tqdm
 
 from patchwork.feature._generic import GenericExtractor, _TENSORBOARD_DESCRIPTIONS
-from patchwork._augment import augment_function
-from patchwork.loaders import _image_file_dataset
 from patchwork._util import compute_l2_loss, _compute_alignment_and_uniformity
 
 from patchwork.feature._moco import _build_augment_pair_dataset
-from patchwork.feature._contrastive import _contrastive_loss, _build_negative_mask
+from patchwork.feature._contrastive import _contrastive_loss
 
 try:
     bnorm = tf.keras.layers.experimental.SyncBatchNormalization
@@ -176,8 +173,8 @@ class SimCLRTrainer(GenericExtractor):
     modelname = "SimCLR"
 
     def __init__(self, logdir, trainingdata, testdata=None, fcn=None, 
-                 augment=True, temperature=0.1, num_hidden=128,
-                 output_dim=64, batchnorm=True, weight_decay=0,
+                 augment=True, temperature=0.1, num_hidden=2048,
+                 output_dim=2048, batchnorm=True, weight_decay=0,
                  decoupled=False, eps=0, q=0,
                  lr=0.01, lr_decay=100000, decay_type="exponential",
                  opt_type="adam",
@@ -314,40 +311,8 @@ class SimCLRTrainer(GenericExtractor):
             
             self._record_scalars(alignment=alignment,
                              uniformity=uniformity, metric=True)
-            #metrics=["linear_classification_accuracy",
-            #                     "alignment",
-            #                     "uniformity"]
-        #else:
-        #    metrics=["linear_classification_accuracy"]
         
         if self._downstream_labels is not None:
-            """
-            # choose the hyperparameters to record
-            if not hasattr(self, "_hparams_config"):
-                from tensorboard.plugins.hparams import api as hp
-                hparams = {
-                    hp.HParam("temperature", hp.RealInterval(0., 10000.)):self.config["temperature"],
-                    hp.HParam("num_hidden", hp.IntInterval(1, 1000000)):self.config["num_hidden"],
-                    hp.HParam("output_dim", hp.IntInterval(1, 1000000)):self.config["output_dim"],
-                    hp.HParam("lr", hp.RealInterval(0., 10000.)):self.config["lr"],
-                    hp.HParam("lr_decay", hp.RealInterval(0., 10000.)):self.config["lr_decay"],
-                    hp.HParam("decay_type", hp.Discrete(["cosine", "exponential"])):self.config["decay_type"],
-                    hp.HParam("weight_decay", hp.RealInterval(0., 10000.)):self.config["weight_decay"],
-                    hp.HParam("batchnorm", hp.Discrete([True, False])):self.config["batchnorm"],
-                    hp.HParam("decoupled", hp.Discrete([True, False])):self.config["decoupled"],
-                    hp.HParam("data_parallel", hp.Discrete([True, False])):self.config["data_parallel"]
-                    }
-                for k in self.augment_config:
-                    if isinstance(self.augment_config[k], float):
-                        hparams[hp.HParam(k, hp.RealInterval(0., 10000.))] = self.augment_config[k]
-            else:
-                hparams=None
-            
-
-            self._linear_classification_test(hparams,
-                        metrics=metrics, avpool=avpool,
-                        query_fig=query_fig)
-            """
             self._linear_classification_test(avpool=avpool,
                         query_fig=query_fig)
         
