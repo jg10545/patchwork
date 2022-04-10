@@ -83,6 +83,8 @@ def _build_simsiam_training_step(embed_model, predict_model, optimizer,
     The training function returns:
     :loss: value of the loss function for training
     """
+    # check whether we're in mixed-precision mode
+    mixed = tf.keras.mixed_precision.global_policy().name == 'mixed_float16'
     trainvars = embed_model.trainable_variables + predict_model.trainable_variables
     def training_step(x,y):
         
@@ -102,8 +104,12 @@ def _build_simsiam_training_step(embed_model, predict_model, optimizer,
                 l2_loss = 0
                 
             loss = ss_loss + weight_decay*l2_loss
+            if mixed:
+                loss = optimizer.get_scaled_loss(loss)
 
         gradients = tape.gradient(loss, trainvars)
+        if mixed:
+            gradients = optimizer.get_unscaled_gradients(gradients)
         optimizer.apply_gradients(zip(gradients, trainvars))
 
         # let's check for output collapse- compute the standard deviation of
