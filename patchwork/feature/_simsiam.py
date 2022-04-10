@@ -85,8 +85,6 @@ def _build_simsiam_training_step(embed_model, predict_model, optimizer,
     """
     trainvars = embed_model.trainable_variables + predict_model.trainable_variables
     def training_step(x,y):
-        print("TAKE SHUFFLE OUT")
-        y = tf.random.shuffle(y)
         
         with tf.GradientTape() as tape:
             # run images through model and normalize embeddings
@@ -96,11 +94,6 @@ def _build_simsiam_training_step(embed_model, predict_model, optimizer,
             p1 = predict_model(z1, training=True)
             p2 = predict_model(z2, training=True)
             
-            #with tape.stop_recording():
-            #    z1_detached = tf.identity(z1)
-            #    z2_detached = tf.identity(z2)
-            
-            #ss_loss = 0.5*_simsiam_loss(p1, z2_detached) + 0.5*_simsiam_loss(p2, z1_detached)
             ss_loss = 0.5*_simsiam_loss(p1, z2) + 0.5*_simsiam_loss(p2, z1)
         
             if weight_decay > 0:
@@ -148,7 +141,7 @@ class SimSiamTrainer(GenericExtractor):
                  imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, num_parallel_calls=None,
                  single_channel=False, notes="",
-                 downstream_labels=None, strategy=None):
+                 downstream_labels=None, strategy=None, jitcompile=False):
         """
         :logdir: (string) path to log directory
         :trainingdata: (list) list of paths to training images
@@ -218,7 +211,8 @@ class SimSiamTrainer(GenericExtractor):
         step_fn = _build_simsiam_training_step(project, predict, 
                                                self._optimizer,
                                                weight_decay=weight_decay)
-        self._training_step = self._distribute_training_function(step_fn)
+        self._training_step = self._distribute_training_function(step_fn,
+                                                                 jitcompile=jitcompile)
         
         if testdata is not None:
             self._test_ds =  _build_augment_pair_dataset(testdata, 
