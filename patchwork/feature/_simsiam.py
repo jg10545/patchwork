@@ -28,9 +28,9 @@ def _build_embedding_models(fcn, imshape, num_channels, num_hidden=2048, pred_di
     net = fcn(inpt)
     net = tf.keras.layers.GlobalAvgPool2D(dtype="float32")(net)
     # first layer
-    #net = tf.keras.layers.Dense(num_hidden, use_bias=False)(net)
-    #net = tf.keras.layers.BatchNormalization()(net)
-    #net = tf.keras.layers.Activation("relu")(net)
+    #net = tf.keras.layers.Dense(num_hidden, use_bias=False, dtype="float32")(net)
+    #net = tf.keras.layers.BatchNormalization(dtype="float32")(net)
+    #net = tf.keras.layers.Activation("relu", dtype="float32")(net)
     # second layer
     #net = tf.keras.layers.Dense(num_hidden, use_bias=False)(net)
     #net = tf.keras.layers.BatchNormalization()(net)
@@ -90,6 +90,8 @@ def _build_simsiam_training_step(embed_model, predict_model, optimizer,
             # run images through model and normalize embeddings
             z1 = embed_model(x, training=True)
             z2 = embed_model(y, training=True)
+            print("TAKE SHUFFLE OUT")
+            z2 = tf.random.shuffle(z2)
             
             p1 = predict_model(z1, training=True)
             p2 = predict_model(z2, training=True)
