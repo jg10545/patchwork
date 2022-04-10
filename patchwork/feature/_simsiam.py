@@ -85,13 +85,13 @@ def _build_simsiam_training_step(embed_model, predict_model, optimizer,
     """
     trainvars = embed_model.trainable_variables + predict_model.trainable_variables
     def training_step(x,y):
+        print("TAKE SHUFFLE OUT")
+        y = tf.random.shuffle(y)
         
         with tf.GradientTape() as tape:
             # run images through model and normalize embeddings
             z1 = embed_model(x, training=True)
             z2 = embed_model(y, training=True)
-            print("TAKE SHUFFLE OUT")
-            z2 = tf.random.shuffle(z2)
             
             p1 = predict_model(z1, training=True)
             p2 = predict_model(z2, training=True)
