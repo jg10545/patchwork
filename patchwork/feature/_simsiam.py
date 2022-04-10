@@ -94,11 +94,12 @@ def _build_simsiam_training_step(embed_model, predict_model, optimizer,
             p1 = predict_model(z1, training=True)
             p2 = predict_model(z2, training=True)
             
-            with tape.stop_recording():
-                z1_detached = tf.identity(z1)
-                z2_detached = tf.identity(z2)
+            #with tape.stop_recording():
+            #    z1_detached = tf.identity(z1)
+            #    z2_detached = tf.identity(z2)
             
-            ss_loss = 0.5*_simsiam_loss(p1, z2_detached) + 0.5*_simsiam_loss(p2, z1_detached)
+            #ss_loss = 0.5*_simsiam_loss(p1, z2_detached) + 0.5*_simsiam_loss(p2, z1_detached)
+            ss_loss = 0.5*_simsiam_loss(p1, z2) + 0.5*_simsiam_loss(p2, z1)
         
             if weight_decay > 0:
                 l2_loss = compute_l2_loss(embed_model)
@@ -114,8 +115,11 @@ def _build_simsiam_training_step(embed_model, predict_model, optimizer,
         # normalized embeddings along each direction in feature space. the average
         # should be close to 1/sqrt(d)
         d = z1.shape[-1]
+        #output_std = tf.reduce_mean(
+        #            tf.math.reduce_std(tf.nn.l2_normalize(z1,1),0))*np.sqrt(d)
         output_std = tf.reduce_mean(
-                    tf.math.reduce_std(tf.nn.l2_normalize(z1,1),0))*np.sqrt(d)
+                    tf.math.reduce_std(tf.nn.l2_normalize(p1,1),0))*np.sqrt(d)
+
 
         return {"simsiam_loss":ss_loss,
                 "l2_loss":l2_loss,
