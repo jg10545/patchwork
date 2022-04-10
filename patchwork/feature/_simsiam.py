@@ -62,7 +62,6 @@ def _simsiam_loss(p,z):
     and compute dot product
     """
     z = tf.stop_gradient(tf.nn.l2_normalize(z,1))
-    
     p = tf.nn.l2_normalize(p,1)
     
     return -1*tf.reduce_mean(
@@ -95,7 +94,11 @@ def _build_simsiam_training_step(embed_model, predict_model, optimizer,
             p1 = predict_model(z1, training=True)
             p2 = predict_model(z2, training=True)
             
-            ss_loss = 0.5*_simsiam_loss(p1, z2) + 0.5*_simsiam_loss(p2, z1)
+            with tape.stop_recording():
+                z1_detached = tf.identity(z1)
+                z2_detached = tf.identity(z2)
+            
+            ss_loss = 0.5*_simsiam_loss(p1, z2_detached) + 0.5*_simsiam_loss(p2, z1_detached)
         
             if weight_decay > 0:
                 l2_loss = compute_l2_loss(embed_model)
