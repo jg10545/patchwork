@@ -101,7 +101,10 @@ def _build_augment_pair_dataset(imfiles, imshape=(256,256), batch_size=256,
                        deterministic=False)
     
     ds = ds.batch(batch_size, drop_remainder=True)
-    ds = ds.prefetch(1)
+    if num_parallel_calls == tf.data.AUTOTUNE:
+        ds = ds.prefetch(tf.data.AUTOTUNE)
+    else:
+        ds = ds.prefetch(1)
     return ds
 
 

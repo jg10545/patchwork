@@ -3,7 +3,7 @@
 import numpy as np
 import tensorflow as tf
 
-from patchwork.feature._generic import GenericExtractor
+from patchwork.feature._generic import GenericExtractor, _TENSORBOARD_DESCRIPTIONS
 from patchwork._augment import augment_function
 from patchwork.loaders import _image_file_dataset
 from patchwork._util import compute_l2_loss, _compute_alignment_and_uniformity
@@ -16,6 +16,14 @@ try:
 except:
     batchnorm = tf.keras.layers.BatchNormalization
 
+
+
+_DESCRIPTIONS = {
+    "simsiam_loss":"Average cosine loss (bounded between -1 and 1)",
+    "output_std":"Standard deviation across the batch of each predictor dimension, averaged across dimensions"
+}
+for d in _TENSORBOARD_DESCRIPTIONS:
+    _DESCRIPTIONS[d] = _TENSORBOARD_DESCRIPTIONS[d]
 
 def _build_embedding_models(fcn, imshape, num_channels, num_hidden=2048, pred_dim=512):
     """
@@ -137,12 +145,14 @@ class SimSiamTrainer(GenericExtractor):
     Class for training a SimSiam model.
     
     Based on "Exploring Simple Siamese Representation Learning" by Chen and He
+    
+    From the paper- their base learning rate is 0.05*batch_size/256
     """
     modelname = "SimSiam"
 
     def __init__(self, logdir, trainingdata, testdata=None, fcn=None, 
                  augment=True, num_hidden=2048, pred_dim=512,
-                 weight_decay=0, lr=0.01, lr_decay=100000, 
+                 weight_decay=1e-4, lr=0.01, lr_decay=100000, 
                  decay_type="cosine", opt_type="momentum",
                  imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, num_parallel_calls=None,
@@ -181,6 +191,7 @@ class SimSiamTrainer(GenericExtractor):
         self.trainingdata = trainingdata
         self._downstream_labels = downstream_labels
         self.strategy = strategy
+        self._description = _DESCRIPTIONS
         
         self._file_writer = tf.summary.create_file_writer(logdir, flush_millis=10000)
         self._file_writer.set_as_default()
