@@ -40,7 +40,7 @@ class ConvNet(param.Parameterized):
     Convolutional network
     """
     layers = param.String(default="128,p,d,128", doc="Comma-separated list of filters")
-    kernel_size = param.ObjectSelector(default=1, objects=[1,3,5], doc="Spatial size of filters")
+    kernel_size = param.ObjectSelector(default=1, objects=[1,3,5,7], doc="Spatial size of filters")
     batchnorm = param.Boolean(False, doc="Whether to use batch normalization in convolutional layers")
     separable_convolutions = param.Boolean(False, doc="Whether to use depthwise separable convolutions")
     dropout_rate = param.Number(0.5, bounds=(0.05,0.95), doc="Spatial dropout rate.")

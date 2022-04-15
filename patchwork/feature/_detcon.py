@@ -6,7 +6,8 @@ import tensorflow as tf
 
 from patchwork._util import compute_l2_loss, _compute_alignment_and_uniformity
 from patchwork._augment import augment_function
-from patchwork.feature._hcl import _simclr_softmax_prob, _hcl_softmax_prob, _build_negative_mask
+#from patchwork.feature._hcl import _simclr_softmax_prob, _hcl_softmax_prob, _build_negative_mask
+from patchwork.feature._contrastive import _contrastive_loss
 
 from patchwork.loaders import _image_file_dataset
 
@@ -75,14 +76,18 @@ def _build_segment_pair_dataset(imfiles, mean_scale=1000, num_samples=16, output
         ds = ds.map(_augment_pair, num_parallel_calls=num_parallel_calls)
 
     ds = ds.batch(batch_size, drop_remainder=True)
-    ds = ds.prefetch(1)
+    if num_parallel_calls == tf.data.AUTOTUNE:
+        ds = ds.prefetch(tf.data.AUTOTUNE)
+    else:
+        ds = ds.prefetch(1)
     return ds
 
 
 
 
 
-def _build_trainstep(fcn, projector, optimizer, strategy, temp=1, tau_plus=0, beta=0, weight_decay=0):
+def _build_trainstep(fcn, projector, optimizer, strategy, temp=1, weight_decay=0,
+                     dataparallel=False):
     """
     Build a distributed training step for SimCLR or HCL.
     
@@ -92,9 +97,9 @@ def _build_trainstep(fcn, projector, optimizer, strategy, temp=1, tau_plus=0, be
     :optimizer: Keras optimizer
     :strategy: tf.distribute.Strategy object
     :temp: temperature parameter
-    :tau_plus: HCL class probability parameter
-    :beta: HCL concentration parameter
     :weightdecay: L2 loss coefficient. 0 to disable
+    :dataparallel: if True, compute contrastive loss separately on each replica 
+        without shuffling data between them
     
     Returns a distributed training function
     """
@@ -102,9 +107,7 @@ def _build_trainstep(fcn, projector, optimizer, strategy, temp=1, tau_plus=0, be
     def _step(x1, m1, x2, m2):
         with tf.GradientTape() as tape:
             loss = 0
-            # get replica context- we'll use this to aggregate embeddings
-            # across different GPUs
-            context = tf.distribute.get_replica_context()
+            
             #print("x,y:", x.shape, y.shape)
             
             # run images through model and normalize embeddings. do this
@@ -126,27 +129,27 @@ def _build_trainstep(fcn, projector, optimizer, strategy, temp=1, tau_plus=0, be
             
             # aggregate projections across replicas. z1 and z2 should
             # now correspond to the global batch size (gbs*num_samples, d)
-            z1 = context.all_gather(z1, 0)
-            z2 = context.all_gather(z2, 0)
-            print("z1,z2:", z1.shape, z2.shape)
-            mask = context.all_gather(mask, 0)
-            print("mask:", mask.shape)
+            if not dataparallel:
+                # get replica context- we'll use this to aggregate embeddings
+                # across different GPUs
+                context = tf.distribute.get_replica_context()
+                z1 = context.all_gather(z1, 0)
+                z2 = context.all_gather(z2, 0)
+                print("z1,z2:", z1.shape, z2.shape)
+                #negmask = _build_negative_mask(gbs)
             
-            with tape.stop_recording():
-                gbs = z1.shape[0]
-                negmask = _build_negative_mask(gbs)
-            
+            softmax_loss, nce_batch_acc = _contrastive_loss(z1*mask, z2*mask, temp)
             # SimCLR loss case
-            if (tau_plus == 0)&(beta == 0):
-                softmax_prob, nce_batch_acc = _simclr_softmax_prob(z1, z2, temp, negmask)
+            #if (tau_plus == 0)&(beta == 0):
+            #    softmax_prob, nce_batch_acc = _simclr_softmax_prob(z1, z2, temp, negmask)
             # HCL loss case
-            elif (tau_plus > 0)&(beta > 0):
-                softmax_prob, nce_batch_acc = _hcl_softmax_prob(z1, z2, temp, 
-                                                                beta, tau_plus, negmask)
-            else:
-                assert False, "both tau_plus and beta must be nonzero to run HCL"
+            #elif (tau_plus > 0)&(beta > 0):
+            #    softmax_prob, nce_batch_acc = _hcl_softmax_prob(z1, z2, temp, 
+            #                                                    beta, tau_plus, negmask)
+            #else:
+            #    assert False, "both tau_plus and beta must be nonzero to run HCL"
             
-            softmax_loss = tf.reduce_mean(-1*mask*tf.math.log(softmax_prob))
+            #softmax_loss = tf.reduce_mean(-1*mask*tf.math.log(softmax_prob))
             loss += softmax_loss
             
             if weight_decay > 0:
@@ -162,16 +165,17 @@ def _build_trainstep(fcn, projector, optimizer, strategy, temp=1, tau_plus=0, be
                 "l2_loss":l2_loss,
                "nce_batch_accuracy":nce_batch_acc}
         
-    @tf.function
-    def trainstep(x1, m1, x2, m2):
-        per_example_losses = strategy.run(_step, args=(x1, m1, x2, m2))
-        lossdict = {k:strategy.reduce(
-                    tf.distribute.ReduceOp.MEAN, 
-                    per_example_losses[k], axis=None)
-                    for k in per_example_losses}
+    #@tf.function
+    #def trainstep(x1, m1, x2, m2):
+    #    per_example_losses = strategy.run(_step, args=(x1, m1, x2, m2))
+    #    lossdict = {k:strategy.reduce(
+    #                tf.distribute.ReduceOp.MEAN, 
+    #                per_example_losses[k], axis=None)
+    #                for k in per_example_losses}#
 
-        return lossdict
-    return trainstep
+    #    return lossdict
+    #return trainstep
+    return _step
 
 
 class DetConTrainer(GenericExtractor):
@@ -184,7 +188,7 @@ class DetConTrainer(GenericExtractor):
 
     def __init__(self, logdir, trainingdata, testdata=None, fcn=None, 
                  augment=True, temperature=1., mean_scale=1000, num_samples=16,
-                 beta=0, tau_plus=0,
+                 dataparallel=False,
                  num_hidden=128, output_dim=64, batchnorm=True,
                  weight_decay=0,
                  lr=0.01, lr_decay=0, decay_type="exponential",
@@ -242,7 +246,7 @@ class DetConTrainer(GenericExtractor):
         # if no FCN is passed- build one
         with self.scope():
             if fcn is None:
-                fcn = tf.keras.applications.ResNet50V2(weights=None, include_top=False)
+                fcn = tf.keras.applications.ResNet50(weights=None, include_top=False)
             self.fcn = fcn
             # Create a Keras model that wraps the base encoder and 
             # the projection head
@@ -285,11 +289,12 @@ class DetConTrainer(GenericExtractor):
         
         
         # build training step
-        self._training_step = _build_trainstep(fcn, projector, 
+        self._training_step = self._distribute_training_function(
+                                            _build_trainstep(fcn, projector, 
                                                self._optimizer, 
                                                self.strategy, 
-                                               temperature, tau_plus, beta, 
-                                               weight_decay)
+                                               temperature, weight_decay,
+                                               dataparallel))
         
         if testdata is not None:
             self._test_ds =  _build_augment_pair_dataset(testdata, 
@@ -307,7 +312,7 @@ class DetConTrainer(GenericExtractor):
         # parse and write out config YAML
         self._parse_configs(augment=augment, temperature=temperature,
                             mean_scale=mean_scale, num_samples=num_samples,
-                            beta=beta, tau_plus=tau_plus, batchnorm=batchnorm,
+                            dataparallel=dataparallel, batchnorm=batchnorm,
                             num_hidden=num_hidden, output_dim=output_dim,
                             weight_decay=weight_decay,
                             lr=lr, lr_decay=lr_decay, 
