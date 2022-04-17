@@ -182,21 +182,23 @@ class DetConTrainer(GenericExtractor):
     """
     Class for training a DetCon_S model. 
     
-    Based on "Contrastive Learning with Hard Negative Examples" by Robinson et al.
+    Based on "Efficient Visual Pretraining With Contrastive Detection" by Henaff et al.
+    
+    https://arxiv.org/abs/2103.10957
     """
-    modelname = "HCL"
+    modelname = "DetCon"
 
     def __init__(self, logdir, trainingdata, testdata=None, fcn=None, 
-                 augment=True, temperature=1., mean_scale=1000, num_samples=16,
+                 augment=True, temperature=0.1, mean_scale=1000, num_samples=16,
                  dataparallel=False,
-                 num_hidden=128, output_dim=64, batchnorm=True,
-                 weight_decay=0,
+                 num_hidden=2048, output_dim=2048, batchnorm=True,
+                 weight_decay=1e-6,
                  lr=0.01, lr_decay=0, decay_type="exponential",
                  opt_type="adam",
                  imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, num_parallel_calls=None,
                  single_channel=False, notes="",
-                 downstream_labels=None, stratify=None, strategy=None):
+                 downstream_labels=None, strategy=None):
         """
         :logdir: (string) path to log directory
         :trainingdata: (list) list of paths to training images
@@ -207,8 +209,8 @@ class DetConTrainer(GenericExtractor):
         :mean_scale: average scale parameter to use for Felzenszwalb's segmentation
         algorithm. if 0, segment using a 4x4 grid instead
         :num_samples: number of segments to sample from Felzenszwalb segmentation output
-        :beta: concentration parameter for HCL loss (0 to use SimCLR loss)
-        :tau_plus: class prior parameter for HCL loss (0 to use SimCLR loss)
+        :dataparallel: if True, compute loss function separately on each replica instead of
+            combining negative examples acros replicas.
         :num_hidden: number of hidden neurons in the network's projection head
         :output_dim: dimension of projection head's output space. 
         :batchnorm: whether to include batch normalization in the projection head.
@@ -228,8 +230,6 @@ class DetConTrainer(GenericExtractor):
         :notes: (string) any notes on the experiment that you want saved in the
                 config.yml file
         :downstream_labels: dictionary mapping image file paths to labels
-        :stratify: pass a list of image labels here to stratify by batch
-            during training
         :strategy: if distributing across multiple GPUs, pass a tf.distribute
             Strategy object here
         """
@@ -243,25 +243,31 @@ class DetConTrainer(GenericExtractor):
         self._file_writer = tf.summary.create_file_writer(logdir, flush_millis=10000)
         self._file_writer.set_as_default()
         
-        # if no FCN is passed- build one
+        if dataparallel():
+            bnorm = tf.keras.layers.BatchNormalization
+        else:
+            bnorm = tf.keras.layers.experimental.SyncBatchNormalization
+        # build the projection head
         with self.scope():
+            # if no FCN is passed- build one
             if fcn is None:
                 fcn = tf.keras.applications.ResNet50(weights=None, include_top=False)
             self.fcn = fcn
             # Create a Keras model that wraps the base encoder and 
             # the projection head
-            inpt = tf.keras.layers.Input((fcn.output_shape[-1]))
-            net = tf.keras.layers.Dense(num_hidden)(inpt)
+            inpt = tf.keras.layers.Input((fcn.output_shape[-1]), dtype=tf.float32)
+            net = tf.keras.layers.Dense(num_hidden, dtype=tf.float32)(inpt)
             if batchnorm:
-                net = tf.keras.layers.BatchNormalization()(net)
-            net = tf.keras.layers.Activation("relu")(net)
-            net = tf.keras.layers.Dense(output_dim, use_bias=False)(net)
+                net = bnorm(dtype=tf.float32)(net)
+            net = tf.keras.layers.Activation("relu", dtype=tf.float32)(net)
+            net = tf.keras.layers.Dense(output_dim, use_bias=False, dtype=tf.float32)(net)
             projector = tf.keras.Model(inpt, net)
             # and a model with fcn run through the projector, to use for
             # alignment/uniformity calculation
-            inpt = tf.keras.layers.Input((imshape[0], imshape[1], num_channels))
+            inpt = tf.keras.layers.Input((imshape[0], imshape[1], num_channels),
+                                         dtype=tf.float32)
             net = fcn(inpt)
-            net = tf.keras.layers.GlobalAvgPool2D()(net)
+            net = tf.keras.layers.GlobalAvgPool2D(dtype=tf.float32)(net)
             net = projector(net)
             full = tf.keras.Model(inpt, net)
         
@@ -320,7 +326,7 @@ class DetConTrainer(GenericExtractor):
                             norm=norm, batch_size=batch_size,
                             num_parallel_calls=num_parallel_calls,
                             single_channel=single_channel, notes=notes,
-                            trainer="hcl", strategy=str(strategy),
+                            trainer="detcon", strategy=str(strategy),
                             decay_type=decay_type, opt_type=opt_type)
 
     def _run_training_epoch(self, **kwargs):
@@ -347,6 +353,5 @@ class DetConTrainer(GenericExtractor):
         if self._downstream_labels is not None:
             self._linear_classification_test(avpool=avpool, query_fig=query_fig)
         
-# -*- coding: utf-8 -*-
 
 
