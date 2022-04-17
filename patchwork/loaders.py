@@ -457,7 +457,7 @@ def load_dataset_from_tfrecords(record_dir, imshape, num_channels,
     # note that this function may change in the future
     ds = tf.data.experimental.load(record_dir, element_spec, compression=comp)
     # if a map function was included, map across the dataset
-    if map_fn is not None:
+    if map_fn:
         ds = ds.map(map_fn, num_parallel_calls=num_parallel_calls)
     if shuffle:
         ds = ds.shuffle(shuffle)
