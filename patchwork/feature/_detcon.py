@@ -103,6 +103,8 @@ def _build_trainstep(fcn, projector, optimizer, strategy, temp=1, weight_decay=0
     
     Returns a distributed training function
     """
+    # check whether we're in mixed-precision mode
+    mixed = tf.keras.mixed_precision.global_policy().name == 'mixed_float16'
     trainvars = fcn.trainable_variables + projector.trainable_variables
     def _step(x1, m1, x2, m2):
         with tf.GradientTape() as tape:
@@ -157,9 +159,14 @@ def _build_trainstep(fcn, projector, optimizer, strategy, temp=1, weight_decay=0
                 loss += weight_decay*l2_loss
             else:
                 l2_loss = 0
+                
+            if mixed:
+                loss = optimizer.get_scaled_loss(loss)
             
             
         grad = tape.gradient(loss, trainvars)
+        if mixed:
+            grad = optimizer.get_unscaled_gradients(grad)
         optimizer.apply_gradients(zip(grad, trainvars))
         return {"loss":loss, "nt_xent_loss":softmax_loss, 
                 "l2_loss":l2_loss,
