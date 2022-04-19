@@ -170,19 +170,19 @@ def _build_trainstep(fcn, projector, optimizer, strategy, temp=1, weight_decay=0
         optimizer.apply_gradients(zip(grad, trainvars))
         return {"loss":loss, "nt_xent_loss":softmax_loss, 
                 "l2_loss":l2_loss,
-               "nce_batch_accuracy":nce_batch_acc}
+               "nce_batch_acc":nce_batch_acc}
         
-    #@tf.function
-    #def trainstep(x1, m1, x2, m2):
-    #    per_example_losses = strategy.run(_step, args=(x1, m1, x2, m2))
-    #    lossdict = {k:strategy.reduce(
-    #                tf.distribute.ReduceOp.MEAN, 
-    #                per_example_losses[k], axis=None)
-    #                for k in per_example_losses}#
+    @tf.function
+    def trainstep(x1, m1, x2, m2):
+        per_example_losses = strategy.run(_step, args=(x1, m1, x2, m2))
+        lossdict = {k:strategy.reduce(
+                    tf.distribute.ReduceOp.MEAN, 
+                    per_example_losses[k], axis=None)
+                    for k in per_example_losses}#
 
-    #    return lossdict
-    #return trainstep
-    return _step
+        return lossdict
+    return trainstep
+    #return _step
 
 
 class DetConTrainer(GenericExtractor):
@@ -250,7 +250,7 @@ class DetConTrainer(GenericExtractor):
         self._file_writer = tf.summary.create_file_writer(logdir, flush_millis=10000)
         self._file_writer.set_as_default()
         
-        if dataparallel():
+        if dataparallel:
             bnorm = tf.keras.layers.BatchNormalization
         else:
             bnorm = tf.keras.layers.experimental.SyncBatchNormalization
@@ -302,12 +302,11 @@ class DetConTrainer(GenericExtractor):
         
         
         # build training step
-        self._training_step = self._distribute_training_function(
-                                            _build_trainstep(fcn, projector, 
+        self._training_step = _build_trainstep(fcn, projector, 
                                                self._optimizer, 
                                                self.strategy, 
                                                temperature, weight_decay,
-                                               dataparallel))
+                                               dataparallel)
         
         if testdata is not None:
             self._test_ds =  _build_augment_pair_dataset(testdata, 
