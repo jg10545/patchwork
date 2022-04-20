@@ -137,8 +137,7 @@ def _build_trainstep(fcn, projector, optimizer, strategy, temp=1, weight_decay=0
                 context = tf.distribute.get_replica_context()
                 z1 = context.all_gather(z1, 0)
                 z2 = context.all_gather(z2, 0)
-                print("z1,z2:", z1.shape, z2.shape)
-                #negmask = _build_negative_mask(gbs)
+                mask = tf.stop_gradient(context.all_gather(mask))
             
             softmax_loss, nce_batch_acc = _contrastive_loss(z1*mask, z2*mask, temp)
             # SimCLR loss case
