@@ -6,6 +6,7 @@ from patchwork.feature._detcon_utils import _get_segments, _get_grid_segments
 from patchwork.feature._detcon_utils import _segment_aug, _filter_out_bad_segments 
 from patchwork.feature._detcon_utils import _prepare_embeddings, _prepare_mask
 from patchwork.feature._detcon import _build_segment_pair_dataset
+from patchwork._tfrecord import save_dataset_to_tfrecords
 
 
 def test_get_segments(test_png_path):
@@ -76,6 +77,30 @@ def test_build_segment_pair_dataset(test_png_path):
         
     assert x1.shape == (5, 28, 28, 3)
     assert x2.shape == (5, 28, 28, 3)
+    assert s1.shape == (5, 7, 7, 11)
+    assert s2.shape == (5, 7, 7, 11)
+    
+    
+      
+def test_build_segment_pair_dataset_from_tfrecord(test_png_path, tmp_path_factory):
+    augment = {"rot90":True, "jitter":0.1}
+    imfiles = [test_png_path]*10
+    
+    # SAVE IT TO TFRECORD FILES
+    fn = str(tmp_path_factory.mktemp("data"))
+    save_dataset_to_tfrecords(imfiles, fn, num_shards=2,
+                              imshape=(32,32), num_channels=3,
+                              norm=255)
+    
+    ds = _build_segment_pair_dataset(fn, imshape=(32,32), 
+                                     batch_size=5, 
+                                     augment=augment, mean_scale=10, 
+                                     outputsize=(7,7), num_samples=11)
+    for x1, s1, x2, s2 in ds:
+        break
+        
+    assert x1.shape == (5, 32, 32, 3)
+    assert x2.shape == (5, 32, 32, 3)
     assert s1.shape == (5, 7, 7, 11)
     assert s2.shape == (5, 7, 7, 11)
     

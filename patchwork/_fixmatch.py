@@ -137,7 +137,10 @@ def _fixmatch_dataset(labeled_filepaths, labels, unlabeled_filepaths,
                                        batch_size=mu*batch_size)
     # zipped dataset is ((x,y), (x_wk, x_str))
     ds = tf.data.Dataset.zip((sup_ds, unsup_ds))
-    ds = ds.prefetch(1)
+    if num_parallel_calls == tf.data.AUTOTUNE:
+        ds = ds.prefetch(tf.data.AUTOTUNE)
+    else:
+        ds = ds.prefetch(1)
     return ds
 
 

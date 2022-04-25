@@ -152,6 +152,7 @@ class GUI(object):
             params["num_params"] = self._model_params["fine_tuning"]["num_params"] + \
                                     self._model_params["output"]["num_params"]
                                     
+            params["weight_decay"] = self.modelpicker._weight_decay.value
             num_validation_points = df["validation"].sum()
             params["num_validation_points"] = num_validation_points
             num_training = len(df) - find_unlabeled(df).sum() - num_validation_points

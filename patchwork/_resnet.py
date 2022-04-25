@@ -1,6 +1,6 @@
 import tensorflow as tf
 
-BN = tf.keras.layers.experimental.SyncBatchNormalization
+#BN = tf.keras.layers.experimental.SyncBatchNormalization
 
 
 def ResNet(stack_fn,input_shape=None):
@@ -22,7 +22,8 @@ def ResNet(stack_fn,input_shape=None):
 
 
 
-def block1(x, filters, kernel_size=3, stride=1, conv_shortcut=True, final=False):
+def block1(x, filters, kernel_size=3, stride=1, conv_shortcut=True, final=False,
+           BN=tf.keras.layers.BatchNormalization):
     """
     A residual block.
     """
@@ -53,28 +54,34 @@ def block1(x, filters, kernel_size=3, stride=1, conv_shortcut=True, final=False)
         x = tf.keras.layers.Activation('relu')(x)
     return x
 
-def stack1(x, filters, blocks, stride1=2, final=False):
+def stack1(x, filters, blocks, stride1=2, final=False,
+           BN=tf.keras.layers.BatchNormalization):
     """
     A set of stacked residual blocks.
     """
-    x = block1(x, filters, stride=stride1)
+    x = block1(x, filters, stride=stride1, BN=BN)
     for i in range(2, blocks + 1):
         if i == blocks and final:
-            x = block1(x, filters, conv_shortcut=False, final=True)
+            x = block1(x, filters, conv_shortcut=False, final=True, BN=BN)
         else:
-            x = block1(x, filters, conv_shortcut=False)
+            x = block1(x, filters, conv_shortcut=False, BN=BN)
     return x
 
-def build_resnet50(input_shape=None):
+def build_resnet50(input_shape=None, syncbn=True):
     """
     Build a ResNet50 with synched batchnorm
     """
+    if syncbn:
+        BN = tf.keras.layers.experimental.SyncBatchNormalization
+    else:
+        BN = tf.keras.layers.BatchNormalization
+
 
     def stack_fn(x):
-        x = stack1(x, 64, 3, stride1=1)
-        x = stack1(x, 128, 4)
-        x = stack1(x, 256, 6)
-        return stack1(x, 512, 3, final=True)
+        x = stack1(x, 64, 3, stride1=1, BN=BN)
+        x = stack1(x, 128, 4, BN=BN)
+        x = stack1(x, 256, 6, BN=BN)
+        return stack1(x, 512, 3, final=True, BN=BN)
 
     return ResNet(stack_fn, input_shape)
 
