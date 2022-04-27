@@ -106,5 +106,7 @@ class LabelPropagator():
             self._pred_batch_size.value, 
             self._num_neighbors.value,
             self._temp)
+        
     def _labelprop_callback(self, *events):
         self.pw.propagate_labels(self._num_steps.value)
+        self._hist_callback()
