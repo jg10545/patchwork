@@ -105,7 +105,7 @@ class LabelPropagator():
         self.pw.build_nearest_neighbor_adjacency_matrix(
             self._pred_batch_size.value, 
             self._num_neighbors.value,
-            self._temp)
+            self._temp.value)
         
     def _labelprop_callback(self, *events):
         self.pw.propagate_labels(self._num_steps.value)
