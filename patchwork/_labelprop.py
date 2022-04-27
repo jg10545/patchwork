@@ -65,6 +65,7 @@ class LabelPropagator():
         self._pred_batch_size = pn.widgets.LiteralInput(name='Prediction batch size', value=64, type=int)
         self._build_matrix_button = pn.widgets.Button(name="Build adjacency matrix")
         self._build_matrix_button.on_click(self._adjacency_matrix_callback)
+        self._footer = pn.pane.Markdown("")
 
         # and label propagation
         self._num_steps = pn.widgets.IntInput(name="Number of iterations", value=10)
@@ -89,7 +90,8 @@ class LabelPropagator():
                               pn.layout.Divider(),
                               pn.pane.Markdown("### Label Propagation"),
                               self._num_steps,
-                              self._label_prop_button)
+                              self._label_prop_button,
+                              self._footer)
         
         figures = pn.Column(pn.pane.Markdown("### Outputs By Class"),
                             self._hist_selector,
@@ -102,11 +104,22 @@ class LabelPropagator():
                                           self._hist_selector.value)
         
     def _adjacency_matrix_callback(self, *events):
-        self.pw.build_nearest_neighbor_adjacency_matrix(
-            self._pred_batch_size.value, 
-            self._num_neighbors.value,
-            self._temp.value)
+        self._footer.object = "**computing adjacency matrix**"
+        try:
+            self.pw.build_nearest_neighbor_adjacency_matrix(
+                self._pred_batch_size.value, 
+                self._num_neighbors.value,
+                self._temp.value)
+            self._footer.object = "**done**"
+        except:
+            self._footer.object = "**something has gone horribly wrong**"
         
     def _labelprop_callback(self, *events):
-        self.pw.propagate_labels(self._num_steps.value)
-        self._hist_callback()
+        self._footer.object = "**propagating labels**"
+        try:
+            self.pw.propagate_labels(self._num_steps.value)
+            self._hist_callback()
+            self._footer.object = "**done**"
+        except:
+            self._footer.object = "**something has gone horribly wrong**"
+            
