@@ -468,8 +468,8 @@ class GUI(object):
         model = tf.keras.Model(inpt, net)
         
         # generate predictions
-        ds, ns = self._pred_dataset(pred_batch_size)
-        features = model.predict(ds)
+        ds, steps = self._pred_dataset(pred_batch_size)
+        features = model.predict(ds, steps=steps)
         
         # compute matrix
         self._adjacency_matrix = _get_weighted_adjacency_matrix(features, n_neighbors, temp)
