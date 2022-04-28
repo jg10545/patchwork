@@ -17,6 +17,8 @@ from patchwork.loaders import dataset, _fixmatch_unlab_dataset
 from patchwork._losses import entropy_loss, masked_binary_crossentropy
 from patchwork._util import _load_img, build_optimizer
 from patchwork._badge import KPlusPlusSampler, _build_output_gradient_function#_v1
+from patchwork._labelprop import _get_weighted_adjacency_matrix, _propagate_labels
+from patchwork._labelprop import LabelPropagator
 
 EPSILON = 1e-5
 
@@ -114,8 +116,11 @@ class GUI(object):
                                        feature_extractor=feature_extractor)
         # make a train manager- pass this object to it
         self.trainmanager = TrainManager(self)
+        # make a label propagator
+        self.labelpropagator = LabelPropagator(self)
         # default optimizer
         self._opt = tf.keras.optimizers.Adam(1e-3)
+
         
         if tracking_uri is not None:
             self._configure_mlflow(tracking_uri, experiment_name)
@@ -192,7 +197,8 @@ class GUI(object):
         """
         return pn.Tabs(("Annotate", self.labeler.panel()),
                        ("Model", self.modelpicker.panel()), 
-                       ("Train", self.trainmanager.panel())
+                       ("Train", self.trainmanager.panel()),
+                       ("Label Propagation", self.labelpropagator.panel())
                        )
     
     def serve(self, **kwargs):
@@ -448,9 +454,34 @@ class GUI(object):
         
         # initialize sampler
         self._badge_sampler = KPlusPlusSampler(output_gradients, indices=indices)
+        
+    def build_nearest_neighbor_adjacency_matrix(self, pred_batch_size=32, n_neighbors=10,
+                                                temp=0.01):
+        """
+        
+        """
+        # build average-pool embedding model
+        fcn = self.models["feature_extractor"]
+        inpt = tf.keras.layers.Input((None, None, self._num_channels))
+        net = fcn(inpt)
+        net = tf.keras.layers.GlobalAvgPool2D()(net)
+        model = tf.keras.Model(inpt, net)
+        
+        # generate predictions
+        ds, steps = self._pred_dataset(pred_batch_size)
+        features = model.predict(ds, steps=steps)
+        
+        # compute matrix
+        self._adjacency_matrix = _get_weighted_adjacency_matrix(features, n_neighbors, temp)
     
     
-    
+    def propagate_labels(self, iterations=10):
+        """
+        
+        """
+        assert hasattr(self, "_adjacency_matrix"), "gotta compute adjacency matrix first!!"
+        self.pred_df = _propagate_labels(self.df, self._adjacency_matrix,
+                                         t=iterations)
     
     
     
