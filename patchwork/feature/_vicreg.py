@@ -25,7 +25,7 @@ for d in _TENSORBOARD_DESCRIPTIONS:
 
 
 
-def _build_expander(fcn, imshape, num_channels, num_hidden, output_dim, batchnorm=True):
+def _build_expander(fcn, imshape, num_channels, num_hidden, batchnorm=True):
     """
     Create a Keras model that wraps the base encoder and 
     "expander" projection head
