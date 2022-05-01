@@ -100,9 +100,6 @@ def _build_vicreg_training_step(embed_model, optimizer, lam=25, mu=25, nu=1,
         
         with tf.GradientTape() as tape:
             # run images through model and normalize embeddings
-            #z1 = tf.nn.l2_normalize(embed_model(x, training=True), 1)
-            #z2 = tf.nn.l2_normalize(embed_model(y, training=True), 1)
-            print("NOT NORMALIZING EMBEDDINGS")
             z1 = embed_model(x, training=True)
             z2 = embed_model(y, training=True)
             
