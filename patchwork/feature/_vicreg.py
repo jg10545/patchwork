@@ -18,7 +18,10 @@ except:
 
 
 _DESCRIPTIONS = {
-    "nt_xent_loss":"Contrastive crossentropy loss"
+    "mse_loss":"Mean-squared error loss between projections",
+    "std_loss":"Standard deviation loss to prevent mode collapse. Standard deviation is computed across the batch for each dimension in feature space. Hinge loss is computed on 1-std(x).",
+    "cov_loss":"Covariance loss computed across features"
+    
 }
 for d in _TENSORBOARD_DESCRIPTIONS:
     _DESCRIPTIONS[d] = _TENSORBOARD_DESCRIPTIONS[d]
