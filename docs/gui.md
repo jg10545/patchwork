@@ -138,6 +138,6 @@ The **build adjacency matrix** button does the following in memory:
 
 This step takes a few minutes to run on BigEarthNet.
 
-The **propagate labels** button initializes all the labels to 0.5 and then propagates labels following the procedure in the paper.
+The **propagate labels** button initializes all the labels to 0.5 and then propagates labels following the procedure in the paper. On BigEarthNet it runs in a few seconds.
 
 ![](gui_propagate.png)
