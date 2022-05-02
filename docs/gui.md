@@ -128,4 +128,16 @@ Once you have labeled images and a model built, use this tab for training. Durin
 
 This is a new feature I'm experimenting with- the workflow from [*Self-supervised Semi-supervised Learning for Data Labeling and Quality Evaluation*](https://arxiv.org/abs/2111.10932) by Bai *et al*. As an alternative to the model and train tabs, we can just build a weighted nearest-neighbor graph of the average-pooled features of every image in the dataset. Then we can quickly propagate labels across that graph to pseudolabel every image.
 
+One important change from the paper- for the edge weights, I used the negative exponent of the metric instead of the positive exponent. I assume this is a typo in the paper but as of when I wrote this they hadn't released their code so I can't be sure.
+
+The **build adjacency matrix** button does the following in memory:
+
+* build a dense matrix of average features for every image
+* use `sklearn.neighbors.NearestNeighbors` to build a tree for finding nearest neighbors
+* build out the weighted graph as a `scipy` sparse matrix
+
+This step takes a few minutes to run on BigEarthNet.
+
+The **propagate labels** button initializes all the labels to 0.5 and then propagates labels following the procedure in the paper.
+
 ![](gui_propagate.png)
