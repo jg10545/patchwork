@@ -17,8 +17,8 @@ def test_get_weighted_adjacency_matrix():
     W_norm = _get_weighted_adjacency_matrix(features, n_neighbors=5)
     assert isinstance(W_norm, scipy.sparse.csr.csr_matrix)
     assert W_norm.shape == (N,N)
-    assert W_norm.min() == 0
-    assert W_norm.max() <= 1
+    assert round(W_norm.min(),2) == 0
+    assert round(W_norm.max(),2) <= 1
 
 def test_propagate_labels():
     # build out some random data

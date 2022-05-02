@@ -46,7 +46,7 @@ gui = patchwork.GUI(df, feature_extractor=fe, imshape=(256,256),
 gui.panel()
 ```
 
-You don't have to run inside Jupyter- check the [panel docs](https://panel.holoviz.org/user_guide/Deploy_and_Export.html) for instructions on how to deploy or embed the app elsewhere.
+You don't have to run inside Jupyter- use `gui.serve()` to pop open an app in a new window.
 
 ## Label tab
 
@@ -62,7 +62,7 @@ Choose how to sample the next set of images- choose which subset of images to sa
 * For hard negative mining- sort by `high <class name>`
 * For [BADGE sampling](https://arxiv.org/abs/1906.03671), sort by `BADGE`. For this to work, you need to select the "Update BADGE gradients?" option while training.
 
-![](gui_label_sample.png)
+![](gui_label.png)
 
 
 #### Notes on BADGE
@@ -82,7 +82,6 @@ Use the arrows to adjust which of the sampled images is selected. For each, you 
 
 Every time you hit the arrow buttons or the `sample` button the annotations are recorded in your label dataframe. Below the buttons is a table collecting the total number of annotations for each category in each dataset.
 
-![](gui_label_classes.png)
 
 ## Model tab
 
@@ -123,3 +122,22 @@ Once you have labeled images and a model built, use this tab for training. Durin
   * If the model isn't adequately separating validation cases, you may need more regularization
 
 ![](gui_train.png)
+
+
+## Label Propagation tab
+
+This is a new feature I'm experimenting with- the workflow from [*Self-supervised Semi-supervised Learning for Data Labeling and Quality Evaluation*](https://arxiv.org/abs/2111.10932) by Bai *et al*. As an alternative to the model and train tabs, we can just build a weighted nearest-neighbor graph of the average-pooled features of every image in the dataset. Then we can quickly propagate labels across that graph to pseudolabel every image.
+
+One important change from the paper- for the edge weights, I used the negative exponent of the metric instead of the positive exponent. I assume this is a typo in the paper but as of when I wrote this they hadn't released their code so I can't be sure.
+
+The **build adjacency matrix** button does the following in memory:
+
+* build a dense matrix of average features for every image
+* use `sklearn.neighbors.NearestNeighbors` to build a tree for finding nearest neighbors
+* build out the weighted graph as a `scipy` sparse matrix
+
+This step takes a few minutes to run on BigEarthNet.
+
+The **propagate labels** button initializes all the labels to 0.5 and then propagates labels following the procedure in the paper. On BigEarthNet it runs in a few seconds.
+
+![](gui_propagate.png)
