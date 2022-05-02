@@ -4,88 +4,90 @@ import numpy as np
 import tensorflow as tf
 
 from patchwork.feature._generic import GenericExtractor, _TENSORBOARD_DESCRIPTIONS
-from patchwork._augment import augment_function
-from patchwork.loaders import _image_file_dataset
 from patchwork._util import compute_l2_loss, _compute_alignment_and_uniformity
 
 from patchwork.feature._moco import _build_augment_pair_dataset
 from patchwork.feature._contrastive import _contrastive_loss
 
 try:
-    batchnorm = tf.keras.layers.experimental.SyncBatchNormalization
+    bnorm = tf.keras.layers.experimental.SyncBatchNormalization
 except:
-    batchnorm = tf.keras.layers.BatchNormalization
+    bnorm = tf.keras.layers.BatchNormalization
+
 
 
 
 _DESCRIPTIONS = {
-    "simsiam_loss":"Average cosine loss (bounded between -1 and 1)",
-    "output_std":"Standard deviation across the batch of each predictor dimension, averaged across dimensions"
+    "mse_loss":"Mean-squared error loss between projections",
+    "std_loss":"Standard deviation loss to prevent mode collapse. Standard deviation is computed across the batch for each dimension in feature space. Hinge loss is computed on 1-std(x).",
+    "cov_loss":"Covariance loss computed across features"
+    
 }
 for d in _TENSORBOARD_DESCRIPTIONS:
     _DESCRIPTIONS[d] = _TENSORBOARD_DESCRIPTIONS[d]
 
-def _build_embedding_models(fcn, imshape, num_channels, num_hidden=2048, pred_dim=512):
+
+
+def _build_expander(fcn, imshape, num_channels, num_hidden, batchnorm=True):
     """
-    Create Keras models for the projection and prediction heads
-    
-    Returns full projection model (fcn+head) and prediction model
+    Create a Keras model that wraps the base encoder and 
+    "expander" projection head
     """
-    # PROJECTION MODEL f; z = f(x)
     inpt = tf.keras.layers.Input((imshape[0], imshape[1], num_channels))
     net = fcn(inpt)
     net = tf.keras.layers.GlobalAvgPool2D(dtype="float32")(net)
-    # first layer
-    #net = tf.keras.layers.Dense(num_hidden, use_bias=False, dtype="float32")(net)
-    #net = tf.keras.layers.BatchNormalization(dtype="float32")(net)
-    #net = tf.keras.layers.Activation("relu", dtype="float32")(net)
-    # second layer
-    #net = tf.keras.layers.Dense(num_hidden, use_bias=False)(net)
-    #net = tf.keras.layers.BatchNormalization()(net)
-    #net = tf.keras.layers.Activation("relu")(net)
-    
-    for i in range(3):
-        net = tf.keras.layers.Dense(num_hidden, use_bias=False, dtype="float32")(net)
-        net = batchnorm(dtype="float32")(net)
-        if i < 2:
-            net = tf.keras.layers.Activation("relu", dtype="float32")(net)
-            
-    projection = tf.keras.Model(inpt, net)
-    
-    # PREDICTION MODEL h; p = h(z)
-    inpt = tf.keras.layers.Input((num_hidden))
-    net = tf.keras.layers.Dense(pred_dim, use_bias=False, dtype="float32")(inpt)
-    net = batchnorm(dtype="float32")(net)
-    net  = tf.keras.layers.Activation("relu", dtype="float32")(net)
+    for i in range(2):
+        net = tf.keras.layers.Dense(num_hidden, dtype="float32")(net)
+        net = bnorm(dtype="float32")(net)
+        net = tf.keras.layers.Activation("relu", dtype="float32")(net)
     net = tf.keras.layers.Dense(num_hidden, dtype="float32")(net)
     
-    prediction = tf.keras.Model(inpt, net)
+    embedding_model = tf.keras.Model(inpt, net)
+    return embedding_model
+
+
+
+def _gather(tensor):
+    context = tf.distribute.get_replica_context()
+    rep_id = context.replica_id_in_sync_group
     
-    return projection, prediction
-
-
-def _simsiam_loss(p,z):
-    """
-    Normalize embeddings, stop gradients through z 
-    and compute dot product
-    """
-    z = tf.stop_gradient(tf.nn.l2_normalize(z,1))
-    p = tf.nn.l2_normalize(p,1)
+    strategy =  tf.distribute.get_strategy()
+    num_replicas = strategy.num_replicas_in_sync
     
-    return -1*tf.reduce_mean(
-        tf.reduce_sum(p*z, axis=1)
-        )
+    if num_replicas < 2:
+        return tensor
+  
+    ext_tensor = tf.scatter_nd(
+        indices=[[rep_id]],
+        updates=[tensor],
+        shape=tf.concat([[num_replicas], tf.shape(tensor)], axis=0))
+
+    ext_tensor = context.all_reduce(tf.distribute.ReduceOp.SUM,
+                                            ext_tensor)
+    return tf.reshape(ext_tensor, [-1] + ext_tensor.shape.as_list()[2:])
 
 
-def _build_simsiam_training_step(embed_model, predict_model, optimizer, 
-                                 weight_decay=0):
+
+def _cov_loss(x):
+    N,d = x.shape
+    # get dxd matrix of 
+    cov = tf.matmul(x, x, transpose_a=True)/(N-1)
+    # subtract off the diagonal elements
+    return (tf.reduce_sum(cov**2) - tf.reduce_sum(tf.linalg.diag_part(cov)**2))/d
+
+
+
+def _build_vicreg_training_step(embed_model, optimizer, lam=25, mu=25, nu=1,
+                                weight_decay=0, eps=1e-4):
     """
-    Generate a tensorflow function to run the training step for SimSiam
+    Generate a tensorflow function to run the training step for VICReg.
     
     :embed_model: full Keras model including both the convnet and 
-        projection head
-    :predict_model: prediction MLP
+        expander head
     :optimizer: Keras optimizer
+    :lam: loss weight for __
+    :mu: loss weight for __
+    :nu: loss weight for __
     :weight_decay: coefficient for L2 loss
     
     The training function returns:
@@ -93,67 +95,71 @@ def _build_simsiam_training_step(embed_model, predict_model, optimizer,
     """
     # check whether we're in mixed-precision mode
     mixed = tf.keras.mixed_precision.global_policy().name == 'mixed_float16'
-    trainvars = embed_model.trainable_variables + predict_model.trainable_variables
     def training_step(x,y):
+        
         
         with tf.GradientTape() as tape:
             # run images through model and normalize embeddings
             z1 = embed_model(x, training=True)
             z2 = embed_model(y, training=True)
             
-            p1 = predict_model(z1, training=True)
-            p2 = predict_model(z2, training=True)
+            # MSE "invariance" loss- doesn't require gathered embeddings
+            repr_loss = tf.reduce_mean(tf.losses.mse(z1,z2))
             
-            ss_loss = 0.5*_simsiam_loss(p1, z2) + 0.5*_simsiam_loss(p2, z1)
+            # gather across GPUs
+            z1 = _gather(z1)
+            z2 = _gather(z2)
+            
+            batch_size, d = z1.shape
+        
+            # variance/coviariance losses
+            z1 = z1 - tf.reduce_mean(z1, axis=0, keepdims=True)
+            z2 = z2 - tf.reduce_mean(z2, axis=0, keepdims=True)
+            # variance
+            std_1 = tf.math.sqrt(tf.math.reduce_variance(z1, axis=0)+eps)
+            std_2 = tf.math.sqrt(tf.math.reduce_variance(z2, axis=0)+eps)
+            std_loss = tf.reduce_mean(tf.nn.relu(1-std_1) + tf.nn.relu(1-std_2) )/2
+            # covariance
+            cov_loss = _cov_loss(z1) + _cov_loss(z2)
         
             if weight_decay > 0:
                 l2_loss = compute_l2_loss(embed_model)
             else:
                 l2_loss = 0
                 
-            loss = ss_loss + weight_decay*l2_loss
+            loss = lam*repr_loss + mu*std_loss + nu*cov_loss + weight_decay*l2_loss
+            
             if mixed:
                 loss = optimizer.get_scaled_loss(loss)
 
-        gradients = tape.gradient(loss, trainvars)
+        gradients = tape.gradient(loss, embed_model.trainable_variables)
         if mixed:
             gradients = optimizer.get_unscaled_gradients(gradients)
-        optimizer.apply_gradients(zip(gradients, trainvars))
+        optimizer.apply_gradients(zip(gradients,
+                                      embed_model.trainable_variables))
 
-        # let's check for output collapse- compute the standard deviation of
-        # normalized embeddings along each direction in feature space. the average
-        # should be close to 1/sqrt(d)
-        d = z1.shape[-1]
-        #output_std = tf.reduce_mean(
-        #            tf.math.reduce_std(tf.nn.l2_normalize(z1,1),0))*np.sqrt(d)
-        output_std = tf.reduce_mean(
-                    tf.math.reduce_std(tf.nn.l2_normalize(p1,1),0))*np.sqrt(d)
-
-
-        return {"simsiam_loss":ss_loss,
+        
+        return {"std_loss":std_loss,
                 "l2_loss":l2_loss,
                 "loss":loss,
-                "output_std":output_std}
+                "cov_loss":cov_loss,
+                "mse_loss":repr_loss}
     return training_step
 
 
 
-
-
-class SimSiamTrainer(GenericExtractor):
+class VICRegTrainer(GenericExtractor):
     """
-    Class for training a SimSiam model.
+    Class for training a VICReg model.
     
-    Based on "Exploring Simple Siamese Representation Learning" by Chen and He
-    
-    From the paper- their base learning rate is 0.05*batch_size/256
+    Based on "VICREG: VARIANCE-INVARIANCE-COVARIANCE RE- GULARIZATION FOR SELF-SUPERVISED LEARNING" by Bardes et al.
     """
-    modelname = "SimSiam"
+    modelname = "VICReg"
 
     def __init__(self, logdir, trainingdata, testdata=None, fcn=None, 
-                 augment=True, num_hidden=2048, pred_dim=512,
-                 weight_decay=1e-4, lr=0.01, lr_decay=100000, 
-                 decay_type="cosine", opt_type="momentum",
+                 augment=True, lam=25, mu=25, nu=1, num_hidden=8192,
+                 weight_decay=0, lr=0.01, lr_decay=100000, 
+                 decay_type="exponential", opt_type="adam",
                  imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, num_parallel_calls=None,
                  single_channel=False, notes="",
@@ -164,10 +170,11 @@ class SimSiamTrainer(GenericExtractor):
         :testdata: (list) filepaths of a batch of images to use for eval
         :fcn: (keras Model) fully-convolutional network to train as feature extractor
         :augment: (dict) dictionary of augmentation parameters, True for defaults
-        :temperature: the Boltzmann temperature parameter- rescale the cosine similarities by this factor before computing softmax loss.
-        :num_hidden: number of hidden neurons in the network's projection head
-        :pred_dim:
-        :weight_decay: coefficient for L2-norm loss. The original SimCLR paper used 1e-6.
+        :lam: coefficient for MSE loss
+        :mu: coefficient for variance loss
+        :nu: coefficient for covariance loss
+        :num_hidden: number of hidden neurons in the network's projection head. 
+        :weight_decay: coefficient for L2-norm loss. 
         :lr: (float) initial learning rate
         :lr_decay:  (int) number of steps for one decay period (0 to disable)
         :decay_type: (string) how to decay the learning rate- "exponential" (smooth exponential decay), "staircase" (non-smooth exponential decay), or "cosine"
@@ -203,12 +210,11 @@ class SimSiamTrainer(GenericExtractor):
             self.fcn = fcn
             # Create a Keras model that wraps the base encoder and 
             # the projection head
-            project, predict = _build_embedding_models(fcn, imshape, num_channels,
-                                             num_hidden, pred_dim)
+            embed_model = _build_expander(fcn, imshape, num_channels,
+                                             num_hidden)
         
         self._models = {"fcn":fcn, 
-                        "full":project,
-                        "predict":predict}
+                        "full":embed_model}
         
         # build training dataset
         ds = _build_augment_pair_dataset(trainingdata,
@@ -225,9 +231,10 @@ class SimSiamTrainer(GenericExtractor):
         
         
         # build training step
-        step_fn = _build_simsiam_training_step(project, predict, 
-                                               self._optimizer,
-                                               weight_decay=weight_decay)
+        step_fn = _build_vicreg_training_step(
+                embed_model, self._optimizer, 
+                lam=lam, mu=mu, nu=nu,
+                weight_decay=weight_decay)
         self._training_step = self._distribute_training_function(step_fn,
                                                                  jitcompile=jitcompile)
         
@@ -238,7 +245,7 @@ class SimSiamTrainer(GenericExtractor):
                                         norm=norm, num_channels=num_channels, 
                                         augment=augment,
                                         single_channel=single_channel)
-
+            
             self._test = True
         else:
             self._test = False
@@ -246,15 +253,15 @@ class SimSiamTrainer(GenericExtractor):
         self.step = 0
         
         # parse and write out config YAML
-        self._parse_configs(augment=augment,
-                            num_hidden=num_hidden, pred_dim=pred_dim,
-                            weight_decay=weight_decay, 
+        self._parse_configs(augment=augment, lam=lam, mu=mu, nu=nu,
+                            num_hidden=num_hidden, 
+                            weight_decay=weight_decay,
                             lr=lr, lr_decay=lr_decay, 
                             imshape=imshape, num_channels=num_channels,
                             norm=norm, batch_size=batch_size,
                             num_parallel_calls=num_parallel_calls,
                             single_channel=single_channel, notes=notes,
-                            trainer="simsiam", strategy=str(strategy),
+                            trainer="vicreg", strategy=str(strategy),
                             decay_type=decay_type, opt_type=opt_type)
 
     def _run_training_epoch(self, **kwargs):
@@ -277,7 +284,7 @@ class SimSiamTrainer(GenericExtractor):
             
             self._record_scalars(alignment=alignment,
                              uniformity=uniformity, metric=True)
-         
+        
         if self._downstream_labels is not None:
             self._linear_classification_test(avpool=avpool,
                         query_fig=query_fig)

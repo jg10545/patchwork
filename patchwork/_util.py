@@ -153,8 +153,14 @@ def build_optimizer(lr, lr_decay=0, opt_type="adam", decay_type="exponential"):
         else:
             assert False, "don't recognize this decay type"
     if opt_type == "adam":
-        return tf.keras.optimizers.Adam(lr)
+        opt = tf.keras.optimizers.Adam(lr)
     elif opt_type == "momentum":
-        return tf.keras.optimizers.SGD(lr, momentum=0.9)
+        opt = tf.keras.optimizers.SGD(lr, momentum=0.9)
     else:
         assert False, "dont know what to do with {}".format(opt_type)
+        
+    # if we're using mixed precision, do automated loss scaling
+    if tf.keras.mixed_precision.global_policy().name == 'mixed_float16':
+        opt = tf.keras.mixed_precision.LossScaleOptimizer(opt)
+        
+    return opt

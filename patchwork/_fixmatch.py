@@ -63,19 +63,19 @@ def _build_fixmatch_training_step(model, optimizer, lam=0,
                 str_preds = pred_batch[N+mu_N:,:]
                 # GENERATE FIXMATCH PSEUDOLABELS
                 # round predictions to pseudolabels
-                pseudolabels = tf.cast(wk_preds > 0.5, 
+                with tape.stop_recording():
+                    pseudolabels = tf.cast(wk_preds > 0.5, 
                                            tf.float32)
-                # also compute a mask from the predictions,
-                # since we only incorporate high-confidence cases,
-                # compute a mask that's 1 every place that's close
-                # to 1 or 0
-                mask = _build_mask(wk_preds, tau)
+                    # also compute a mask from the predictions,
+                    # since we only incorporate high-confidence cases,
+                    # compute a mask that's 1 every place that's close
+                    # to 1 or 0
+                    mask = _build_mask(wk_preds, tau)
                 
-                
-                # let's try keeping track of how accurate these
-                # predictions are
-                ssl_acc = tf.reduce_mean(tf.cast(
-                    tf.cast(str_preds > 0.5, tf.float32)==pseudolabels,
+                    # let's try keeping track of how accurate these
+                    # predictions are
+                    ssl_acc = tf.reduce_mean(tf.cast(
+                        tf.cast(str_preds > 0.5, tf.float32)==pseudolabels,
                                                  tf.float32))
                 
                 crossent_tensor = K.binary_crossentropy(pseudolabels,
@@ -137,7 +137,10 @@ def _fixmatch_dataset(labeled_filepaths, labels, unlabeled_filepaths,
                                        batch_size=mu*batch_size)
     # zipped dataset is ((x,y), (x_wk, x_str))
     ds = tf.data.Dataset.zip((sup_ds, unsup_ds))
-    ds = ds.prefetch(1)
+    if num_parallel_calls == tf.data.AUTOTUNE:
+        ds = ds.prefetch(tf.data.AUTOTUNE)
+    else:
+        ds = ds.prefetch(1)
     return ds
 
 
@@ -277,7 +280,7 @@ class FixMatchTrainer(GenericExtractor):
             auc = roc_auc_score(y_true, preds)
             self._record_scalars(**{f"val_accuracy_{category}":acc,
                                     f"val_auc_{category}":auc}, metric=True)
-            
+        """
         # choose the hyperparameters to record
         if not hasattr(self, "_hparams_config"):
             from tensorboard.plugins.hparams import api as hp
@@ -306,6 +309,7 @@ class FixMatchTrainer(GenericExtractor):
             base_dir, run_name = os.path.split(self.logdir)
             if len(run_name) == 0:
                 base_dir, run_name = os.path.split(base_dir)
+                """
                 
                 
     def log_model(self, model_name="fixmatch_model"):

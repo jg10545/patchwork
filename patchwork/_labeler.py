@@ -102,6 +102,13 @@ class ButtonPanel(object):
         self._back_button.on_click(self._back_button_callback)
         self._forward_button = pn.widgets.Button(name='\u25b6', width=50)
         self._forward_button.on_click(self._forward_button_callback)
+        
+        self._zero_all_button = pn.widgets.Button(name="all zeros", width=100)
+        self._zero_all_button.on_click(self._zero_all_callback)
+        
+        self._copy_labels_button = pn.widgets.Button(name="copy labels to all", width=100)
+        self._copy_labels_button.on_click(self._copy_labels_callback)
+        
         self.label_counts = pn.pane.Markdown("")
         
         self._button_panel = pn.Column(pn.Spacer(height=50),
@@ -114,6 +121,8 @@ class ButtonPanel(object):
                                      for c in classes],
                                       pn.Spacer(height=10),
                                      pn.Row(self._back_button, self._forward_button),
+                                     self._zero_all_button,
+                                     self._copy_labels_button,
                                       self.label_counts) 
         
         
@@ -159,6 +168,26 @@ class ButtonPanel(object):
                 self._selections[c].value = "None"
             else:
                 self._selections[c].value = str(int(record[c]))
+                
+                
+    def _zero_all_callback(self, *events):
+        """
+        Update labels for the current selection so they're all zero
+        """
+        for c in self._classes:
+            self._selections[c].value = "0"
+        self._forward_button_callback()
+        
+    def _copy_labels_callback(self, *events):
+        """
+        Take your current labels and copy them to
+        all the images currently viewable
+        """
+        labels = {c:self._selections[c].value for c in self._classes}
+        for j in range(self.dim**2):
+            i = self._indices[j]
+            for c in self._classes:
+                self._df.loc[i,c] = self._value_map[labels[c]]
         
     def select(self, i):
         """

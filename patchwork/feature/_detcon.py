@@ -6,7 +6,8 @@ import tensorflow as tf
 
 from patchwork._util import compute_l2_loss, _compute_alignment_and_uniformity
 from patchwork._augment import augment_function
-from patchwork.feature._hcl import _simclr_softmax_prob, _hcl_softmax_prob, _build_negative_mask
+#from patchwork.feature._hcl import _simclr_softmax_prob, _hcl_softmax_prob, _build_negative_mask
+from patchwork.feature._contrastive import _contrastive_loss
 
 from patchwork.loaders import _image_file_dataset
 
@@ -75,14 +76,18 @@ def _build_segment_pair_dataset(imfiles, mean_scale=1000, num_samples=16, output
         ds = ds.map(_augment_pair, num_parallel_calls=num_parallel_calls)
 
     ds = ds.batch(batch_size, drop_remainder=True)
-    ds = ds.prefetch(1)
+    if num_parallel_calls == tf.data.AUTOTUNE:
+        ds = ds.prefetch(tf.data.AUTOTUNE)
+    else:
+        ds = ds.prefetch(1)
     return ds
 
 
 
 
 
-def _build_trainstep(fcn, projector, optimizer, strategy, temp=1, tau_plus=0, beta=0, weight_decay=0):
+def _build_trainstep(fcn, projector, optimizer, strategy, temp=1, weight_decay=0,
+                     dataparallel=False):
     """
     Build a distributed training step for SimCLR or HCL.
     
@@ -92,19 +97,19 @@ def _build_trainstep(fcn, projector, optimizer, strategy, temp=1, tau_plus=0, be
     :optimizer: Keras optimizer
     :strategy: tf.distribute.Strategy object
     :temp: temperature parameter
-    :tau_plus: HCL class probability parameter
-    :beta: HCL concentration parameter
     :weightdecay: L2 loss coefficient. 0 to disable
+    :dataparallel: if True, compute contrastive loss separately on each replica 
+        without shuffling data between them
     
     Returns a distributed training function
     """
+    # check whether we're in mixed-precision mode
+    mixed = tf.keras.mixed_precision.global_policy().name == 'mixed_float16'
     trainvars = fcn.trainable_variables + projector.trainable_variables
     def _step(x1, m1, x2, m2):
         with tf.GradientTape() as tape:
             loss = 0
-            # get replica context- we'll use this to aggregate embeddings
-            # across different GPUs
-            context = tf.distribute.get_replica_context()
+            
             #print("x,y:", x.shape, y.shape)
             
             # run images through model and normalize embeddings. do this
@@ -126,27 +131,26 @@ def _build_trainstep(fcn, projector, optimizer, strategy, temp=1, tau_plus=0, be
             
             # aggregate projections across replicas. z1 and z2 should
             # now correspond to the global batch size (gbs*num_samples, d)
-            z1 = context.all_gather(z1, 0)
-            z2 = context.all_gather(z2, 0)
-            print("z1,z2:", z1.shape, z2.shape)
-            mask = context.all_gather(mask, 0)
-            print("mask:", mask.shape)
+            if not dataparallel:
+                # get replica context- we'll use this to aggregate embeddings
+                # across different GPUs
+                context = tf.distribute.get_replica_context()
+                z1 = context.all_gather(z1, 0)
+                z2 = context.all_gather(z2, 0)
+                mask = tf.stop_gradient(context.all_gather(mask))
             
-            with tape.stop_recording():
-                gbs = z1.shape[0]
-                negmask = _build_negative_mask(gbs)
-            
+            softmax_loss, nce_batch_acc = _contrastive_loss(z1*mask, z2*mask, temp)
             # SimCLR loss case
-            if (tau_plus == 0)&(beta == 0):
-                softmax_prob, nce_batch_acc = _simclr_softmax_prob(z1, z2, temp, negmask)
+            #if (tau_plus == 0)&(beta == 0):
+            #    softmax_prob, nce_batch_acc = _simclr_softmax_prob(z1, z2, temp, negmask)
             # HCL loss case
-            elif (tau_plus > 0)&(beta > 0):
-                softmax_prob, nce_batch_acc = _hcl_softmax_prob(z1, z2, temp, 
-                                                                beta, tau_plus, negmask)
-            else:
-                assert False, "both tau_plus and beta must be nonzero to run HCL"
+            #elif (tau_plus > 0)&(beta > 0):
+            #    softmax_prob, nce_batch_acc = _hcl_softmax_prob(z1, z2, temp, 
+            #                                                    beta, tau_plus, negmask)
+            #else:
+            #    assert False, "both tau_plus and beta must be nonzero to run HCL"
             
-            softmax_loss = tf.reduce_mean(-1*mask*tf.math.log(softmax_prob))
+            #softmax_loss = tf.reduce_mean(-1*mask*tf.math.log(softmax_prob))
             loss += softmax_loss
             
             if weight_decay > 0:
@@ -154,13 +158,18 @@ def _build_trainstep(fcn, projector, optimizer, strategy, temp=1, tau_plus=0, be
                 loss += weight_decay*l2_loss
             else:
                 l2_loss = 0
+                
+            if mixed:
+                loss = optimizer.get_scaled_loss(loss)
             
             
         grad = tape.gradient(loss, trainvars)
+        if mixed:
+            grad = optimizer.get_unscaled_gradients(grad)
         optimizer.apply_gradients(zip(grad, trainvars))
         return {"loss":loss, "nt_xent_loss":softmax_loss, 
                 "l2_loss":l2_loss,
-               "nce_batch_accuracy":nce_batch_acc}
+               "nce_batch_acc":nce_batch_acc}
         
     @tf.function
     def trainstep(x1, m1, x2, m2):
@@ -168,31 +177,34 @@ def _build_trainstep(fcn, projector, optimizer, strategy, temp=1, tau_plus=0, be
         lossdict = {k:strategy.reduce(
                     tf.distribute.ReduceOp.MEAN, 
                     per_example_losses[k], axis=None)
-                    for k in per_example_losses}
+                    for k in per_example_losses}#
 
         return lossdict
     return trainstep
+    #return _step
 
 
 class DetConTrainer(GenericExtractor):
     """
     Class for training a DetCon_S model. 
     
-    Based on "Contrastive Learning with Hard Negative Examples" by Robinson et al.
+    Based on "Efficient Visual Pretraining With Contrastive Detection" by Henaff et al.
+    
+    https://arxiv.org/abs/2103.10957
     """
-    modelname = "HCL"
+    modelname = "DetCon"
 
     def __init__(self, logdir, trainingdata, testdata=None, fcn=None, 
-                 augment=True, temperature=1., mean_scale=1000, num_samples=16,
-                 beta=0, tau_plus=0,
-                 num_hidden=128, output_dim=64, batchnorm=True,
-                 weight_decay=0,
+                 augment=True, temperature=0.1, mean_scale=1000, num_samples=16,
+                 dataparallel=False,
+                 num_hidden=2048, output_dim=2048, batchnorm=True,
+                 weight_decay=1e-6,
                  lr=0.01, lr_decay=0, decay_type="exponential",
                  opt_type="adam",
                  imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, num_parallel_calls=None,
                  single_channel=False, notes="",
-                 downstream_labels=None, stratify=None, strategy=None):
+                 downstream_labels=None, strategy=None):
         """
         :logdir: (string) path to log directory
         :trainingdata: (list) list of paths to training images
@@ -203,8 +215,8 @@ class DetConTrainer(GenericExtractor):
         :mean_scale: average scale parameter to use for Felzenszwalb's segmentation
         algorithm. if 0, segment using a 4x4 grid instead
         :num_samples: number of segments to sample from Felzenszwalb segmentation output
-        :beta: concentration parameter for HCL loss (0 to use SimCLR loss)
-        :tau_plus: class prior parameter for HCL loss (0 to use SimCLR loss)
+        :dataparallel: if True, compute loss function separately on each replica instead of
+            combining negative examples acros replicas.
         :num_hidden: number of hidden neurons in the network's projection head
         :output_dim: dimension of projection head's output space. 
         :batchnorm: whether to include batch normalization in the projection head.
@@ -224,8 +236,6 @@ class DetConTrainer(GenericExtractor):
         :notes: (string) any notes on the experiment that you want saved in the
                 config.yml file
         :downstream_labels: dictionary mapping image file paths to labels
-        :stratify: pass a list of image labels here to stratify by batch
-            during training
         :strategy: if distributing across multiple GPUs, pass a tf.distribute
             Strategy object here
         """
@@ -239,25 +249,31 @@ class DetConTrainer(GenericExtractor):
         self._file_writer = tf.summary.create_file_writer(logdir, flush_millis=10000)
         self._file_writer.set_as_default()
         
-        # if no FCN is passed- build one
+        if dataparallel:
+            bnorm = tf.keras.layers.BatchNormalization
+        else:
+            bnorm = tf.keras.layers.experimental.SyncBatchNormalization
+        # build the projection head
         with self.scope():
+            # if no FCN is passed- build one
             if fcn is None:
-                fcn = tf.keras.applications.ResNet50V2(weights=None, include_top=False)
+                fcn = tf.keras.applications.ResNet50(weights=None, include_top=False)
             self.fcn = fcn
             # Create a Keras model that wraps the base encoder and 
             # the projection head
-            inpt = tf.keras.layers.Input((fcn.output_shape[-1]))
-            net = tf.keras.layers.Dense(num_hidden)(inpt)
+            inpt = tf.keras.layers.Input((fcn.output_shape[-1]), dtype=tf.float32)
+            net = tf.keras.layers.Dense(num_hidden, dtype=tf.float32)(inpt)
             if batchnorm:
-                net = tf.keras.layers.BatchNormalization()(net)
-            net = tf.keras.layers.Activation("relu")(net)
-            net = tf.keras.layers.Dense(output_dim, use_bias=False)(net)
+                net = bnorm(dtype=tf.float32)(net)
+            net = tf.keras.layers.Activation("relu", dtype=tf.float32)(net)
+            net = tf.keras.layers.Dense(output_dim, use_bias=False, dtype=tf.float32)(net)
             projector = tf.keras.Model(inpt, net)
             # and a model with fcn run through the projector, to use for
             # alignment/uniformity calculation
-            inpt = tf.keras.layers.Input((imshape[0], imshape[1], num_channels))
+            inpt = tf.keras.layers.Input((imshape[0], imshape[1], num_channels),
+                                         dtype=tf.float32)
             net = fcn(inpt)
-            net = tf.keras.layers.GlobalAvgPool2D()(net)
+            net = tf.keras.layers.GlobalAvgPool2D(dtype=tf.float32)(net)
             net = projector(net)
             full = tf.keras.Model(inpt, net)
         
@@ -288,8 +304,8 @@ class DetConTrainer(GenericExtractor):
         self._training_step = _build_trainstep(fcn, projector, 
                                                self._optimizer, 
                                                self.strategy, 
-                                               temperature, tau_plus, beta, 
-                                               weight_decay)
+                                               temperature, weight_decay,
+                                               dataparallel)
         
         if testdata is not None:
             self._test_ds =  _build_augment_pair_dataset(testdata, 
@@ -307,7 +323,7 @@ class DetConTrainer(GenericExtractor):
         # parse and write out config YAML
         self._parse_configs(augment=augment, temperature=temperature,
                             mean_scale=mean_scale, num_samples=num_samples,
-                            beta=beta, tau_plus=tau_plus, batchnorm=batchnorm,
+                            dataparallel=dataparallel, batchnorm=batchnorm,
                             num_hidden=num_hidden, output_dim=output_dim,
                             weight_decay=weight_decay,
                             lr=lr, lr_decay=lr_decay, 
@@ -315,7 +331,7 @@ class DetConTrainer(GenericExtractor):
                             norm=norm, batch_size=batch_size,
                             num_parallel_calls=num_parallel_calls,
                             single_channel=single_channel, notes=notes,
-                            trainer="hcl", strategy=str(strategy),
+                            trainer="detcon", strategy=str(strategy),
                             decay_type=decay_type, opt_type=opt_type)
 
     def _run_training_epoch(self, **kwargs):
@@ -342,6 +358,5 @@ class DetConTrainer(GenericExtractor):
         if self._downstream_labels is not None:
             self._linear_classification_test(avpool=avpool, query_fig=query_fig)
         
-# -*- coding: utf-8 -*-
 
 

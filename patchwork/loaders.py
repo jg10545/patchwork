@@ -318,7 +318,7 @@ def _get_features(fcn, downstream_labels, avpool=False,
         features.append(fcn(x).numpy())
         labels.append(y.numpy())
         if return_images: images.append(x)
-    features = np.concatenate(features, 0)
+    features = np.concatenate(features, 0).astype(np.float32)
     labels = np.concatenate(labels, 0)
     labels = np.array([str(l) for l in labels.ravel()])
     if return_images: images = np.concatenate(images, 0)
@@ -457,7 +457,7 @@ def load_dataset_from_tfrecords(record_dir, imshape, num_channels,
     # note that this function may change in the future
     ds = tf.data.experimental.load(record_dir, element_spec, compression=comp)
     # if a map function was included, map across the dataset
-    if map_fn is not None:
+    if map_fn:
         ds = ds.map(map_fn, num_parallel_calls=num_parallel_calls)
     if shuffle:
         ds = ds.shuffle(shuffle)

@@ -1,15 +1,12 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 import tensorflow as tf
-from tqdm import tqdm
 
 from patchwork.feature._generic import GenericExtractor, _TENSORBOARD_DESCRIPTIONS
-from patchwork._augment import augment_function
-from patchwork.loaders import _image_file_dataset
 from patchwork._util import compute_l2_loss, _compute_alignment_and_uniformity
 
 from patchwork.feature._moco import _build_augment_pair_dataset
-from patchwork.feature._contrastive import _contrastive_loss, _build_negative_mask
+from patchwork.feature._contrastive import _contrastive_loss
 
 try:
     bnorm = tf.keras.layers.experimental.SyncBatchNormalization
@@ -46,16 +43,16 @@ def _build_embedding_model(fcn, imshape, num_channels, num_hidden, output_dim, b
         inpt = [inpt0, inpt1]
     net = fcn(inpt)
     #net = tf.keras.layers.Flatten()(net)
-    net = tf.keras.layers.GlobalAvgPool2D()(net)
+    net = tf.keras.layers.GlobalAvgPool2D(dtype="float32")(net)
     # NORMAL SimCLR CASE
     if num_hidden > 0:
-        net = tf.keras.layers.Dense(num_hidden)(net)
+        net = tf.keras.layers.Dense(num_hidden, dtype="float32")(net)
         if batchnorm:
-            net = bnorm()(net)
-        net = tf.keras.layers.Activation("relu")(net)
-        net = tf.keras.layers.Dense(output_dim, use_bias=False)(net)
+            net = bnorm(dtype="float32")(net)
+        net = tf.keras.layers.Activation("relu", dtype="float32")(net)
+        net = tf.keras.layers.Dense(output_dim, use_bias=False, dtype="float32")(net)
         if batchnorm:
-            net = bnorm()(net)
+            net = bnorm(dtype="float32")(net)
     else:
         # DirectCLR CASE
         net = tf.keras.layers.Lambda(lambda x: x[:,:output_dim])(net)
@@ -64,7 +61,24 @@ def _build_embedding_model(fcn, imshape, num_channels, num_hidden, output_dim, b
 
 
 
+def _gather(tensor):
+    context = tf.distribute.get_replica_context()
+    rep_id = context.replica_id_in_sync_group
+    
+    strategy =  tf.distribute.get_strategy()
+    num_replicas = strategy.num_replicas_in_sync
+    
+    if num_replicas < 2:
+        return tensor
+  
+    ext_tensor = tf.scatter_nd(
+        indices=[[rep_id]],
+        updates=[tensor],
+        shape=tf.concat([[num_replicas], tf.shape(tensor)], axis=0))
 
+    ext_tensor = context.all_reduce(tf.distribute.ReduceOp.SUM,
+                                            ext_tensor)
+    return tf.reshape(ext_tensor, [-1] + ext_tensor.shape.as_list()[2:])
 
 def _build_simclr_training_step(embed_model, optimizer, temperature=0.1,
                                 weight_decay=0, decoupled=False, eps=0,
@@ -85,6 +99,8 @@ def _build_simclr_training_step(embed_model, optimizer, temperature=0.1,
     :loss: value of the loss function for training
     :avg_cosine_sim: average value of the batch's matrix of dot products
     """
+    # check whether we're in mixed-precision mode
+    mixed = tf.keras.mixed_precision.global_policy().name == 'mixed_float16'
     def training_step(x,y):
         
         with tf.GradientTape() as tape:
@@ -94,11 +110,14 @@ def _build_simclr_training_step(embed_model, optimizer, temperature=0.1,
             
             # get replica context- we'll use this to aggregate embeddings
             # across different GPUs
-            context = tf.distribute.get_replica_context()
+            #context = tf.distribute.get_replica_context()
             # aggregate projections across replicas. z1 and z2 should
             # now correspond to the global batch size (gbs, d)
-            z1 = context.all_gather(z1, 0)
-            z2 = context.all_gather(z2, 0)
+            #z1 = context.all_gather(z1, 0)
+            #z2 = context.all_gather(z2, 0)
+            z1 = _gather(z1)
+            z2 = _gather(z2)
+        
         
             xent_loss, batch_acc = _contrastive_loss(z1, z2, temperature, 
                                           decoupled, eps=eps, q=q)
@@ -110,8 +129,12 @@ def _build_simclr_training_step(embed_model, optimizer, temperature=0.1,
                 l2_loss = 0
                 
             loss = xent_loss + weight_decay*l2_loss
+            if mixed:
+                loss = optimizer.get_scaled_loss(loss)
 
         gradients = tape.gradient(loss, embed_model.trainable_variables)
+        if mixed:
+            gradients = optimizer.get_unscaled_gradients(gradients)
         optimizer.apply_gradients(zip(gradients,
                                       embed_model.trainable_variables))
 
@@ -150,15 +173,15 @@ class SimCLRTrainer(GenericExtractor):
     modelname = "SimCLR"
 
     def __init__(self, logdir, trainingdata, testdata=None, fcn=None, 
-                 augment=True, temperature=0.1, num_hidden=128,
-                 output_dim=64, batchnorm=True, weight_decay=0,
+                 augment=True, temperature=0.1, num_hidden=2048,
+                 output_dim=2048, batchnorm=True, weight_decay=0,
                  decoupled=False, eps=0, q=0,
                  lr=0.01, lr_decay=100000, decay_type="exponential",
                  opt_type="adam",
                  imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, num_parallel_calls=None,
                  single_channel=False, notes="",
-                 downstream_labels=None, strategy=None):
+                 downstream_labels=None, strategy=None, jitcompile=False):
         """
         :logdir: (string) path to log directory
         :trainingdata: (list) list of paths to training images
@@ -238,7 +261,8 @@ class SimCLRTrainer(GenericExtractor):
                 embed_model, self._optimizer, 
                 temperature, weight_decay=weight_decay,
                 decoupled=decoupled, eps=eps, q=q)
-        self._training_step = self._distribute_training_function(step_fn)
+        self._training_step = self._distribute_training_function(step_fn,
+                                                                 jitcompile=jitcompile)
         
         if testdata is not None:
             self._test_ds =  _build_augment_pair_dataset(testdata, 
@@ -287,40 +311,8 @@ class SimCLRTrainer(GenericExtractor):
             
             self._record_scalars(alignment=alignment,
                              uniformity=uniformity, metric=True)
-            #metrics=["linear_classification_accuracy",
-            #                     "alignment",
-            #                     "uniformity"]
-        #else:
-        #    metrics=["linear_classification_accuracy"]
         
         if self._downstream_labels is not None:
-            """
-            # choose the hyperparameters to record
-            if not hasattr(self, "_hparams_config"):
-                from tensorboard.plugins.hparams import api as hp
-                hparams = {
-                    hp.HParam("temperature", hp.RealInterval(0., 10000.)):self.config["temperature"],
-                    hp.HParam("num_hidden", hp.IntInterval(1, 1000000)):self.config["num_hidden"],
-                    hp.HParam("output_dim", hp.IntInterval(1, 1000000)):self.config["output_dim"],
-                    hp.HParam("lr", hp.RealInterval(0., 10000.)):self.config["lr"],
-                    hp.HParam("lr_decay", hp.RealInterval(0., 10000.)):self.config["lr_decay"],
-                    hp.HParam("decay_type", hp.Discrete(["cosine", "exponential"])):self.config["decay_type"],
-                    hp.HParam("weight_decay", hp.RealInterval(0., 10000.)):self.config["weight_decay"],
-                    hp.HParam("batchnorm", hp.Discrete([True, False])):self.config["batchnorm"],
-                    hp.HParam("decoupled", hp.Discrete([True, False])):self.config["decoupled"],
-                    hp.HParam("data_parallel", hp.Discrete([True, False])):self.config["data_parallel"]
-                    }
-                for k in self.augment_config:
-                    if isinstance(self.augment_config[k], float):
-                        hparams[hp.HParam(k, hp.RealInterval(0., 10000.))] = self.augment_config[k]
-            else:
-                hparams=None
-            
-
-            self._linear_classification_test(hparams,
-                        metrics=metrics, avpool=avpool,
-                        query_fig=query_fig)
-            """
             self._linear_classification_test(avpool=avpool,
                         query_fig=query_fig)
         

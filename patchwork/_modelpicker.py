@@ -131,13 +131,14 @@ class ModelPicker(object):
             4) if doing mean-teacher semi-supervision, set up teacher model
             5) reset the lists for recording training loss in the GUI object
         """
-        # 1) BUILD THE FINE-TUNING MODEL
-        fine_tuning_model = self._fine_tuning_chooser.value.build(self._feature_shape)
-        tuning_output_channels = fine_tuning_model.output_shape[-1]
-        # 2) BUILD THE OUTPUT MODEL AND LOSS FUNCTION
-        output_model, loss = self._output_chooser.value.build(self._num_classes, 
+        with self._pw._strategy.scope():
+            # 1) BUILD THE FINE-TUNING MODEL
+            fine_tuning_model = self._fine_tuning_chooser.value.build(self._feature_shape)
+            tuning_output_channels = fine_tuning_model.output_shape[-1]
+            # 2) BUILD THE OUTPUT MODEL AND LOSS FUNCTION
+            output_model, loss = self._output_chooser.value.build(self._num_classes, 
                                                                       tuning_output_channels)
-        self._pw.loss_fn = loss
+            self._pw.loss_fn = loss
 
         curr_finetune = "**Current fine-tuning model:** %s (%s parameters)"%(self._fine_tuning_chooser.value.name,
                                                                             fine_tuning_model.count_params())
@@ -158,15 +159,16 @@ class ModelPicker(object):
         
 
         # 3) GENERATE FULL MODEL (for inference)
-        if self._feature_extractor is not None:
-            inpt = tf.keras.layers.Input(self._feature_extractor.input_shape[1:])
-            net = self._feature_extractor(inpt)
-        else:
-            inpt = tf.keras.layers.Input(fine_tuning_model.input_shape[1:])
-            net = inpt
-        net = fine_tuning_model(net)
-        net = output_model(net)
-        self._pw.models["full"] = tf.keras.Model(inpt, net)
+        with self._pw._strategy.scope():
+            if self._feature_extractor is not None:
+                inpt = tf.keras.layers.Input(self._feature_extractor.input_shape[1:])
+                net = self._feature_extractor(inpt)
+            else:
+                inpt = tf.keras.layers.Input(fine_tuning_model.input_shape[1:])
+                net = inpt
+            net = fine_tuning_model(net)
+            net = output_model(net)
+            self._pw.models["full"] = tf.keras.Model(inpt, net)
 
 
         self._pw._semi_supervised = (self._semisup["lambda"].value > 0)

@@ -36,7 +36,8 @@ def build_training_function(loss_fn, opt, fine_tuning, output, feature_extractor
         mask = tf.math.logical_or(confident_high, confident_low)
         return tf.cast(mask, tf.float32)
     
-    @tf.function
+    # commenting out tf.function decorator- will be included in distribution step
+    #@tf.function
     def training_step(x, y, x_unlab_wk=None, x_unlab_str=None):
         # If we're using fixmatch we gotta concatenate everything into
         # one big bad batch

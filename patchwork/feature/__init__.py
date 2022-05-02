@@ -10,5 +10,6 @@ from patchwork.feature._hcl import HCLTrainer
 from patchwork.feature._detcon import DetConTrainer
 from patchwork.feature._clip import CLIPTrainer
 from patchwork.feature._simsiam import SimSiamTrainer
+from patchwork.feature._vicreg import VICRegTrainer
 
 import patchwork.feature.models
