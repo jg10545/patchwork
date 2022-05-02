@@ -126,6 +126,6 @@ Once you have labeled images and a model built, use this tab for training. Durin
 
 ## Label Propagation tab
 
-This is a new feature I'm experimenting with- the workflow from [*Self-supervised Semi-supervised Learning for Data Labeling and Quality Evaluation*]() by Bai *et al*. As an alternative to the model and train tabs, we can just build a weighted nearest-neighbor graph of the average-pooled features of every image in the dataset. Then we can quickly propagate labels across that graph to pseudolabel every image.
+This is a new feature I'm experimenting with- the workflow from [*Self-supervised Semi-supervised Learning for Data Labeling and Quality Evaluation*](https://arxiv.org/abs/2111.10932) by Bai *et al*. As an alternative to the model and train tabs, we can just build a weighted nearest-neighbor graph of the average-pooled features of every image in the dataset. Then we can quickly propagate labels across that graph to pseudolabel every image.
 
-![](gui_propogate.png)
+![](gui_propagate.png)
