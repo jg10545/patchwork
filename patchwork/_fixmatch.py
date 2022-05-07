@@ -266,7 +266,7 @@ class FixMatchTrainer(GenericExtractor):
                 self.step += 1
         
             
-    def evaluate(self, avpool=True):
+    def evaluate(self, avpool=True, **kwargs):
         predictions = self._models["full"].predict(self._val_ds)
         num_categories = len(self.categories)
         
