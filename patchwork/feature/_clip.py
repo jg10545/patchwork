@@ -117,7 +117,7 @@ def build_clip_training_step(img_model, text_model, optimizer, temp=0.07, weight
             text_embed = text_model(text_batch, training=True)
             
             nce_loss = compute_nce_loss(img_embed, text_embed, temp)
-            if weight_decay > 0:
+            if (weight_decay > 0)&("LARS" not in optimizer._name):
                 l2_loss = compute_l2_loss(img_model) + compute_l2_loss(text_model)
             else:
                 l2_loss = 0
@@ -250,7 +250,8 @@ class CLIPTrainer(GenericExtractor):
         
         # create optimizer
         self._optimizer = self._build_optimizer(lr, lr_decay, opt_type=opt_type,
-                                                decay_type=decay_type)
+                                                decay_type=decay_type,
+                                                weight_decay=weight_decay)
         
         
         # build training step

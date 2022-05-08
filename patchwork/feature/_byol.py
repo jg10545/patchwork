@@ -139,7 +139,7 @@ def _build_byol_training_step(online, prediction, target, optimizer,
             lossdict["loss"] = mse_loss
             lossdict["mse_loss"] = mse_loss
 
-            if weight_decay > 0:
+            if (weight_decay > 0)&("LARS" not in optimizer._name):
                 lossdict["l2_loss"] = compute_l2_loss(online) + \
                             compute_l2_loss(prediction)
                 lossdict["loss"] += weight_decay*lossdict["l2_loss"]
@@ -275,7 +275,8 @@ class BYOLTrainer(GenericExtractor):
         
         # create optimizer
         self._optimizer = self._build_optimizer(lr, lr_decay, opt_type,
-                                                decay_type=decay_type)
+                                                decay_type=decay_type,
+                                                weight_decay=weight_decay)
         
         
         # build training step

@@ -113,13 +113,8 @@ def _build_simclr_training_step(embed_model, optimizer, temperature=0.1,
             z1 = tf.nn.l2_normalize(embed_model(x, training=True), 1)
             z2 = tf.nn.l2_normalize(embed_model(y, training=True), 1)
             
-            # get replica context- we'll use this to aggregate embeddings
-            # across different GPUs
-            #context = tf.distribute.get_replica_context()
             # aggregate projections across replicas. z1 and z2 should
             # now correspond to the global batch size (gbs, d)
-            #z1 = context.all_gather(z1, 0)
-            #z2 = context.all_gather(z2, 0)
             z1 = _gather(z1)
             z2 = _gather(z2)
         
@@ -128,7 +123,7 @@ def _build_simclr_training_step(embed_model, optimizer, temperature=0.1,
                                           decoupled, eps=eps, q=q)
             
         
-            if weight_decay > 0:
+            if (weight_decay > 0)&("LARS" not in optimizer._name):
                 l2_loss = compute_l2_loss(embed_model)
             else:
                 l2_loss = 0
@@ -210,8 +205,8 @@ class SimCLRTrainer(GenericExtractor):
             by Chuang et al
         :lr: (float) initial learning rate
         :lr_decay:  (int) number of steps for one decay period (0 to disable)
-        :decay_type: (string) how to decay the learning rate- "exponential" (smooth exponential decay), "staircase" (non-smooth exponential decay), or "cosine"
-        :opt_type: (string) optimizer type; "adam" or "momentum"
+        :decay_type: (string) how to decay the learning rate- "exponential" (smooth exponential decay), "staircase" (non-smooth exponential decay), "cosine", or "warmupcosine"
+        :opt_type: (string) optimizer type; "adam", "momentum", or "lars"
         :imshape: (tuple) image dimensions in H,W
         :num_channels: (int) number of image channels
         :norm: (int or float) normalization constant for images (for rescaling to
@@ -261,7 +256,8 @@ class SimCLRTrainer(GenericExtractor):
         
         # create optimizer
         self._optimizer = self._build_optimizer(lr, lr_decay, opt_type=opt_type,
-                                                decay_type=decay_type)
+                                                decay_type=decay_type,
+                                                weight_decay=weight_decay)
         
         
         # build training step
