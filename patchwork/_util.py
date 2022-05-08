@@ -175,6 +175,8 @@ def build_optimizer(lr, lr_decay=0, opt_type="adam", decay_type="exponential",
         
     # if we're using mixed precision, do automated loss scaling
     if tf.keras.mixed_precision.global_policy().name == 'mixed_float16':
+        name = opt._name
         opt = tf.keras.mixed_precision.LossScaleOptimizer(opt)
+        opt._name = name
         
     return opt
