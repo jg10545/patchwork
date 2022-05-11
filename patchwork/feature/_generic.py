@@ -32,7 +32,7 @@ INPUT_PARAMS = ["imshape", "num_channels", "norm", "batch_size",
 _TENSORBOARD_DESCRIPTIONS = {
     "loss":"Total training loss",
     "nce_batch_acc":"Accuracy of the contrastive training batch. *Hard Negative Mixing for Contrastive Learning* by Kalantidis *et al* uses this plot to gain some insight into differences between variations on MoCo.",
-    "alignment":"Alignment measure from Wang and Isola's *Understanding Contrastive Representation Learning through Alignment and Uniformity on the Hypersphere*. Measures how well-aligned positive pairs are (higher is better). Computes on test files.",
+    "alignment":"Alignment measure from Wang and Isola's *Understanding Contrastive Representation Learning through Alignment and Uniformity on the Hypersphere*. Measures how well-aligned positive pairs are **for a given augmentation strategy** (lower is better). Computes on test files.",
     "uniformity":"Uniformity measure from Wang and Isola's *Understanding Contrastive Representation Learning through Alignment and Uniformity on the Hypersphere*. Measures how well spread feature vectors are over the unit hypersphere (lower is better). Computes on test files.",
     "l2_loss":"Total squared magnitude of training weights for L2 loss computation. This is the value **before** rescaling by your weight decay parameter. this will be zero if weight decay is zero or if the LARS optimizer is used",
     "linear_classification_accuracy":"Downstream task test accuracy. Feature vectors for labeled images are average-pooled and used to train a multinomial regression model. Labeled points are deterministically split into 2/3 train, 1/3 test.",
