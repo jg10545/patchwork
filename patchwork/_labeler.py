@@ -243,7 +243,7 @@ def _generate_label_summary(df, classes):
 
 
 def pick_indices(df, pred_df, M, label_status, exclude_status,
-                 sort_by, subset_by, sampler=None):
+                 sort_by, subset_by, sampler=None, divsampler=None):
     """
     Function to handle selecting indices of images to label
     
@@ -285,6 +285,10 @@ def pick_indices(df, pred_df, M, label_status, exclude_status,
     elif ("BADGE" in sort_by)&(sampler is not None):
         indices = np.array(sampler(M))
         return indices
+    elif ("diversity" in sort_by)&(divsampler is not None):
+        indices = np.array(divsampler(M))
+        return indices
+    
     indices = sample.index.to_numpy()
     return indices
 
@@ -333,6 +337,8 @@ class Labeler():
         """
         # generate all sorting options
         sort_opts= ["random", "max entropy", "BADGE"]
+        if self._pw._diversity_sampler is not None:
+            sort_opts.append("diversity")
         for e in ["high: ", "low: ", "maxent: "]:
             for c in self._classes:
                 sort_opts.append(e+c)
@@ -384,7 +390,8 @@ class Labeler():
         exclude_status = self._exclude_status.value
         indices = pick_indices(self._df, self._pred_df, self._dim**2, 
                                label_status, exclude_status,
-                               sort_by, subset_by, self._pw._badge_sampler)
+                               sort_by, subset_by, self._pw._badge_sampler,
+                               self._pw._diversity_sampler)
         if len(indices) > 0:
             self._buttonpanel.load(indices)
             self._buttonpanel.label_counts.object = _generate_label_summary(self._df, self._classes)

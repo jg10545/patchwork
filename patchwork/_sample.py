@@ -29,9 +29,10 @@ def find_partially_labeled(df):
     return (~find_unlabeled(df))&(~find_fully_labeled(df))
 
 def find_labeled_indices(df):
-    # return indices of fully/partially labeled records
-    unlabeled = find_unlabeled(df)
-    return np.arange(len(unlabeled))[~unlabeled]
+    # return indices of fully labeled records
+    #unlabeled = find_unlabeled(df)
+    labeled = find_fully_labeled(df)
+    return np.arange(len(labeled))[labeled]
 
 def find_excluded_indices(df):
     # return indices of excluded records

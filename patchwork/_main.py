@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import panel as pn
 import tensorflow as tf
+import logging
 import os
 
 
@@ -35,7 +36,8 @@ class GUI(object):
                  imshape=(256,256), num_channels=3, norm=255,
                  num_parallel_calls=2, logdir=None, aug=True, 
                  fixmatch_aug=DEFAULT_FIXMATCH_AUGMENT, dim=4,
-                 tracking_uri=None, experiment_name=None, strategy=None):
+                 tracking_uri=None, experiment_name=None, strategy=None,
+                 diversity_sampling_proj_dim=None):
         """
         Initialize either with a set of feature vectors or a feature extractor
         
@@ -56,6 +58,10 @@ class GUI(object):
         :dim: grid dimension for labeler- show a (dim x dim) square of images
         :tracking_uri: string; URI of MLFlow tracking server
         :experiment_name: string; name for MLFlow experiment to track
+        :strategy: tensorflow strategy object for distributing across GPUs
+        :diversity_sampling_proj_dim: set to a positive integer to enable diversity
+            sampling. average-pooled feature vectors will be projected to this 
+            dimension.
         """
         self.fine_tuning_model = None
         self.df = df.copy()
@@ -96,6 +102,12 @@ class GUI(object):
                 {c:np.random.uniform(0,1,len(df)) for c in self.classes},
                 index=df.index)
         
+
+        if diversity_sampling_proj_dim is not None:
+            logging.info("computing projected embeddings for diversity sampling")
+            self.build_projected_embeddings(64, diversity_sampling_proj_dim)
+        else:
+            self._diversity_sampler = None
         
         # BUILD THE GUI
         # initialize Labeler object
@@ -120,6 +132,7 @@ class GUI(object):
         self.labelpropagator = LabelPropagator(self)
         # default optimizer
         self._opt = tf.keras.optimizers.Adam(1e-3)
+
 
         
         if tracking_uri is not None:
@@ -447,7 +460,7 @@ class GUI(object):
         output_gradients = np.concatenate(
             [compute_output_gradients(x).numpy() 
              for x in self._pred_dataset()[0]], axis=0)
-        # find the indices that have already been fully or partially
+        # find the indices that have already been fully 
         # labeled, so we can avoid sampling nearby
         indices = list(find_labeled_indices(self.df)) + \
                     list(find_excluded_indices(self.df))
@@ -455,6 +468,7 @@ class GUI(object):
         # initialize sampler
         self._badge_sampler = KPlusPlusSampler(output_gradients, indices=indices)
         
+    
     def build_nearest_neighbor_adjacency_matrix(self, pred_batch_size=32, n_neighbors=10,
                                                 temp=0.01):
         """
@@ -474,7 +488,46 @@ class GUI(object):
         # compute matrix
         self._adjacency_matrix = _get_weighted_adjacency_matrix(features, n_neighbors, temp)
     
-    
+   
+    def build_projected_embeddings(self, pred_batch_size=32, proj_dim=128):
+        """
+        
+        """
+        # build average-pool embedding model
+        fcn = self.models["feature_extractor"]
+        inpt = tf.keras.layers.Input((None, None, self._num_channels))
+        net = fcn(inpt)
+        net = tf.keras.layers.GlobalAvgPool2D()(net)
+        model = tf.keras.Model(inpt, net)
+        
+        # build a random projection matrix
+        proj = np.random.normal(0, 1, size=(pred_batch_size, proj_dim))
+        
+        # generate predictions
+        ds, steps = self._pred_dataset(pred_batch_size)
+        
+        matrix = np.concatenate([
+            tf.nn.l2_normalize(model(x), 1).numpy().dot(proj)
+            for x in ds
+            ], 0)
+        
+        # find the indices that have already been fully 
+        # labeled, so we can avoid sampling nearby
+        indices = list(find_labeled_indices(self.df)) + \
+                    list(find_excluded_indices(self.df))
+        
+        # initialize sampler
+        self._diversity_sampler = KPlusPlusSampler(matrix, indices=indices)
+        
+    def _update_diversity_sampler(self):
+        if self._diversity_sampler is not None:
+            X = self._diversity_sampler.X
+            indices = list(find_labeled_indices(self.df)) + \
+                    list(find_excluded_indices(self.df))
+            self._diversity_sampler = KPlusPlusSampler(X, indices=indices)  
+        
+     
+   
     def propagate_labels(self, iterations=10):
         """
         
