@@ -500,8 +500,10 @@ class GUI(object):
         net = tf.keras.layers.GlobalAvgPool2D()(net)
         model = tf.keras.Model(inpt, net)
         
+        D = model.output_shape[-1]
+        
         # build a random projection matrix
-        proj = np.random.normal(0, 1, size=(pred_batch_size, proj_dim))
+        proj = np.random.normal(0, 1, size=(D, proj_dim))
         
         # generate predictions
         ds, steps = self._pred_dataset(pred_batch_size)
