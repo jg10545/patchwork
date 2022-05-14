@@ -283,10 +283,10 @@ def pick_indices(df, pred_df, M, label_status, exclude_status,
         col = sort_by.replace("low: ", "")
         sample = pred_df[col].nsmallest(M)
     elif ("BADGE" in sort_by)&(sampler is not None):
-        indices = np.array(sampler(M))
+        indices = np.array(sampler(M, include=subset.values))
         return indices
     elif ("diversity" in sort_by)&(divsampler is not None):
-        indices = np.array(divsampler(M))
+        indices = np.array(divsampler(M, include=subset.values))
         return indices
     
     indices = sample.index.to_numpy()
