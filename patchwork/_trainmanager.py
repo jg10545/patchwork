@@ -236,6 +236,7 @@ class TrainManager():
                 self.pw._mlflow_track_run()
 
         if not abort:
+            self.pw._update_diversity_sampler()
             self._hist_callback()
             self.pw.save()
             self._footer.object = "### DONE"

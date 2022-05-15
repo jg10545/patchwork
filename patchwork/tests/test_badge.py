@@ -24,6 +24,38 @@ def test_KPlusPlusSampler():
     assert len(sampler.indices) == 6
     
     
+
+def test_KPlusPlusSampler_with_include_array():
+    N = 100
+    data = np.random.uniform(0,1, size=(N,2))
+    include = np.random.choice([False, True], size=N)
+    
+    sampler = KPlusPlusSampler(data)
+    
+    # SAMPLE ONE INDEX
+    ind = sampler(include=include)
+    assert isinstance(ind, list)
+    assert len(ind) == 1
+    assert isinstance(ind[0], int)
+    
+    # SAMPLE SEVERAL INDICES
+    inds = sampler(5, include)
+    assert isinstance(inds, list)
+    assert len(inds) == 5
+    assert isinstance(ind[0], int)
+    assert len(sampler.indices) == 6
+    
+def test_KPlusPlusSampler_fails_politely():
+    N = 10
+    data = np.random.uniform(0, 1, size=(N,2))
+    include = np.array([False]*7 + [True]*3)
+    
+    sampler = KPlusPlusSampler(data)
+    # sample more indices than we have available
+    inds = sampler(4, include)
+    assert isinstance(inds, list)
+    assert len(inds) == 3
+    
 def test_build_output_gradient_function():
     # simple mock fine-tuning network
     inpt = tf.keras.layers.Input((None, None, 8))

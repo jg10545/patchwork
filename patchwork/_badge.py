@@ -15,13 +15,26 @@ class KPlusPlusSampler():
     Class for drawing random indices using the initialization
     algorithm from kmeans++
     """
-    def __init__(self, X, indices=None):
+    def __init__(self, X, p=2, indices=None):
         """
-        :X: (N,d) array of vector
-        :indices: initial list of indices (for example, previously-
-            labeled records)
+        
+
+        Parameters
+        ----------
+        X : (N,d) array
+            Matrix containing the point cloud to sample from.
+        p : int
+            Exponent to raise distances to for sampling probabilities
+        indices : list, optional
+            initial list of previously-sampled indices to 
+            exclude from sampling. The default is None.
+
+        Returns
+        -------
+        None.
         """
         self.X = X
+        self.p = p
         self.N = X.shape[0]
         self.d = X.shape[1]
         if indices is None:
@@ -32,43 +45,105 @@ class KPlusPlusSampler():
         if len(indices) > 0:
             self.min_dists = cdist(X[np.array(indices),:], X).min(axis=0)
         
-    def _choose_initial_index(self):
-        ind = np.random.randint(self.N)
+    def _choose_initial_index(self, include=None):
+        """
+        Pick the first index
+
+        Parameters
+        ----------
+        include : array, optional
+            Boolean array of length N; only sample from indices where
+            include[i] == True. The default is None (sample from all indices).
+
+        Returns
+        -------
+        ind : int
+            The sampled index.
+
+        """
+        indices = np.arange(self.N, dtype=np.int64)
+        if include is not None:
+            indices = indices[include]
+        ind = np.random.choice(indices)
+        #ind = np.random.randint(self.N)
         self.indices.append(ind)
         self.min_dists = cdist(self.X[np.array([ind]),:], self.X).min(axis=0)
-        return ind
+        return int(ind)
     
-    def _choose_non_initial_index(self):
+    def _choose_non_initial_index(self, include=None):
+        """
+        Sample any index after the first one
+
+        Parameters
+        ----------
+        include : array, optional
+            Boolean array of length N; only sample from indices where
+            include[i] == True. The default is None (sample from all indices).
+
+        Returns
+        -------
+        ind : int
+            The sampled index
+
+        """
+        # set up indices and probabilities for sampling
+        indices = np.arange(self.N, dtype=np.int64)
+        prob = self.min_dists**self.p
+        # if necessary exclude some
+        if include is not None:
+            indices = indices[include]
+            prob = prob[include]
+        # make sure we fail gracefully!
+        if prob.sum() == 0:
+            return None
+        # normalize probs
+        prob /= prob.sum()
+            
         # compute sampling probabilities
-        p = self.min_dists**2
-        p /= p.sum()
+        #p = self.min_dists**2
+        #p /= p.sum()
         # sample new index
-        ind = np.random.choice(np.arange(self.N), p=p)
+        ind = np.random.choice(indices, p=prob)
         self.indices.append(ind)
         # update min distances
         min_dists = cdist(self.X[np.array([ind]),:], self.X).min(axis=0)
         self.min_dists = np.minimum(self.min_dists, min_dists)
-        return ind
+        return int(ind)
     
-    def choose(self, k=1):
+    def choose(self, k=1, include=None):
         """
-        Return a list of k sample indices
+        Sample k indices
+
+        Parameters
+        ----------
+        k : int
+            Number of indices to sample
+        include : array, optional
+            Boolean array of length N; only sample from indices where
+            include[i] == True. The default is None (sample from all indices).
+
+        Returns
+        -------
+        indices : list of ints
+            The sampled indices.
+
         """
         indices = []
         for _ in range(k):
             if len(self.indices) == 0:
-                ind = self._choose_initial_index()
+                ind = self._choose_initial_index(include)
             else:
-                ind = self._choose_non_initial_index()
-            indices.append(ind)
+                ind = self._choose_non_initial_index(include)
+            if ind is not None:
+                indices.append(ind)
             
         return indices
     
-    def __call__(self, k=1):
+    def __call__(self, k=1, include=None):
         """
         Return a list of k samples
         """
-        return self.choose(k)
+        return self.choose(k, include)
         
 
 def _build_output_gradient_function(*models):
