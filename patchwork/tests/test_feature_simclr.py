@@ -22,6 +22,13 @@ def test_build_embedding_model():
     assert len(model.layers) == 8
     
     
+def test_build_embedding_model_extra_layers():
+    model = _build_embedding_model(fcn, (32,32), 3, 17, 11, num_projection_layers=3)
+    assert isinstance(model, tf.keras.Model)
+    assert model.output_shape[-1] == 11
+    assert len(model.layers) == 8+3 # extra dense, batchnorm, and activation
+    
+    
 def test_build_simclr_training_step():
     model = _build_embedding_model(fcn, (32,32), 3, 5, 7)
     opt = tf.keras.optimizers.SGD()

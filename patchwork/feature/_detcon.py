@@ -6,7 +6,6 @@ import tensorflow as tf
 
 from patchwork._util import compute_l2_loss, _compute_alignment_and_uniformity
 from patchwork._augment import augment_function
-#from patchwork.feature._hcl import _simclr_softmax_prob, _hcl_softmax_prob, _build_negative_mask
 from patchwork.feature._contrastive import _contrastive_loss
 
 from patchwork.loaders import _image_file_dataset
@@ -153,7 +152,7 @@ def _build_trainstep(fcn, projector, optimizer, strategy, temp=1, weight_decay=0
             #softmax_loss = tf.reduce_mean(-1*mask*tf.math.log(softmax_prob))
             loss += softmax_loss
             
-            if weight_decay > 0:
+            if (weight_decay > 0)&("LARS" not in optimizer._name):
                 l2_loss = compute_l2_loss(fcn) + compute_l2_loss(projector)
                 loss += weight_decay*l2_loss
             else:
@@ -297,7 +296,8 @@ class DetConTrainer(GenericExtractor):
         
         # create optimizer
         self._optimizer = self._build_optimizer(lr, lr_decay, opt_type=opt_type,
-                                                decay_type=decay_type)
+                                                decay_type=decay_type,
+                                                weight_decay=weight_decay)
         
         
         # build training step

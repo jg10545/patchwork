@@ -67,9 +67,13 @@ def stack1(x, filters, blocks, stride1=2, final=False,
             x = block1(x, filters, conv_shortcut=False, BN=BN)
     return x
 
-def build_resnet50(input_shape=None, syncbn=True):
+def build_resnet50(input_shape=None, syncbn=True, width_multiplier=1):
     """
-    Build a ResNet50 with synched batchnorm
+    Build a ResNet50
+    
+    :input_shape:
+    :syncbn: whether to use synchronized batch normalization
+    :width_multiplier: scale filters by this factor
     """
     if syncbn:
         BN = tf.keras.layers.experimental.SyncBatchNormalization
@@ -78,10 +82,10 @@ def build_resnet50(input_shape=None, syncbn=True):
 
 
     def stack_fn(x):
-        x = stack1(x, 64, 3, stride1=1, BN=BN)
-        x = stack1(x, 128, 4, BN=BN)
-        x = stack1(x, 256, 6, BN=BN)
-        return stack1(x, 512, 3, final=True, BN=BN)
+        x = stack1(x, int(width_multiplier*64), 3, stride1=1, BN=BN)
+        x = stack1(x, int(width_multiplier*128), 4, BN=BN)
+        x = stack1(x, int(width_multiplier*256), 6, BN=BN)
+        return stack1(x, int(width_multiplier*512), 3, final=True, BN=BN)
 
     return ResNet(stack_fn, input_shape)
 

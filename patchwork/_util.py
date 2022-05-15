@@ -1,8 +1,9 @@
 import numpy as np
 from PIL import Image
 from scipy.spatial.distance import cdist
-
 import tensorflow as tf
+
+from patchwork._optimizers import CosineDecayWarmup, LARSOptimizer
 
 def shannon_entropy(x, how="max"):
     """
@@ -130,12 +131,17 @@ def _compute_alignment_and_uniformity(dataset, model, alpha=2, t=2):
 
 
 
-def build_optimizer(lr, lr_decay=0, opt_type="adam", decay_type="exponential"):
+def build_optimizer(lr, lr_decay=0, opt_type="adam", decay_type="exponential",
+                    weight_decay=None):
     """
     Macro to reduce some duplicative code for building optimizers
     for trainers
     
-    :decay_type: exponential or cosine
+    :lr: float; initial learning rate
+    :lr_decay: int; learning rate decay steps (0 to disable)
+    :opt_type: str; type of optimizer. "momentum", "adam", or "lars"
+    :decay_type: str; type of decay. "exponential", "staircase", "cosine", or "warmupcosine"
+    :weight_decay: float; weight decay parameter. ONLY APPLIES TO LARS
     """
     if lr_decay > 0:
         if decay_type == "exponential":
@@ -150,17 +156,27 @@ def build_optimizer(lr, lr_decay=0, opt_type="adam", decay_type="exponential"):
             lr = tf.keras.experimental.CosineDecayRestarts(lr, lr_decay,
                                                            t_mul=2., m_mul=1.,
                                                            alpha=0.)
+        elif decay_type == "warmupcosine":
+            lr = CosineDecayWarmup(lr, lr_decay)
         else:
             assert False, "don't recognize this decay type"
     if opt_type == "adam":
         opt = tf.keras.optimizers.Adam(lr)
     elif opt_type == "momentum":
         opt = tf.keras.optimizers.SGD(lr, momentum=0.9)
+    elif opt_type == "lars":
+        if weight_decay is None:
+            kwargs = {}
+        else:
+            kwargs = {"weight_decay":weight_decay}
+        opt = LARSOptimizer(lr, **kwargs)
     else:
         assert False, "dont know what to do with {}".format(opt_type)
         
     # if we're using mixed precision, do automated loss scaling
     if tf.keras.mixed_precision.global_policy().name == 'mixed_float16':
+        name = opt._name
         opt = tf.keras.mixed_precision.LossScaleOptimizer(opt)
+        opt._name = name
         
     return opt

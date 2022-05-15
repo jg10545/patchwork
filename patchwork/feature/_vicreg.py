@@ -1,13 +1,11 @@
 # -*- coding: utf-8 -*-
 # -*- coding: utf-8 -*-
-import numpy as np
 import tensorflow as tf
 
 from patchwork.feature._generic import GenericExtractor, _TENSORBOARD_DESCRIPTIONS
 from patchwork._util import compute_l2_loss, _compute_alignment_and_uniformity
 
 from patchwork.feature._moco import _build_augment_pair_dataset
-from patchwork.feature._contrastive import _contrastive_loss
 
 try:
     bnorm = tf.keras.layers.experimental.SyncBatchNormalization
@@ -122,7 +120,7 @@ def _build_vicreg_training_step(embed_model, optimizer, lam=25, mu=25, nu=1,
             # covariance
             cov_loss = _cov_loss(z1) + _cov_loss(z2)
         
-            if weight_decay > 0:
+            if (weight_decay > 0)&("LARS" not in optimizer._name):
                 l2_loss = compute_l2_loss(embed_model)
             else:
                 l2_loss = 0
@@ -177,8 +175,8 @@ class VICRegTrainer(GenericExtractor):
         :weight_decay: coefficient for L2-norm loss. 
         :lr: (float) initial learning rate
         :lr_decay:  (int) number of steps for one decay period (0 to disable)
-        :decay_type: (string) how to decay the learning rate- "exponential" (smooth exponential decay), "staircase" (non-smooth exponential decay), or "cosine"
-        :opt_type: (string) optimizer type; "adam" or "momentum"
+        :decay_type: (string) how to decay the learning rate- "exponential" (smooth exponential decay), "staircase" (non-smooth exponential decay), "cosine", or "warmupcosine"
+        :opt_type: (string) optimizer type; "adam", "momentum", or "lars"
         :imshape: (tuple) image dimensions in H,W
         :num_channels: (int) number of image channels
         :norm: (int or float) normalization constant for images (for rescaling to
@@ -227,7 +225,8 @@ class VICRegTrainer(GenericExtractor):
         
         # create optimizer
         self._optimizer = self._build_optimizer(lr, lr_decay, opt_type=opt_type,
-                                                decay_type=decay_type)
+                                                decay_type=decay_type,
+                                                weight_decay=weight_decay)
         
         
         # build training step

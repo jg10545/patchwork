@@ -79,7 +79,7 @@ def _build_trainstep(model, optimizer, strategy, temp=1, tau_plus=0, beta=0, wei
             softmax_loss = tf.reduce_mean(-1*tf.math.log(softmax_prob))
             loss += softmax_loss
             
-            if weight_decay > 0:
+            if (weight_decay > 0)&("LARS" not in optimizer._name):
                 l2_loss = compute_l2_loss(model)
                 loss += weight_decay*l2_loss
             else:
@@ -135,7 +135,7 @@ class HCLTrainer(GenericExtractor):
         :weight_decay: coefficient for L2-norm loss. The original SimCLR paper used 1e-6.
         :lr: (float) initial learning rate
         :lr_decay:  (int) number of steps for one decay period (0 to disable)
-        :decay_type: (string) how to decay the learning rate- "exponential" (smooth exponential decay), "staircase" (non-smooth exponential decay), or "cosine"
+        :decay_type: (string) how to decay the learning rate- "exponential" (smooth exponential decay), "staircase" (non-smooth exponential decay), "cosine", or "warmupcosine"
         :opt_type: (string) optimizer type; "adam" or "momentum"
         :imshape: (tuple) image dimensions in H,W
         :num_channels: (int) number of image channels
@@ -188,7 +188,8 @@ class HCLTrainer(GenericExtractor):
         
         # create optimizer
         self._optimizer = self._build_optimizer(lr, lr_decay, opt_type=opt_type,
-                                                decay_type=decay_type)
+                                                decay_type=decay_type,
+                                                weight_decay=weight_decay)
         
         
         # build training step

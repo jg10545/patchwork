@@ -77,7 +77,7 @@ def _generate_negative_embeddings(neg_ims, model, imshape, norm=255):
     """
     # load and stack a batch of negative images
     if isinstance(neg_ims[0], str):
-        neg_ims = [np.array(Image.open(f).resize(imshape).astype(np.float32))/norm for 
+        neg_ims = [np.array(Image.open(f).resize(imshape)).astype(np.float32)/norm for 
            f in neg_ims]
     neg_ims = np.stack(neg_ims, 0)
     # run through the model

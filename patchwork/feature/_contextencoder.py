@@ -5,7 +5,6 @@
 """
 import numpy as np
 import tensorflow as tf
-#import tensorflow.contrib
 import tensorflow.keras.backend as K
 import warnings
 

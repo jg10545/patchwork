@@ -90,7 +90,7 @@ def _build_fixmatch_training_step(model, optimizer, lam=0,
             
             trainloss = tf.reduce_mean(K.binary_crossentropy(y, preds))
             
-            if weight_decay > 0:
+            if (weight_decay > 0)&("LARS" not in optimizer._name):
                 l2_loss = compute_l2_loss(model)
             else:
                 l2_loss = 0
@@ -185,8 +185,9 @@ class FixMatchTrainer(GenericExtractor):
         :weight_decay: (float) coefficient for L2-norm loss.
         :lr: learning rate
         :lr_decay: learning rate decay (set to 0 to disable)
-        :decay_type: (str) how to decay learning rate; "exponential", "cosine", or "staircase"
-        :opt_type: (str) optimizer type
+        :decay_type: (str) how to decay learning rate; "exponential", "cosine", 
+            "staircase", or "warmupcosine"
+        :opt_type: (str) optimizer type; "momentum", "adam", or "lars"
         :imshape: (tuple) image dimensions in H,W
         :num_channels: (int) number of image channels
         :norm: (int or float) normalization constant for images (for rescaling to
@@ -215,7 +216,8 @@ class FixMatchTrainer(GenericExtractor):
         # create optimizer
         self._optimizer = self._build_optimizer(lr, lr_decay, 
                                                 decay_type=decay_type,
-                                                opt_type=opt_type)
+                                                opt_type=opt_type,
+                                                weight_decay=weight_decay)
         
         
         # build our training dataset
@@ -266,7 +268,7 @@ class FixMatchTrainer(GenericExtractor):
                 self.step += 1
         
             
-    def evaluate(self, avpool=True):
+    def evaluate(self, avpool=True, **kwargs):
         predictions = self._models["full"].predict(self._val_ds)
         num_categories = len(self.categories)
         

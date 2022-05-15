@@ -32,9 +32,9 @@ INPUT_PARAMS = ["imshape", "num_channels", "norm", "batch_size",
 _TENSORBOARD_DESCRIPTIONS = {
     "loss":"Total training loss",
     "nce_batch_acc":"Accuracy of the contrastive training batch. *Hard Negative Mixing for Contrastive Learning* by Kalantidis *et al* uses this plot to gain some insight into differences between variations on MoCo.",
-    "alignment":"Alignment measure from Wang and Isola's *Understanding Contrastive Representation Learning through Alignment and Uniformity on the Hypersphere*. Measures how well-aligned positive pairs are (higher is better). Computes on test files.",
+    "alignment":"Alignment measure from Wang and Isola's *Understanding Contrastive Representation Learning through Alignment and Uniformity on the Hypersphere*. Measures how well-aligned positive pairs are **for a given augmentation strategy** (lower is better). Computes on test files.",
     "uniformity":"Uniformity measure from Wang and Isola's *Understanding Contrastive Representation Learning through Alignment and Uniformity on the Hypersphere*. Measures how well spread feature vectors are over the unit hypersphere (lower is better). Computes on test files.",
-    "l2_loss":"Total squared magnitude of training weights for L2 loss computation. This is the value **before** rescaling by your weight decay parameter.",
+    "l2_loss":"Total squared magnitude of training weights for L2 loss computation. This is the value **before** rescaling by your weight decay parameter. this will be zero if weight decay is zero or if the LARS optimizer is used",
     "linear_classification_accuracy":"Downstream task test accuracy. Feature vectors for labeled images are average-pooled and used to train a multinomial regression model. Labeled points are deterministically split into 2/3 train, 1/3 test.",
     "first_convolution_filters":"Kernels from the first convolutional layer of the feature extractor.",
     "closest_feature_vectors":"Image retrieval test. Each image in the leftmost column is from a different class in your labeled dataset; the images to the right are the images whose features had the smallest cosine simlarity."
@@ -52,8 +52,8 @@ def _run_this_epoch(flag, e):
 
 
 SPECIAL_HPARAMS = {
-    "decay_type":["cosine", "exponential", "staircase"],
-    "opt_type":["adam", "momentum"]
+    "decay_type":["cosine", "exponential", "staircase", "warmupcosine"],
+    "opt_type":["adam", "momentum", "lars"]
     }
 
 def _configure_hparams(logdir, dicts, 
@@ -382,10 +382,12 @@ class GenericExtractor(object):
                                     **self.input_config)
         self._record_scalars(rotation_classification_accuracy=acc, metric=True)
                 
-    def _build_optimizer(self, lr, lr_decay=0, opt_type="adam", decay_type="exponential"):
+    def _build_optimizer(self, lr, lr_decay=0, opt_type="adam", decay_type="exponential",
+                         weight_decay=None):
         # macro for creating the Keras optimizer
         with self.scope():
-            opt = build_optimizer(lr, lr_decay,opt_type, decay_type)
+            opt = build_optimizer(lr, lr_decay, opt_type, decay_type,
+                                  weight_decay=weight_decay)
         return opt
     
 

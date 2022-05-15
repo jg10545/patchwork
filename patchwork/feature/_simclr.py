@@ -24,7 +24,8 @@ for d in _TENSORBOARD_DESCRIPTIONS:
 
 
 
-def _build_embedding_model(fcn, imshape, num_channels, num_hidden, output_dim, batchnorm=True):
+def _build_embedding_model(fcn, imshape, num_channels, num_hidden, output_dim, 
+                           batchnorm=True, num_projection_layers=2):
     """
     Create a Keras model that wraps the base encoder and 
     the projection head
@@ -46,13 +47,17 @@ def _build_embedding_model(fcn, imshape, num_channels, num_hidden, output_dim, b
     net = tf.keras.layers.GlobalAvgPool2D(dtype="float32")(net)
     # NORMAL SimCLR CASE
     if num_hidden > 0:
-        net = tf.keras.layers.Dense(num_hidden, dtype="float32")(net)
-        if batchnorm:
-            net = bnorm(dtype="float32")(net)
-        net = tf.keras.layers.Activation("relu", dtype="float32")(net)
+        # for every projection layer except the final one: ReLU activation
+        for _ in range(num_projection_layers-1):
+            net = tf.keras.layers.Dense(num_hidden, dtype="float32")(net)
+            if batchnorm:
+                net = bnorm(dtype="float32")(net)
+            net = tf.keras.layers.Activation("relu", dtype="float32")(net)
+        # for the final layer- linear activation and no bias
         net = tf.keras.layers.Dense(output_dim, use_bias=False, dtype="float32")(net)
         if batchnorm:
             net = bnorm(dtype="float32")(net)
+            
     else:
         # DirectCLR CASE
         net = tf.keras.layers.Lambda(lambda x: x[:,:output_dim])(net)
@@ -108,13 +113,8 @@ def _build_simclr_training_step(embed_model, optimizer, temperature=0.1,
             z1 = tf.nn.l2_normalize(embed_model(x, training=True), 1)
             z2 = tf.nn.l2_normalize(embed_model(y, training=True), 1)
             
-            # get replica context- we'll use this to aggregate embeddings
-            # across different GPUs
-            #context = tf.distribute.get_replica_context()
             # aggregate projections across replicas. z1 and z2 should
             # now correspond to the global batch size (gbs, d)
-            #z1 = context.all_gather(z1, 0)
-            #z2 = context.all_gather(z2, 0)
             z1 = _gather(z1)
             z2 = _gather(z2)
         
@@ -123,7 +123,7 @@ def _build_simclr_training_step(embed_model, optimizer, temperature=0.1,
                                           decoupled, eps=eps, q=q)
             
         
-            if weight_decay > 0:
+            if (weight_decay > 0)&("LARS" not in optimizer._name):
                 l2_loss = compute_l2_loss(embed_model)
             else:
                 l2_loss = 0
@@ -175,6 +175,7 @@ class SimCLRTrainer(GenericExtractor):
     def __init__(self, logdir, trainingdata, testdata=None, fcn=None, 
                  augment=True, temperature=0.1, num_hidden=2048,
                  output_dim=2048, batchnorm=True, weight_decay=0,
+                 num_projection_layers=2,
                  decoupled=False, eps=0, q=0,
                  lr=0.01, lr_decay=100000, decay_type="exponential",
                  opt_type="adam",
@@ -188,23 +189,24 @@ class SimCLRTrainer(GenericExtractor):
         :testdata: (list) filepaths of a batch of images to use for eval
         :fcn: (keras Model) fully-convolutional network to train as feature extractor
         :augment: (dict) dictionary of augmentation parameters, True for defaults
-        :temperature: the Boltzmann temperature parameter- rescale the cosine similarities by this factor before computing softmax loss.
-        :num_hidden: number of hidden neurons in the network's projection head. Set to 0 to 
+        :temperature: (float) the Boltzmann temperature parameter- rescale the cosine similarities by this factor before computing softmax loss.
+        :num_hidden: (int) number of hidden neurons in the network's projection head. Set to 0 to 
             use the DirectCLR method from "Understanding Dimesnional Collapse in Contrastive
             Self-Supervised Learning"
-        :output_dim: dimension of projection head's output space. Figure 8 in Chen et al's paper shows that their results did not depend strongly on this value.
-        :batchnorm: whether to include batch normalization in the projection head.
-        :weight_decay: coefficient for L2-norm loss. The original SimCLR paper used 1e-6.
-        :decoupled: if True, use the modified loss function from "Decoupled Contrastive 
+        :output_dim: (int) dimension of projection head's output space. Figure 8 in Chen et al's paper shows that their results did not depend strongly on this value.
+        :batchnorm: (bool) whether to include batch normalization in the projection head.
+        :weight_decay: (float) coefficient for L2-norm loss. The original SimCLR paper used 1e-6.
+        :num_projection_layers: (int) number of layers in the projection head, including the output layer
+        :decoupled: (bool) if True, use the modified loss function from "Decoupled Contrastive 
             Learning" by Yeh et al
-        :eps: epsilon parameter from the Implicit Feature Modification paper ("Can
+        :eps: (float) epsilon parameter from the Implicit Feature Modification paper ("Can
              contrastive learning avoid shortcut solutions?" by Robinson et al)
-        :q: RINCE loss parameter from "Robust Contrastive Learning against Noisy Views"
+        :q: (float) RINCE loss parameter from "Robust Contrastive Learning against Noisy Views"
             by Chuang et al
         :lr: (float) initial learning rate
         :lr_decay:  (int) number of steps for one decay period (0 to disable)
-        :decay_type: (string) how to decay the learning rate- "exponential" (smooth exponential decay), "staircase" (non-smooth exponential decay), or "cosine"
-        :opt_type: (string) optimizer type; "adam" or "momentum"
+        :decay_type: (string) how to decay the learning rate- "exponential" (smooth exponential decay), "staircase" (non-smooth exponential decay), "cosine", or "warmupcosine"
+        :opt_type: (string) optimizer type; "adam", "momentum", or "lars"
         :imshape: (tuple) image dimensions in H,W
         :num_channels: (int) number of image channels
         :norm: (int or float) normalization constant for images (for rescaling to
@@ -237,7 +239,8 @@ class SimCLRTrainer(GenericExtractor):
             # Create a Keras model that wraps the base encoder and 
             # the projection head
             embed_model = _build_embedding_model(fcn, imshape, num_channels,
-                                             num_hidden, output_dim, batchnorm)
+                                             num_hidden, output_dim, batchnorm,
+                                             num_projection_layers)
         
         self._models = {"fcn":fcn, 
                         "full":embed_model}
@@ -253,7 +256,8 @@ class SimCLRTrainer(GenericExtractor):
         
         # create optimizer
         self._optimizer = self._build_optimizer(lr, lr_decay, opt_type=opt_type,
-                                                decay_type=decay_type)
+                                                decay_type=decay_type,
+                                                weight_decay=weight_decay)
         
         
         # build training step
