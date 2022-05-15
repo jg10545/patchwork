@@ -37,7 +37,8 @@ class GUI(object):
                  num_parallel_calls=2, logdir=None, aug=True, 
                  fixmatch_aug=DEFAULT_FIXMATCH_AUGMENT, dim=4,
                  tracking_uri=None, experiment_name=None, strategy=None,
-                 diversity_sampling_proj_dim=None):
+                 diversity_sampling_proj_dim=None, diversity_sampler_batch_size=64,
+                 diversity_sampling_power=2):
         """
         Initialize either with a set of feature vectors or a feature extractor
         
@@ -62,6 +63,10 @@ class GUI(object):
         :diversity_sampling_proj_dim: set to a positive integer to enable diversity
             sampling. average-pooled feature vectors will be projected to this 
             dimension.
+        :diversity_sampler_batch_size: batch size to use for initial feature generation
+            for the diversity sampler
+        :diversity_sampling_power: power to raise distances to for probabilities for
+            k++ sampling.
         """
         self.fine_tuning_model = None
         self.df = df.copy()
@@ -103,9 +108,11 @@ class GUI(object):
                 index=df.index)
         
 
+        self._div_sampling_power = diversity_sampling_power
         if diversity_sampling_proj_dim is not None:
             logging.info("computing projected embeddings for diversity sampling")
-            self.build_projected_embeddings(64, diversity_sampling_proj_dim)
+            self.build_projected_embeddings(diversity_sampler_batch_size,
+                                            diversity_sampling_proj_dim)
         else:
             self._diversity_sampler = None
         
@@ -489,7 +496,7 @@ class GUI(object):
         self._adjacency_matrix = _get_weighted_adjacency_matrix(features, n_neighbors, temp)
     
    
-    def build_projected_embeddings(self, pred_batch_size=32, proj_dim=128):
+    def build_projected_embeddings(self, pred_batch_size=32, proj_dim=128, p=2):
         """
         
         """
@@ -519,14 +526,15 @@ class GUI(object):
                     list(find_excluded_indices(self.df))
         
         # initialize sampler
-        self._diversity_sampler = KPlusPlusSampler(matrix, indices=indices)
+        self._diversity_sampler = KPlusPlusSampler(matrix, p=p, indices=indices)
         
     def _update_diversity_sampler(self):
+        p = self._div_sampling_power
         if self._diversity_sampler is not None:
             X = self._diversity_sampler.X
             indices = list(find_labeled_indices(self.df)) + \
                     list(find_excluded_indices(self.df))
-            self._diversity_sampler = KPlusPlusSampler(X, indices=indices)  
+            self._diversity_sampler = KPlusPlusSampler(X, p=p, indices=indices)  
         
      
    
