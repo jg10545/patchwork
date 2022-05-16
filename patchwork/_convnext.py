@@ -19,7 +19,7 @@ _blocks = {
 }
 
 
-def _add_convnext_block(inpt):
+def _add_convnext_block(inpt, **kwargs):
     """
     
     """
@@ -31,7 +31,7 @@ def _add_convnext_block(inpt):
     x = tf.keras.layers.Activation(tf.nn.gelu)(x)
     
     x = tf.keras.layers.Conv2D(k0,1)(x)
-    return tf.keras.layers.Add()([inpt,x])
+    return tf.keras.layers.Add(**kwargs)([inpt,x])
 
 
 def build_convnext_fcn(m, num_channels=3):
@@ -43,9 +43,13 @@ def build_convnext_fcn(m, num_channels=3):
     x = tf.keras.layers.LayerNormalization()(x)
     
     for stage in range(4):
+        if stage == 3:
+            kwargs = {"dtype":"float32"}
+        else:
+            kwargs = {}
         # add stage of convnext blocks
         for i in range(_blocks[m][stage]):
-            x = _add_convnext_block(x)
+            x = _add_convnext_block(x, **kwargs)
         if stage < 3:
             # add downsampling layer
             x = tf.keras.layers.LayerNormalization()(x)
