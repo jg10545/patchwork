@@ -91,6 +91,7 @@ class QuickTagger():
         
         self._samplesavebutton = pn.widgets.Button(name="save and sample", button_type="primary", width=size)
         self._samplebutton = pn.widgets.Button(name="sample without saving", button_type="danger", width=size)
+        self._backbutton = pn.widgets.Button(name="go back", button_type="warning", width=size)
         self._summaries = pn.pane.DataFrame(self._compute_summaries(), index=False, width=size)
         self.panel = pn.Row(
             self._grid,
@@ -100,12 +101,14 @@ class QuickTagger():
                 self._strategy,
                 self._samplesavebutton,
                 self._samplebutton,
+                self._backbutton,
                 self._summaries
             )
         )
         # set up button callbacks
         self._samplebutton.on_click(self._sample)
         self._samplesavebutton.on_click(self._record_and_sample_callback)
+        self._backbutton.on_click(self._go_back_callback)
         
         
     def serve(self, **kwargs):
@@ -139,6 +142,7 @@ class QuickTagger():
         
     def _sample(self, *events):
         cat = self._classchooser.value
+        self._previous_indices = self._current_indices.copy()
         if self._strategy.value == "uniform":
             self._current_indices = self._get_uniform_sampled_indices()
         else:
@@ -146,6 +150,12 @@ class QuickTagger():
             
         for e,i in enumerate(self._current_indices):
             self._taggers[e].update_image(self.df.filepath.values[i], cat)
+            
+    def _go_back_callback(self, *events):
+        self._current_indices = self._previous_indices
+        for e,i in enumerate(self._current_indices):
+            self._taggers[e].update_image(self.df.filepath.values[i],
+                                          self._classchooser.value)
         
     def _record(self):
         for i, t in zip(self._current_indices, self._taggers):
