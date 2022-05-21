@@ -75,6 +75,8 @@ class QuickTagger():
                            in PROTECTED_COLUMN_NAMES]
         
         self._set_up_panel(size)
+        if "subset" in df.columns:
+            self._stratify_categories = df.subset.unique()
         
     def _set_up_panel(self, size=200):
         init_sample_indices = np.random.choice(np.arange(len(self.df))[pd.isna(self.df[self.categories[0]])], 9)
@@ -84,8 +86,8 @@ class QuickTagger():
         self._grid = pn.GridBox(*[t.panel for t in self._taggers], ncols=3, nrows=3, width=3*size)
         self._classchooser = pn.widgets.Select(options=self.categories, 
                                                value=self.categories[0], name="Class to annotate", width=size)
-        self._selectchooser = pn.widgets.Select(options=["all", "partially labeled"], value="all", 
-                                                name="Sample from", width=size)
+        self._strategy = pn.widgets.Select(options=["uniform", "stratified"],
+                                           name="Sampling strategy", width=size)
         
         self._samplesavebutton = pn.widgets.Button(name="save and sample", button_type="primary", width=size)
         self._samplebutton = pn.widgets.Button(name="sample without saving", button_type="danger", width=size)
@@ -95,7 +97,7 @@ class QuickTagger():
             pn.Spacer(width=50),
             pn.Column(
                 self._classchooser,
-                self._selectchooser,
+                self._strategy,
                 self._samplesavebutton,
                 self._samplebutton,
                 self._summaries
@@ -106,15 +108,42 @@ class QuickTagger():
         self._samplesavebutton.on_click(self._record_and_sample_callback)
         
         
+    def serve(self, **kwargs):
+        """
+        wrapper for panel.serve()
+        """
+        p = self.panel
+        pn.serve(p, title="quicktagger", **kwargs)
+        
+    def _get_uniform_sampled_indices(self):
+        cat = self._classchooser.value
+        available_indices = np.arange(len(self.df))[pd.isna(self.df[cat])]
+        return np.random.choice(available_indices, size=9, replace=False)
+    
+    def _get_stratified_sampled_indices(self):
+        assert hasattr(self, "_stratify_categories"), "need a subset column for stratified sampling"
+        cat = self._classchooser.value
+        indices = np.arange(len(self.df))
+        unlab = pd.isna(self.df[cat])
+        
+        sampled = []
+        while len(sampled) < 9:
+            # pick a subset
+            subset = np.random.choice(self._stratify_categories)
+            available_indices = indices[unlab&(self.df.subset == subset)]
+            if len(available_indices) > 0:
+                sampled.append(np.random.choice(available_indices))
+        return np.array(sampled)
+        
+        
         
     def _sample(self, *events):
         cat = self._classchooser.value
-        if self._selectchooser.value == "partially_labeled":
-            available_indices = np.arange(len(self.df))[pd.isna(self.df[cat])&find_partially_labeled(self.df)]
+        if self._strategy.value == "uniform":
+            self._current_indices = self._get_uniform_sampled_indices()
         else:
-            available_indices = np.arange(len(self.df))[pd.isna(self.df[cat])]
+            self._current_indices = self._get_stratified_sampled_indices()
             
-        self._current_indices = np.random.choice(available_indices, size=9, replace=False)
         for e,i in enumerate(self._current_indices):
             self._taggers[e].update_image(self.df.filepath.values[i], cat)
         
