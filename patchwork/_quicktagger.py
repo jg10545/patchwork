@@ -178,8 +178,27 @@ class QuickTagger():
         return pd.DataFrame(label_counts, columns=["class", "None", "0", "1"])
     
     def save(self):
+        """
+        Save only the parts of the dataframe that have at least one label
+        """
         if self.outfile is not None:
-            self.df.to_csv(self.outfile, index=False)
+            keep = np.array([False]*len(self.df))
+            for c in self.categories:
+                keep = keep|pd.notna(self.df[c]).values
+            
+            self.df[keep].to_csv(self.outfile, index=False)
+            
+    def save_all(self, outfile=None):
+        """
+        Save the entire dataframe, including unlabeled rows
+        """
+        if outfile is None:
+            if self.outfile is not None:
+                outfile = self.outfile
+            else:
+                assert False, "i don't know where to save this"
+                
+        self.df.to_csv(outfile, index=False)
     
 
 
