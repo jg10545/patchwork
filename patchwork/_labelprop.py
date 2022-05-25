@@ -37,6 +37,9 @@ def _propagate_labels(df, W_norm, t=20):
     
     """
     classes = [c for c in df.columns if c not in PROTECTED_COLUMN_NAMES]
+    d = len(classes)
+    N = len(df)
+    """
     Y = {}
     training = (~df.exclude.values)&(~df.validation.values)
     for c in classes:
@@ -50,6 +53,31 @@ def _propagate_labels(df, W_norm, t=20):
             Y[c][subset] = hardlabels
           
     pred_df = pd.DataFrame(Y, index=df.index)
+    """
+    #------
+    Y = np.zeros((N,2*d))
+    # neg array should be (N,d)
+    neg = np.stack([(~df.exclude.values)&(~df.validation.values)&(df[c] == 0).values
+                    for c in classes], 1).astype(float)
+    # pos array should be (N,d)
+    pos = np.stack([(~df.exclude.values)&(~df.validation.values)&(df[c] == 1).values
+                    for c in classes], 1).astype(float)
+    # training data should be same as Y- (N,2d)
+    train = np.concatenate([neg, pos], 1)
+    subset = train > 0
+    traindata = train[subset]
+    Y[subset] = traindata
+    # iteratively multiply the pseudolabels by the matrix
+    for _ in range(t):
+        Y = W_norm.dot(Y)
+        # reset the hard labels each time
+        Y[subset] = traindata
+        
+    # finally (this detail was missing from the paper so I'm making it up) 
+    # normalize the pseudolabels
+    pseudolabels = Y[:,d:]/(Y[:,:d] + Y[:,d:])
+        
+    pred_df = pd.DataFrame(pseudolabels, index=df.index, columns=classes)
     return pred_df
 
 
