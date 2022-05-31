@@ -12,6 +12,7 @@ def _get_weighted_adjacency_matrix(features, n_neighbors=10, temp=0.01):
     """
     
     """
+    # find k nearest neighbors and associated distances for each point
     neighbors = sklearn.neighbors.NearestNeighbors(metric="cosine").fit(features)
     distances, indices = neighbors.kneighbors(features, n_neighbors=n_neighbors+1,
                                           return_distance=True)
@@ -21,40 +22,27 @@ def _get_weighted_adjacency_matrix(features, n_neighbors=10, temp=0.01):
     indices = indices[:,1:]
     # compute weights (equation 2 from paper)
     # note that I added a negative sign in the exponent so that
-    # closer vectors are weighed higher
+    # closer vectors are weighed higher (I assume that's a typo?)
     weights = np.exp(-1*distances/temp)
-    
+    # convert weights to a sparse matrix
     row_indices = np.stack([np.arange(indices.shape[0])]*indices.shape[1],1)
     A = scipy.sparse.csr_matrix((weights.ravel(), (row_indices.ravel(),
                                               indices.ravel())))
-    
+    # normalize
     D_inv_sqrt = scipy.sparse.diags(1/np.sqrt(weights.sum(1)))
     W_norm = D_inv_sqrt*A*D_inv_sqrt
     return W_norm
 
 def _propagate_labels(df, W_norm, t=20):
     """
-    
+    Label propagation method following "Self-supervised Semi-supervised Learning for 
+    Data Labeling and Quality Evaluation" by Bai et al. Adjusted for our
+    multi-hot approach.
     """
     classes = [c for c in df.columns if c not in PROTECTED_COLUMN_NAMES]
     d = len(classes)
     N = len(df)
-    """
-    Y = {}
-    training = (~df.exclude.values)&(~df.validation.values)
-    for c in classes:
-        Y[c] = 0.5*np.ones(len(df))
-        subset = training&pd.notnull(df[c]).values
-        hardlabels = df[c][subset].values
-        Y[c][subset] = hardlabels
-    
-        for _ in range(t):
-            Y[c] = W_norm.dot(Y[c])
-            Y[c][subset] = hardlabels
-          
-    pred_df = pd.DataFrame(Y, index=df.index)
-    """
-    #------
+
     Y = np.zeros((N,2*d))
     # neg array should be (N,d)
     neg = np.stack([(~df.exclude.values)&(~df.validation.values)&(df[c] == 0).values
