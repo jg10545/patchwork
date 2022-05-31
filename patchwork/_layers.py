@@ -113,7 +113,8 @@ def _next_layer(old_layer, spec, kernel_size=3, padding="same", dropout_rate=0.5
         -"r": add a residual v2 layer
     
     """
-    BN = tf.keras.layers.BatchNormalization
+    #BN = tf.keras.layers.BatchNormalization
+    BN = tf.keras.layers.experimental.SyncBatchNormalization
     if separable:
         conv = tf.keras.layers.SeparableConv2D
     else:
