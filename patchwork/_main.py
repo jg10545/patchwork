@@ -88,6 +88,7 @@ class GUI(object):
         self._semi_supervised = False
         self._logdir = logdir
         self.models = {"feature_extractor":feature_extractor, 
+                       "feature_extractor_backup":feature_extractor, 
                        "teacher_fine_tuning":None,
                        "teacher_output":None}
         # place to hide hyperparameter info for models
@@ -337,6 +338,8 @@ class GUI(object):
         """
         opt = build_optimizer(lr, lr_decay=lr_decay, opt_type=opt_type,
                               decay_type=decay_type)
+        
+            
         trainfunc = build_training_function(self.loss_fn, opt,
                                         self.models["fine_tuning"],
                                         self.models["output"],
