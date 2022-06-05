@@ -43,7 +43,17 @@ def build_training_function(loss_fn, opt, fine_tuning, output, feature_extractor
             assert (x_unlab_wk is not None)&(x_unlab_str is not None)
             N = x.shape[0]
             mu_N = x_unlab_wk.shape[0]
-            x = tf.concat([x, x_unlab_wk, x_unlab_str], 0)
+            #x = tf.concat([x, x_unlab_wk, x_unlab_str], 0)
+            x = tf.concat([x, x_unlab_str], 0)
+            preds_wk = model(x_unlab_wk)
+            # round weak predictions to pseudolabels
+            pseudolabels = tf.cast(preds_wk > 0.5, 
+                                           tf.float32)
+            # also compute a mask from the predictions,
+            # since we only incorporate high-confidence cases,
+            # compute a mask that's 1 every place that's close
+            # to 1 or 0
+            mask = build_mask(preds_wk)
         
         # for dynamically-computed features, run images through the
         # feature extractor
@@ -63,18 +73,19 @@ def build_training_function(loss_fn, opt, fine_tuning, output, feature_extractor
                 # separate out predictions from labeled batch,
                 # weakly-augmented unlabeled batch, and strongly augmented
                 # unlabeled batch
-                preds_wk = y_pred[N:N+mu_N,:]
-                preds_str = y_pred[N+mu_N:,:]
+                #preds_wk = y_pred[N:N+mu_N,:]
+                #preds_str = y_pred[N+mu_N:,:]
+                preds_str = y_pred[N:,:]
                 y_pred = y_pred[:N,:]
-                with tape.stop_recording():
-                    # round weak predictions to pseudolabels
-                    pseudolabels = tf.cast(preds_wk > 0.5, 
-                                           tf.float32)
-                    # also compute a mask from the predictions,
-                    # since we only incorporate high-confidence cases,
-                    # compute a mask that's 1 every place that's close
-                    # to 1 or 0
-                    mask = build_mask(preds_wk)
+                #with tape.stop_recording():
+                #    # round weak predictions to pseudolabels
+                #    pseudolabels = tf.cast(preds_wk > 0.5, 
+                #                           tf.float32)
+                #    # also compute a mask from the predictions,
+                #    # since we only incorporate high-confidence cases,
+                #    # compute a mask that's 1 every place that's close
+                #    # to 1 or 0
+                #    mask = build_mask(preds_wk)
 
                 crossent_tensor = K.binary_crossentropy(pseudolabels,
                                                         preds_str)
