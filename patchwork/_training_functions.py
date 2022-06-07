@@ -37,14 +37,11 @@ def build_training_function(loss_fn, opt, fine_tuning, output, feature_extractor
         return tf.cast(mask, tf.float32)
     
     def training_step(x, y, x_unlab_wk=None, x_unlab_str=None):
-        # If we're using fixmatch we gotta concatenate everything into
-        # one big bad batch
+        # build pseudolabels and mask outside gradienttape
         if lam > 0:
             assert (x_unlab_wk is not None)&(x_unlab_str is not None)
-            N = x.shape[0]
-            mu_N = x_unlab_wk.shape[0]
-            #x = tf.concat([x, x_unlab_wk, x_unlab_str], 0)
-            x = tf.concat([x, x_unlab_str], 0)
+            if (feature_extractor is not None):
+                x_unlab_wk = feature_extractor(x_unlab_wk)
             preds_wk = model(x_unlab_wk)
             # round weak predictions to pseudolabels
             pseudolabels = tf.cast(preds_wk > 0.5, 
@@ -59,11 +56,15 @@ def build_training_function(loss_fn, opt, fine_tuning, output, feature_extractor
         # feature extractor
         if (feature_extractor is not None)&(finetune == False):
             x = feature_extractor(x)
+            if x_unlab_str is not None:
+                x_unlab_str = feature_extractor(x_unlab_str)
             
         with tf.GradientTape() as tape:
             # run images through the feature extractor if we're fine-tuning
             if (feature_extractor is not None)&finetune:
                 x = feature_extractor(x, training=True)
+                if x_unlab_str is not None:
+                    x_unlab_str = feature_extractor(x_unlab_str, training=True)
             
             # compute outputs for training data
             y_pred = model(x, True)
@@ -75,8 +76,9 @@ def build_training_function(loss_fn, opt, fine_tuning, output, feature_extractor
                 # unlabeled batch
                 #preds_wk = y_pred[N:N+mu_N,:]
                 #preds_str = y_pred[N+mu_N:,:]
-                preds_str = y_pred[N:,:]
-                y_pred = y_pred[:N,:]
+                #preds_str = y_pred[N:,:]
+                #y_pred = y_pred[:N,:]
+                preds_str = model(x_unlab_str, True)
                 #with tape.stop_recording():
                 #    # round weak predictions to pseudolabels
                 #    pseudolabels = tf.cast(preds_wk > 0.5, 
