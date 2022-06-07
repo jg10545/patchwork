@@ -75,6 +75,8 @@ class QuickTagger():
                            in PROTECTED_COLUMN_NAMES]
         
         self._set_up_panel(size)
+        if "subset" in df.columns:
+            self._stratify_categories = df.subset.unique()
         
     def _set_up_panel(self, size=200):
         init_sample_indices = np.random.choice(np.arange(len(self.df))[pd.isna(self.df[self.categories[0]])], 9)
@@ -84,39 +86,76 @@ class QuickTagger():
         self._grid = pn.GridBox(*[t.panel for t in self._taggers], ncols=3, nrows=3, width=3*size)
         self._classchooser = pn.widgets.Select(options=self.categories, 
                                                value=self.categories[0], name="Class to annotate", width=size)
-        self._selectchooser = pn.widgets.Select(options=["all", "partially labeled"], value="all", 
-                                                name="Sample from", width=size)
+        self._strategy = pn.widgets.Select(options=["uniform", "stratified"],
+                                           name="Sampling strategy", width=size)
         
         self._samplesavebutton = pn.widgets.Button(name="save and sample", button_type="primary", width=size)
         self._samplebutton = pn.widgets.Button(name="sample without saving", button_type="danger", width=size)
+        self._backbutton = pn.widgets.Button(name="go back", button_type="warning", width=size)
         self._summaries = pn.pane.DataFrame(self._compute_summaries(), index=False, width=size)
         self.panel = pn.Row(
             self._grid,
             pn.Spacer(width=50),
             pn.Column(
                 self._classchooser,
-                self._selectchooser,
+                self._strategy,
                 self._samplesavebutton,
                 self._samplebutton,
+                self._backbutton,
                 self._summaries
             )
         )
         # set up button callbacks
         self._samplebutton.on_click(self._sample)
         self._samplesavebutton.on_click(self._record_and_sample_callback)
+        self._backbutton.on_click(self._go_back_callback)
+        
+        
+    def serve(self, **kwargs):
+        """
+        wrapper for panel.serve()
+        """
+        p = self.panel
+        pn.serve(p, title="quicktagger", **kwargs)
+        
+    def _get_uniform_sampled_indices(self):
+        cat = self._classchooser.value
+        available_indices = np.arange(len(self.df))[pd.isna(self.df[cat])]
+        return np.random.choice(available_indices, size=9, replace=False)
+    
+    def _get_stratified_sampled_indices(self):
+        assert hasattr(self, "_stratify_categories"), "need a subset column for stratified sampling"
+        cat = self._classchooser.value
+        indices = np.arange(len(self.df))
+        unlab = pd.isna(self.df[cat])
+        
+        sampled = []
+        while len(sampled) < 9:
+            # pick a subset
+            subset = np.random.choice(self._stratify_categories)
+            available_indices = indices[unlab&(self.df.subset == subset)]
+            if len(available_indices) > 0:
+                sampled.append(np.random.choice(available_indices))
+        return np.array(sampled)
         
         
         
     def _sample(self, *events):
         cat = self._classchooser.value
-        if self._selectchooser.value == "partially_labeled":
-            available_indices = np.arange(len(self.df))[pd.isna(self.df[cat])&find_partially_labeled(self.df)]
+        self._previous_indices = self._current_indices.copy()
+        if self._strategy.value == "uniform":
+            self._current_indices = self._get_uniform_sampled_indices()
         else:
-            available_indices = np.arange(len(self.df))[pd.isna(self.df[cat])]
+            self._current_indices = self._get_stratified_sampled_indices()
             
-        self._current_indices = np.random.choice(available_indices, size=9, replace=False)
         for e,i in enumerate(self._current_indices):
             self._taggers[e].update_image(self.df.filepath.values[i], cat)
+            
+    def _go_back_callback(self, *events):
+        self._current_indices = self._previous_indices
+        for e,i in enumerate(self._current_indices):
+            self._taggers[e].update_image(self.df.filepath.values[i],
+                                          self._classchooser.value)
         
     def _record(self):
         for i, t in zip(self._current_indices, self._taggers):
@@ -139,8 +178,27 @@ class QuickTagger():
         return pd.DataFrame(label_counts, columns=["class", "None", "0", "1"])
     
     def save(self):
+        """
+        Save only the parts of the dataframe that have at least one label
+        """
         if self.outfile is not None:
-            self.df.to_csv(self.outfile, index=False)
+            keep = np.array([False]*len(self.df))
+            for c in self.categories:
+                keep = keep|pd.notna(self.df[c]).values
+            
+            self.df[keep].to_csv(self.outfile, index=False)
+            
+    def save_all(self, outfile=None):
+        """
+        Save the entire dataframe, including unlabeled rows
+        """
+        if outfile is None:
+            if self.outfile is not None:
+                outfile = self.outfile
+            else:
+                assert False, "i don't know where to save this"
+                
+        self.df.to_csv(outfile, index=False)
     
 
 

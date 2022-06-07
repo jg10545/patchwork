@@ -48,6 +48,13 @@ FALCON_CHO_PARAMS = {"gaussian_blur": 0.5,
               "flip_left_right":True}
 
 
+def _pixel_mask(x, prob=0.1, **kwargs):
+    if _choose(prob):
+        mask = tf.random.uniform([x.shape[0], x.shape[1], 1], minval=0, maxval=1)
+        mask = tf.cast((mask > 0.7), tf.float32)
+        x = x*mask
+    return x
+
 def _jitter(x, strength=1., **kwargs):
     """
     Color jitter more closely patterned after the SimCLR paper
@@ -328,7 +335,8 @@ SINGLE_AUG_FUNC = {
     "jpeg_degrade":_random_jpeg_degrade,
     "solarize":_random_solarize,
     "autocontrast":_random_autocontrast,
-    "shear":_random_shear
+    "shear":_random_shear,
+    "pixel_mask":_pixel_mask
 }
 
 
@@ -337,7 +345,7 @@ AUGMENT_ORDERING = ["flip_left_right", "flip_up_down", "rot90", "shear",
                     "jitter", "brightness_delta",
                     "contrast_delta", "saturation_delta", "hue_delta",
                     "gaussian_blur", "gaussian_noise", "autocontrast",
-                    "drop_color", "sobel_prob", "jpeg_degrade", "mask"]
+                    "drop_color", "sobel_prob", "jpeg_degrade", "mask", "pixel_mask"]
 
 def _augment(im, aug_dict, imshape=None):
     """
