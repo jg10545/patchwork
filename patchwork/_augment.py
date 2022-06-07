@@ -336,7 +336,7 @@ SINGLE_AUG_FUNC = {
     "solarize":_random_solarize,
     "autocontrast":_random_autocontrast,
     "shear":_random_shear,
-    "pixel_mask_prob":_pixel_mask
+    "pixel_mask":_pixel_mask
 }
 
 
@@ -345,7 +345,7 @@ AUGMENT_ORDERING = ["flip_left_right", "flip_up_down", "rot90", "shear",
                     "jitter", "brightness_delta",
                     "contrast_delta", "saturation_delta", "hue_delta",
                     "gaussian_blur", "gaussian_noise", "autocontrast",
-                    "drop_color", "sobel_prob", "jpeg_degrade", "mask", "pixel_mask_prob"]
+                    "drop_color", "sobel_prob", "jpeg_degrade", "mask", "pixel_mask"]
 
 def _augment(im, aug_dict, imshape=None):
     """
