@@ -5,6 +5,7 @@ import tensorflow as tf
 from patchwork._augment import augment_function, _poisson, _random_zoom, _choose
 from patchwork._augment import _center_crop, _jitter, _random_jpeg_degrade, _gaussian_blur
 from patchwork._augment import _random_autocontrast, _random_shear, _random_solarize
+from patchwork._augment import _pixel_mask
 from patchwork._augment import SINGLE_AUG_FUNC
 
 
@@ -93,3 +94,10 @@ def test_random_solarize():
     assert img.shape == solarized.shape
     assert (solarized.numpy() == img).all() == False
     
+
+def test_pixel_mask():
+    img = np.random.uniform(0,1, (32,32,3)).astype(np.float32)
+    
+    degraded = _pixel_mask(img, 1.)
+    assert img.shape == degraded.shape
+    assert (degraded.numpy() == img).all() == False
