@@ -71,23 +71,7 @@ def build_training_function(loss_fn, opt, fine_tuning, output, feature_extractor
             
             # semi-supervised case- loss function for unlabeled data
             if lam > 0:
-                # separate out predictions from labeled batch,
-                # weakly-augmented unlabeled batch, and strongly augmented
-                # unlabeled batch
-                #preds_wk = y_pred[N:N+mu_N,:]
-                #preds_str = y_pred[N+mu_N:,:]
-                #preds_str = y_pred[N:,:]
-                #y_pred = y_pred[:N,:]
                 preds_str = model(x_unlab_str, True)
-                #with tape.stop_recording():
-                #    # round weak predictions to pseudolabels
-                #    pseudolabels = tf.cast(preds_wk > 0.5, 
-                #                           tf.float32)
-                #    # also compute a mask from the predictions,
-                #    # since we only incorporate high-confidence cases,
-                #    # compute a mask that's 1 every place that's close
-                #    # to 1 or 0
-                #    mask = build_mask(preds_wk)
 
                 crossent_tensor = K.binary_crossentropy(pseudolabels,
                                                         preds_str)
