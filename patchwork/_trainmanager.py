@@ -197,7 +197,8 @@ class TrainManager():
         self.pw._model_params["training"] = {"learn_rate":self._learn_rate.value,
                                              "batch_size":self._batch_size.value,
                                              "batches_per_epoch":self._batches_per_epoch.value,
-                                             "epochs":self._epochs.value}
+                                             "epochs":self._epochs.value,
+                                             "sampling":self._sample_chooser.value}
         
         # tensorflow function for computing test loss
         meanloss = self.pw._build_loss_tf_fn()
