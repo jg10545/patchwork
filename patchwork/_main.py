@@ -229,7 +229,8 @@ class GUI(object):
         pn.serve(p, title="patchwork labeling adventure", **kwargs)
         
     
-    def _training_dataset(self, batch_size=32, num_samples=None):
+    def _training_dataset(self, batch_size=32, num_samples=None,
+                          sampling="class", indexlist=None):
         """
         Build a single-epoch training set.
         
@@ -243,7 +244,8 @@ class GUI(object):
             num_samples = len(self.df)
         # LIVE FEATURE EXTRACTOR CASE
         if self.feature_vecs is None:
-            files, ys = stratified_sample(self.df, num_samples)
+            files, ys = stratified_sample(self.df, num_samples, sampling=sampling,
+                                          indexlist=indexlist)
             # (x,y) dataset
             ds = dataset(files, ys, imshape=self._imshape, 
                        num_channels=self._num_channels,
@@ -381,11 +383,12 @@ class GUI(object):
         
         self._training_function = training_step
 
-    def _run_one_training_epoch(self, batch_size=32, num_samples=None):
+    def _run_one_training_epoch(self, batch_size=32, num_samples=None,
+                                sampling="class", indexlist=None):
         """
         Run one training epoch
         """
-        ds = self._training_dataset(batch_size, num_samples)
+        ds = self._training_dataset(batch_size, num_samples, sampling, indexlist)
         
         if self._semi_supervised:
             #for (x, x_unlab), y in ds:

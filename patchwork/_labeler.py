@@ -288,14 +288,10 @@ def pick_indices(df, pred_df, M, label_status, exclude_status,
         col = sort_by.replace("high: ", "")
         # scale sampling probability by score
         p = pred_df[col].values**4
-        #p[p < p.mean()] = 0
-        #sample = pred_df[col].nlargest(M)
         sample = pred_df[col].sample(M, weights=p)
     elif "low:" in sort_by:
         col = sort_by.replace("low: ", "")
-        #sample = pred_df[col].nsmallest(M)
         p = (1-pred_df[col].values)**4
-        #p[p < p.mean()] = 0
         sample = pred_df[col].sample(M, weights=p)
     elif ("BADGE" in sort_by)&(sampler is not None):
         indices = np.array(sampler(M, include=subset.values))
