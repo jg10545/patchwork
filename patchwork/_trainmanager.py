@@ -132,6 +132,7 @@ class TrainManager():
         self._batch_size = pn.widgets.LiteralInput(name='Batch size', value=16, type=int)
         self._batches_per_epoch = pn.widgets.LiteralInput(name='Batches per epoch', value=100, type=int)
         self._epochs = pn.widgets.LiteralInput(name='Epochs', value=10, type=int)
+        self._fine_tune_after = pn.widgets.LiteralInput(name="Fine-tune feature extractor after this many epochs", value=-1, type=int)
         self._pred_batch_size = pn.widgets.LiteralInput(name='Prediction batch size', value=64, type=int)
         self._abort_condition = pn.widgets.LiteralInput(name='Abort if no improvement in X epochs', value=0, type=int)
         
@@ -163,6 +164,7 @@ class TrainManager():
                          self._batch_size, 
                          self._batches_per_epoch,
                          self._epochs,
+                         self._fine_tune_after,
                          self._pred_batch_size,
                          self._abort_condition,
                         self._eval_after_training,
@@ -198,7 +200,8 @@ class TrainManager():
                                              "batch_size":self._batch_size.value,
                                              "batches_per_epoch":self._batches_per_epoch.value,
                                              "epochs":self._epochs.value,
-                                             "sampling":self._sample_chooser.value}
+                                             "sampling":self._sample_chooser.value,
+                                             "fine_tune_after":self._fine_tune_after.value}
         
         # tensorflow function for computing test loss
         meanloss = self.pw._build_loss_tf_fn()
@@ -210,8 +213,19 @@ class TrainManager():
         
         # for each epoch
         epochs = self._epochs.value
+        fine_tune_after = self._fine_tune_after.value
         for e in range(epochs):
+            # fine tuning case: rebuild the training step after the right
+            # number of epochs
+            if e == fine_tune_after:
+                self._footer.object = "### UPDATING TRAINING STEP"
+                self.pw.build_training_step(opt_type=opt_type, lr=lr, lr_decay=lr_decay, 
+                                    decay_type="cosine",
+                                    weight_decay=self.pw._model_params["weight_decay"],
+                                    finetune=True)
             self._footer.object = "### TRAININ (%s / %s)"%(e+1, epochs)
+            
+            
             N = self._batch_size.value * self._batches_per_epoch.value
             self.pw._run_one_training_epoch(self._batch_size.value, N,
                                             sampling, indexlist)

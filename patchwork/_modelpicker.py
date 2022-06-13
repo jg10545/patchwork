@@ -11,6 +11,7 @@ import panel as pn
 import tensorflow as tf
 from patchwork._fine_tuning_models import GlobalPooling, ConvNet
 from patchwork._output_models import SigmoidCrossEntropy, CosineOutput, SigmoidFocalLoss
+from patchwork.feature._moco import copy_model
 
 class ModelPicker(object):
     """
@@ -125,6 +126,7 @@ class ModelPicker(object):
     def _build_callback(self, *events):
         """
         When you hit the build button:
+            0) make a backup copy of the feature extractor
             1) build the fine-tuning model
             2) build the output model and loss function
             3) generate the full end-to-end model for inference
@@ -132,6 +134,9 @@ class ModelPicker(object):
             5) reset the lists for recording training loss in the GUI object
         """
         with self._pw._strategy.scope():
+            # 0) copy the feature extractor
+            if self._pw.models["feature_extractor_backup"] is not None:
+                self._pw.models["feature_extractor"] = copy_model(self._pw.models["feature_extractor_backup"])
             # 1) BUILD THE FINE-TUNING MODEL
             fine_tuning_model = self._fine_tuning_chooser.value.build(self._feature_shape)
             tuning_output_channels = fine_tuning_model.output_shape[-1]

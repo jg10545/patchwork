@@ -88,6 +88,7 @@ class GUI(object):
         self._semi_supervised = False
         self._logdir = logdir
         self.models = {"feature_extractor":feature_extractor, 
+                       "feature_extractor_backup":feature_extractor, 
                        "teacher_fine_tuning":None,
                        "teacher_output":None}
         # place to hide hyperparameter info for models
@@ -256,19 +257,6 @@ class GUI(object):
             # include unlabeled data as well if 
             # we're doing semisupervised learning
             if self._semi_supervised:
-                """
-                # choose unlabeled files for this epoch
-                unlabeled_filepaths = self.df.filepath.values[find_unlabeled(self.df)]
-                unlab_fps = np.random.choice(unlabeled_filepaths,
-                                             replace=True, size=num_samples)
-                # construct a dataset to load the unlabeled files
-                # and zip with the (x,y) dataset
-                unlab_ds = dataset(unlab_fps, imshape=self._imshape, 
-                       num_channels=self._num_channels,
-                       num_parallel_calls=self._num_parallel_calls, 
-                       batch_size=batch_size,
-                       augment=self._aug)[0]
-                ds = tf.data.Dataset.zip((ds, unlab_ds))"""
                 # train on anything not specifically labeled validation
                 all_filepaths = self.df.filepath[~self.df.validation].values
                 # in the FixMatch paper they use a larger batch size for
@@ -346,21 +334,22 @@ class GUI(object):
 
         
     def build_training_step(self, weight_decay=0, opt_type="adam", lr=1e-3, 
-                            lr_decay=0, decay_type="cosine"):
+                            lr_decay=0, decay_type="cosine", finetune=False):
         """
         
         """
-        #opt = tf.keras.optimizers.Adam(lr)
         opt = build_optimizer(lr, lr_decay=lr_decay, opt_type=opt_type,
                               decay_type=decay_type)
+        
+            
         trainfunc = build_training_function(self.loss_fn, opt,
                                         self.models["fine_tuning"],
                                         self.models["output"],
                                         feature_extractor=self.feature_extractor,
                                         lam=self._model_params["fixmatch"]["lambda"],
                                         tau=self._model_params["fixmatch"]["tau"],
-                                        weight_decay=weight_decay
-                                        )
+                                        weight_decay=weight_decay,
+                                        finetune=finetune)
         if self._model_params["fixmatch"]["lambda"] == 0:
             @tf.function
             def training_step(x,y):
