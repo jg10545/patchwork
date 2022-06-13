@@ -82,16 +82,6 @@ def test_find_subset_labeled_doesnt_contain():
     assert s0.sum() == 1
     assert "c.jpg" in testdf[s0].filepath.values
     
-"""
-def test_find_subset_subset_column():
-    s0 = find_subset(testdf, "subset: 0")
-    assert s0.sum() == 1
-    assert "b.jpg" in testdf["filepath"][s0].values # a.jpg is excluded
-    
-    s1 = find_subset(testdf, "subset: 1")
-    assert s1.sum() == 3
-    for f in ["c.jpg", "d.jpg", "e.jpg"]:
-        assert f in testdf["filepath"][s1].values"""
         
 
 
@@ -104,3 +94,23 @@ def test_stratified_sampler():
     assert ys.shape[1] == 2
     #assert isinstance(outlist[0], str)
     #assert False, "this should definitely be tested"
+    
+
+def test_stratified_sampler_instance_sampling():
+    N = 100
+    outlist, ys = stratified_sample(testdf, N=N, return_indices=False,
+                                    sampling="instance")
+    
+    assert len(outlist) == N
+    assert ys.shape[0] == N
+    assert ys.shape[1] == 2
+    
+
+def test_stratified_sampler_sqrt_sampling():
+    N = 100
+    outlist, ys = stratified_sample(testdf, N=N, return_indices=False,
+                                    sampling="squareroot")
+        
+    assert len(outlist) == N
+    assert ys.shape[0] == N
+    assert ys.shape[1] == 2

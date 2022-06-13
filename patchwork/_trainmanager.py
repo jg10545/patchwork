@@ -13,6 +13,8 @@ import panel as pn
 import tensorflow as tf
 from sklearn.metrics import roc_auc_score
 
+from patchwork._sample import _prepare_df_for_stratified_sampling
+
 
 
 
@@ -119,6 +121,9 @@ class TrainManager():
         self._abort = False
         self.pw = pw
         self._header = pn.pane.Markdown("#### Train model on current set of labeled patches")
+        self._sample_chooser = pn.widgets.Select(name="Sampling strategy", 
+                                                 options=["class", "instance", "squareroot"],
+                                                 value="class")
         self._opt_chooser = pn.widgets.Select(name="Optimizer", options=["adam", "momentum"],
                                               value="adam")
         self._learn_rate =  pn.widgets.LiteralInput(name="Initial learning rate", value=1e-3, type=float)                               
@@ -152,6 +157,7 @@ class TrainManager():
         Return code for a training panel
         """
         controls =  pn.Column(self._header,
+                        self._sample_chooser,
                         self._opt_chooser,
                         self._learn_rate,
                         self._lr_decay,
@@ -194,11 +200,16 @@ class TrainManager():
                                              "batch_size":self._batch_size.value,
                                              "batches_per_epoch":self._batches_per_epoch.value,
                                              "epochs":self._epochs.value,
+                                             "sampling":self._sample_chooser.value,
                                              "fine_tune_after":self._fine_tune_after.value}
         
         # tensorflow function for computing test loss
         meanloss = self.pw._build_loss_tf_fn()
         val_ds = self.pw._val_dataset(self._batch_size.value)
+        # precompute subsets of dataframe for each class/label for
+        # stratified sampling
+        indexlist = _prepare_df_for_stratified_sampling(self.pw.df)
+        sampling = self._sample_chooser.value
         
         # for each epoch
         epochs = self._epochs.value
@@ -216,7 +227,8 @@ class TrainManager():
             
             
             N = self._batch_size.value * self._batches_per_epoch.value
-            self.pw._run_one_training_epoch(self._batch_size.value, N)
+            self.pw._run_one_training_epoch(self._batch_size.value, N,
+                                            sampling, indexlist)
             self.loss = self.pw.training_loss
             
             # at the end of each epoch compute test loss
