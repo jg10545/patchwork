@@ -41,7 +41,7 @@ def _auc_and_acc(pos, neg, rnd=3):
         y_true = np.concatenate([np.ones(len(pos)), np.zeros(len(neg))])
         y_pred = np.concatenate([pos, neg])
         return round(roc_auc_score(y_true, y_pred), rnd), round(accuracy_score(y_true,
-                                                                              y_pred), rnd)
+                                                            (y_pred >= 0.5).astype(int)), rnd)
     else:
         return 0, 0
 
