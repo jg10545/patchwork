@@ -114,9 +114,9 @@ def _hist_fig(df, pred, c):
     
     for a in [ax1, ax2]:
         a.legend(loc="upper left")
-        a.set_xlabel("assessed probability", fontsize=14)
         a.set_ylabel("frequency", fontsize=14)
     ax1.set_xticks([])
+    ax2.set_xlabel("model output", fontsize=14)
     title = "model outputs for '%s'\ntraining AUC  %s, accuracy %s"%(c, train_auc, train_acc)
     ax1.set_title(title, fontsize=14)
     
