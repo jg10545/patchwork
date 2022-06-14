@@ -11,7 +11,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import panel as pn
 import tensorflow as tf
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import roc_auc_score, accuracy_score
 
 from patchwork._sample import _prepare_df_for_stratified_sampling
 
@@ -29,6 +29,21 @@ def _auc(pos, neg, rnd=3):
         return round(roc_auc_score(y_true, y_pred), rnd)
     else:
         return 0
+    
+    
+
+def _auc_and_acc(pos, neg, rnd=3):
+    """
+    macro for computing ROC AUC score and accuracy for display from arrays
+    of scores for positive and negative cases
+    """
+    if (len(pos) > 0)&(len(neg) > 0):
+        y_true = np.concatenate([np.ones(len(pos)), np.zeros(len(neg))])
+        y_pred = np.concatenate([pos, neg])
+        return round(roc_auc_score(y_true, y_pred), rnd), round(accuracy_score(y_true,
+                                                                              y_pred), rnd)
+    else:
+        return 0, 0
 
 
 def _empty_fig():
@@ -72,7 +87,7 @@ def _hist_fig(df, pred, c):
     # top plot: training data
     pos_labeled = pred[c][(df[c] == 1)&(df["validation"] == False)].values
     neg_labeled = pred[c][(df[c] == 0)&(df["validation"] == False)].values
-    train_auc = _auc(pos_labeled, neg_labeled)
+    train_auc, train_acc = _auc_and_acc(pos_labeled, neg_labeled)
     if len(pos_labeled) > 0: 
         ax1.hist(pos_labeled, bins=bins, alpha=0.5, 
                     label="labeled positive (train)", density=True)
@@ -86,7 +101,7 @@ def _hist_fig(df, pred, c):
     # bottom plot: validation data
     pos_labeled = pred[c][(df[c] == 1)&(df["validation"] == True)].values
     neg_labeled = pred[c][(df[c] == 0)&(df["validation"] == True)].values
-    test_auc = _auc(pos_labeled, neg_labeled)
+    test_auc, test_acc = _auc_and_acc(pos_labeled, neg_labeled)
     if len(pos_labeled) > 0:           
         ax2.hist(pos_labeled, bins=bins, alpha=0.5, 
                     label="labeled positive (val)", density=True)
@@ -101,8 +116,11 @@ def _hist_fig(df, pred, c):
         a.legend(loc="upper left")
         a.set_xlabel("assessed probability", fontsize=14)
         a.set_ylabel("frequency", fontsize=14)
-    title = "model outputs for '%s'\nAUC train %s, test AUC %s"%(c, train_auc, test_auc)
+    title = "model outputs for '%s'\ntraining AUC  %s, accuracy %s"%(c, train_auc, train_acc)
     ax1.set_title(title, fontsize=14)
+    
+    title = "test AUC  %s, accuracy %s"%(test_auc, test_acc)
+    ax2.set_title(title, fontsize=14)
     plt.close(fig)
     return fig
 

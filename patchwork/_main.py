@@ -9,7 +9,7 @@ import os
 
 from patchwork._labeler import Labeler
 from patchwork._modelpicker import ModelPicker
-from patchwork._trainmanager import TrainManager, _auc
+from patchwork._trainmanager import TrainManager, _auc_and_acc
 from patchwork._sample import stratified_sample, find_unlabeled, find_excluded_indices
 from patchwork._sample import _build_in_memory_dataset, find_labeled_indices
 from patchwork._sample import PROTECTED_COLUMN_NAMES
@@ -191,8 +191,9 @@ class GUI(object):
             for c in self.classes:
                 pos_labeled = pred[c][(df[c] == 1)&(df["validation"] == True)].values
                 neg_labeled = pred[c][(df[c] == 0)&(df["validation"] == True)].values
-                val_auc = _auc(pos_labeled, neg_labeled, rnd=8)
+                val_auc, val_acc = _auc_and_acc(pos_labeled, neg_labeled, rnd=8)
                 self._mlflow.log_metric(f"val_auc_{c}", val_auc, step=0)
+                self._mlflow.log_metric(f"val_acc_{c}", val_acc, step=0)
                 
     def log_model(self):
         """
