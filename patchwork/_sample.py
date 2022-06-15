@@ -201,6 +201,8 @@ def stratified_sample(df, N=1000, return_indices=False, sampling="class",
     sampled = df.loc[inds,:]
     # labels
     ys = sampled[categories].values
+    # map missing values to -1
+    ys[np.isnan(ys)] = -1
     # return labels with filepaths or indices
     if return_indices:
         return inds, ys
