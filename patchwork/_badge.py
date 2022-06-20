@@ -8,14 +8,14 @@ LEARNING BY DIVERSE, UNCERTAIN GRADIENT LOWER BOUNDS by Ash et al
 """
 import numpy as np
 import tensorflow as tf
-from scipy.spatial.distance import cdist
+from sklearn.metrics.pairwise import euclidean_distances
 
 class KPlusPlusSampler():
     """
     Class for drawing random indices using the initialization
     algorithm from kmeans++
     """
-    def __init__(self, X, p=2, indices=None):
+    def __init__(self, X,indices=None):
         """
         
 
@@ -23,8 +23,6 @@ class KPlusPlusSampler():
         ----------
         X : (N,d) array
             Matrix containing the point cloud to sample from.
-        p : int
-            Exponent to raise distances to for sampling probabilities
         indices : list, optional
             initial list of previously-sampled indices to 
             exclude from sampling. The default is None.
@@ -34,16 +32,16 @@ class KPlusPlusSampler():
         None.
         """
         self.X = X
-        self.p = p
         self.N = X.shape[0]
         self.d = X.shape[1]
         if indices is None:
             indices = []
             
-        self.indices = indices
+        self.indices = [x for x in indices]
         
         if len(indices) > 0:
-            self.min_dists = cdist(X[np.array(indices),:], X).min(axis=0)
+            indices = np.array(indices)
+            self.min_dists_sq = euclidean_distances(X, X[indices], squared=True).min(axis=1)
         
     def _choose_initial_index(self, include=None):
         """
@@ -65,9 +63,8 @@ class KPlusPlusSampler():
         if include is not None:
             indices = indices[include]
         ind = np.random.choice(indices)
-        #ind = np.random.randint(self.N)
         self.indices.append(ind)
-        self.min_dists = cdist(self.X[np.array([ind]),:], self.X).min(axis=0)
+        self.min_dists_sq = euclidean_distances(self.X, self.X[np.array([ind]),:], squared=True).min(axis=1)
         return int(ind)
     
     def _choose_non_initial_index(self, include=None):
@@ -88,7 +85,7 @@ class KPlusPlusSampler():
         """
         # set up indices and probabilities for sampling
         indices = np.arange(self.N, dtype=np.int64)
-        prob = self.min_dists**self.p
+        prob = self.min_dists_sq#**self.p
         # if necessary exclude some
         if include is not None:
             indices = indices[include]
@@ -97,17 +94,14 @@ class KPlusPlusSampler():
         if prob.sum() == 0:
             return None
         # normalize probs
-        prob /= prob.sum()
-            
-        # compute sampling probabilities
-        #p = self.min_dists**2
-        #p /= p.sum()
+        prob = prob/prob.sum()
+    
         # sample new index
         ind = np.random.choice(indices, p=prob)
         self.indices.append(ind)
         # update min distances
-        min_dists = cdist(self.X[np.array([ind]),:], self.X).min(axis=0)
-        self.min_dists = np.minimum(self.min_dists, min_dists)
+        min_dists_sq = euclidean_distances(self.X, self.X[np.array([ind]),:], squared=True).min(1)
+        self.min_dists_sq = np.minimum(self.min_dists_sq, min_dists_sq)
         return int(ind)
     
     def choose(self, k=1, include=None):
