@@ -188,7 +188,7 @@ class TrainManager():
                          self._epochs,
                          self._fine_tune_after,
                          self._pred_batch_size,
-                         self._abort_condition,
+                         #self._abort_condition,
                         self._eval_after_training,
                         self._train_button,
                         pn.layout.Divider(),
