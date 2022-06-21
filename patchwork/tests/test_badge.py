@@ -76,4 +76,28 @@ def test_build_output_gradient_function():
     
     assert isinstance(output_gradients, tf.Tensor)
     assert output_gradients.shape == (7,3*8)
+    
+    
+def test_build_output_gradient_function_with_select_output():
+    # simple mock fine-tuning network
+    inpt = tf.keras.layers.Input((None, None, 8))
+    net = tf.keras.layers.GlobalMaxPooling2D()(inpt)
+    ft_model = tf.keras.Model(inpt, net)
+    # simple mock output network, 3 classes
+    inpt = tf.keras.layers.Input((8,))
+    net = tf.keras.layers.Dense(3, activation="sigmoid")(inpt)
+    o_model = tf.keras.Model(inpt, net)
+    
+    grad_func = _build_output_gradient_function(ft_model, o_model,
+                                                select_output=2)
+    
+    # data shaped like feature tensors. do a batch of 7
+    data = tf.random.normal((7,2,2,8), 0, 1, dtype=tf.float32)
+    
+    # run data through the function
+    output_gradients = grad_func(data)
+    
+    assert isinstance(output_gradients, tf.Tensor)
+    #assert output_gradients.shape == (7,3*8)
+    assert output_gradients.shape == (7,8)
 

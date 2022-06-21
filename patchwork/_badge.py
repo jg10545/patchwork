@@ -140,7 +140,7 @@ class KPlusPlusSampler():
         return self.choose(k, include)
         
 
-def _build_output_gradient_function(*models):
+def _build_output_gradient_function(*models, select_output=None):
     """
     Generate a tensorflow function for computing, for a given example, the gradient of
     the loss function with respect to the weights in the final layer. This is useful
@@ -149,6 +149,8 @@ def _build_output_gradient_function(*models):
     
     :models: Keras model (or multiple models to be applied sequentially). BADGE gradients
         are computed with respect to kernel weights in the final layer of the last model.
+    :select_output: if final model has a multiclass output, select which class to compute
+        gradients from
         
     Returns a tensorflow function that maps inputs to flattened BADGE gradients
     """
@@ -165,7 +167,6 @@ def _build_output_gradient_function(*models):
                            if "kernel" in x.name]
     assert len(final_layer_weights) == 1, "not sure which weights to use"
     output_weights = final_layer_weights[0]
-    
     # ------------ Define a tf.function -----------
     @tf.function
     def compute_output_gradients(x):
@@ -179,8 +180,12 @@ def _build_output_gradient_function(*models):
             label = tf.cast(y >= 0.5, tf.float32)
             # ------------ Loss between prediction and pseudolabel -----------
             loss = tf.keras.losses.binary_crossentropy(label, pred)
+            
         # ------------ Calculate gradients and return flattened matrix -----------
         grad = tape.jacobian(loss, output_weights)
+        
+        if select_output is not None:
+            grad = grad[:,:,select_output]
         return tf.reshape(grad, [x.shape[0], -1])
 
     return compute_output_gradients

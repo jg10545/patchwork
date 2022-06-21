@@ -159,6 +159,9 @@ class TrainManager():
         self._train_button = pn.widgets.Button(name="Make it so")
         self._train_button.on_click(self._train_callback)
         
+        self._badge_chooser = pn.widgets.Select(name="Compute BADGE with respect to", 
+                                                 options=["all classes"]+pw.classes,
+                                                 value="all classes")
         self._compute_badge_gradients = pn.widgets.Button(name="Update BADGE gradients")
         self._compute_badge_gradients.on_click(self._badge_callback)
         
@@ -188,7 +191,10 @@ class TrainManager():
                          self._abort_condition,
                         self._eval_after_training,
                         self._train_button,
+                        pn.layout.Divider(),
+                        self._badge_chooser,
                         self._compute_badge_gradients,
+                        pn.layout.Divider(),
                         self._footer)
         
         figures = pn.Column(pn.pane.Markdown("### Training Loss"),
@@ -287,8 +293,15 @@ class TrainManager():
             self._footer.object = "### DONE"
         
     def _badge_callback(self, *events):
+        # the BADGE chooser lets you compute BADGE embeddings for diversity 
+        # sampling with respect to all categories or just one
+        cat = self._badge_chooser.value
+        if cat == "all classes":
+            cat = None
+        else:
+            cat = self.pw.classes.index(cat)
         self._footer.object = "### COMPUTING BADGE GRADIENTS"
-        self.pw.compute_badge_embeddings()
+        self.pw.compute_badge_embeddings(cat)
         self._footer.object = "### DONE"
         
         

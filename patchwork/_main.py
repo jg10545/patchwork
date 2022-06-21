@@ -445,7 +445,7 @@ class GUI(object):
                 if self.models[m] is not None:
                     self.models[m].save(os.path.join(self._logdir, m+".h5"))
                     
-    def compute_badge_embeddings(self):
+    def compute_badge_embeddings(self, select_output=None):
         """
         Use a trained model to compute output-gradient vectors for the
         BADGE algorithm for active learning.
@@ -455,7 +455,8 @@ class GUI(object):
         Note that this stores all output gradients IN MEMORY.
         """
         # compute badge embeddings- define a tf.function for it
-        compute_output_gradients = _build_output_gradient_function(self.models['full'])
+        compute_output_gradients = _build_output_gradient_function(self.models['full'],
+                                                            select_output=select_output)
         # then run that function across all the iamges.
         output_gradients = np.concatenate(
             [compute_output_gradients(x).numpy() 
