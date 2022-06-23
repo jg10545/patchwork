@@ -490,7 +490,7 @@ class GUI(object):
         self._adjacency_matrix = _get_weighted_adjacency_matrix(features, n_neighbors, temp)
     
    
-    def build_projected_embeddings(self, pred_batch_size=32, proj_dim=128, p=2):
+    def build_projected_embeddings(self, pred_batch_size=32, proj_dim=128):
         """
         
         """
@@ -520,7 +520,7 @@ class GUI(object):
                     list(find_excluded_indices(self.df))
         
         # initialize sampler
-        self._diversity_sampler = KPlusPlusSampler(matrix, p=p, indices=indices)
+        self._diversity_sampler = KPlusPlusSampler(matrix, indices=indices)
         
     def _update_diversity_sampler(self):
         p = self._div_sampling_power
