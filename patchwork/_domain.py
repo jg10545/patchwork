@@ -7,6 +7,8 @@ def _compute_mmd_loss(features, domain_labels, num_domains, eps=1e-5):
     Maximum mean discrepancy loss from the "Deep Domain Confusion" paper by Tzeng et al,
     modified for multiple domains instead of one source and one target.
     
+    Tzeng's paper used a default MMD loss weight of 0.25
+    
     :features: (batch_size, d) tensor of features
     :domain_labels: (batch_size,) tensor indicating the domain of each feature
     :num_domains: int; total number of domains

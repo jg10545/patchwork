@@ -61,13 +61,14 @@ class ModelPicker(object):
         semisup2 = "Use unlabeled samples to guide decision boundary"
         semisup_widgets = {
             "header":pn.pane.Markdown(semisup1+semisup2),
-            "lambda":pn.widgets.LiteralInput(name='loss weight lambda (0 to disable FixMatch)', value=0., type=float),
-            "tau":pn.widgets.LiteralInput(name="threshold tau", value=0.95, type=float),
+            "choosetype":pn.widgets.Select(options=["FixMatch", "Domain Confusion"]),
+            "lambda":pn.widgets.LiteralInput(name='loss weight lambda (0 to disable)', value=0., type=float),
+            "tau":pn.widgets.LiteralInput(name="threshold tau (FixMatch only)", value=0.95, type=float),
             "mu":pn.widgets.LiteralInput(name="batch size multiplier mu", value=1, type=int)
             }
         self._semisup = semisup_widgets
         self._semisup_panel = pn.Column(*[semisup_widgets[x] for x in
-                                          ["header", "lambda", "tau", 
+                                          ["header", "choosetype", "lambda", "tau", 
                                            "mu"]])
                                 
         
@@ -156,10 +157,19 @@ class ModelPicker(object):
         # record hyperparameter info
         self._pw._model_params["fine_tuning"] = self._fine_tuning_chooser.value.model_params()
         self._pw._model_params["output"] = self._output_chooser.value.model_params()
-        self._pw._model_params["fixmatch"] = {
-            "lambda":self._semisup["lambda"].value,
-            "tau":self._semisup["tau"].value,
-            "mu":self._semisup["mu"].value}
+        
+        if self._semisup["choosetype"].value == "FixMatch":
+            fm_lambda = self._semisup["lambda"].value
+            domain_lambda = 0
+        else:
+            domain_lambda = self._semisup["lambda"].value
+            fm_lambda = 0
+            self._pw._model_params["semisup"] = {
+                "fixmatch_weight_lambda":fm_lambda,
+                "domain_confusion_weight_lambda":domain_lambda,
+                "fixmatch_tau":self._semisup["tau"].value,
+                "batch_size_multiplier_mu":self._semisup["mu"].value}
+            self._pw
         self._pw._model_params["weight_decay"] = self._weight_decay.value
         
 
@@ -175,8 +185,12 @@ class ModelPicker(object):
             net = output_model(net)
             self._pw.models["full"] = tf.keras.Model(inpt, net)
 
-
-        self._pw._semi_supervised = (self._semisup["lambda"].value > 0)
+        if self._semisup["choosetype"].value == "FixMatch":
+            self._pw._semi_supervised = (self._semisup["lambda"].value > 0)
+            self._pw._domain_adapt = False
+        else:
+            self._pw._domain_adapt = (self._semisup["lambda"].value > 0)
+            self._pw._semi_supervised = False
 
         # 5) RESET LOSS RECORDERS
         self._pw.training_loss = []

@@ -12,7 +12,7 @@ from patchwork._modelpicker import ModelPicker
 from patchwork._trainmanager import TrainManager, _auc_and_acc
 from patchwork._sample import stratified_sample, find_unlabeled, find_excluded_indices
 from patchwork._sample import _build_in_memory_dataset, find_labeled_indices
-from patchwork._sample import PROTECTED_COLUMN_NAMES
+from patchwork._sample import PROTECTED_COLUMN_NAMES, stratified_subset_sample
 from patchwork._training_functions import build_training_function
 from patchwork.loaders import dataset, _fixmatch_unlab_dataset
 from patchwork._losses import entropy_loss, masked_binary_crossentropy
@@ -86,6 +86,8 @@ class GUI(object):
         self._num_channels = num_channels
         self._num_parallel_calls = num_parallel_calls
         self._semi_supervised = False
+        self._domain_adapt = False
+        self._num_domains = 0
         self._logdir = logdir
         self.models = {"feature_extractor":feature_extractor, 
                        "feature_extractor_backup":feature_extractor, 
@@ -231,6 +233,42 @@ class GUI(object):
         pn.serve(p, title="patchwork labeling adventure", **kwargs)
         
     
+    def _fixmatch_unlab_dataset(self, batch_size, mu):
+        """
+        dataset for unlabeled part of the fixmatch algorithm
+        """
+        # train on anything not specifically labeled validation
+        all_filepaths = self.df.filepath[~self.df.validation].values
+        # in the FixMatch paper they use a larger batch size for
+        # unlabeled data
+        qN = batch_size*mu
+        # Make a tensorflow dataset that will return batches of
+        # (weakly augmented image, strongly augmented image) pairs
+        unlab_ds = _fixmatch_unlab_dataset(all_filepaths, 
+                                         self._aug,
+                                         self._fixmatch_aug,
+                                         imshape=self._imshape,
+                                         norm=self._norm,
+                                         num_channels=self._num_channels,
+                                         num_parallel_calls=self._num_parallel_calls,
+                                         batch_size=qN)
+        return unlab_ds
+    
+    def _domain_adaptation_dataset(self, batch_size, mu):
+        """
+        dataset for generating (image, domain) pairs for labeled/unlabeled
+        data for domain generalization algorithms
+        """
+        bs = int(batch_size*mu)
+        filepaths, labels = stratified_subset_sample(self.df, bs)
+        self._num_domains = len(self.ds.subset.unique())
+        return  dataset(filepaths, labels, imshape=self._imshape, 
+                       num_channels=self._num_channels,
+                       num_parallel_calls=self._num_parallel_calls, 
+                       batch_size=bs,
+                       augment=self._aug)[0]
+        
+    
     def _training_dataset(self, batch_size=32, num_samples=None,
                           sampling="class", indexlist=None):
         """
@@ -258,21 +296,14 @@ class GUI(object):
             # include unlabeled data as well if 
             # we're doing semisupervised learning
             if self._semi_supervised:
-                # train on anything not specifically labeled validation
-                all_filepaths = self.df.filepath[~self.df.validation].values
-                # in the FixMatch paper they use a larger batch size for
-                # unlabeled data
-                qN = batch_size*self._model_params["fixmatch"]["mu"]
-                # Make a tensorflow dataset that will return batches of
-                # (weakly augmented image, strongly augmented image) pairs
-                unlab_ds = _fixmatch_unlab_dataset(all_filepaths, 
-                                                   self._aug,
-                                                   self._fixmatch_aug,
-                                                   imshape=self._imshape,
-                                                   norm=self._norm,
-                                                   num_channels=self._num_channels,
-                                                   num_parallel_calls=self._num_parallel_calls,
-                                                   batch_size=qN)
+                unlab_ds = self._fixmatch_unlab_dataset(batch_size, 
+                                                        self._model_params["fixmatch"]["mu"])
+                # stitch together the labeled and unlabeled datasets
+                ds = tf.data.Dataset.zip((ds, unlab_ds))
+            # or include unlabeled data if we're doing domain adaptation
+            elif self._domain_adapt:
+                unlab_ds = self._domain_adaptation_dataset(batch_size, 
+                                                        self._model_params["fixmatch"]["mu"])
                 # stitch together the labeled and unlabeled datasets
                 ds = tf.data.Dataset.zip((ds, unlab_ds))
                 
@@ -344,17 +375,32 @@ class GUI(object):
         
             
         trainfunc = build_training_function(self.loss_fn, opt,
-                                        self.models["fine_tuning"],
-                                        self.models["output"],
-                                        feature_extractor=self.feature_extractor,
-                                        lam=self._model_params["fixmatch"]["lambda"],
-                                        tau=self._model_params["fixmatch"]["tau"],
-                                        weight_decay=weight_decay,
-                                        finetune=finetune)
-        if self._model_params["fixmatch"]["lambda"] == 0:
+                            self.models["fine_tuning"],
+                            self.models["output"],
+                            feature_extractor=self.feature_extractor,
+                            lam=self._model_params["semisup"]["fixmatch_weight_lambda"],
+                            tau=self._model_params["semisup"]["fixmatch_tau"],
+                            weight_decay=weight_decay,
+                            finetune=finetune,
+                            domain_weight=self._model_params["semisup"]["domain_confusion_weight_lambda"],
+                            num_domains=self._num_domains)
+        lam = self._model_params["semisup"]["fixmatch_weight_lambda"]
+        domain_weight = self._model_params["semisup"]["domain_confusion_weight_lambda"]
+        if (lam == 0)&(domain_weight == 0):
             @tf.function
             def training_step(x,y):
                 per_example_losses = self._strategy.run(trainfunc, args=(x,y))
+
+                losses = [self._strategy.reduce(
+                    tf.distribute.ReduceOp.MEAN, 
+                    k, axis=None) for k in per_example_losses]
+                return losses
+        elif (lam == 0)&(domain_weight > 0):
+            @tf.function
+            def training_step(x, y, x_unlab_wk, domain_labels):
+                per_example_losses = self._strategy.run(trainfunc, 
+                                                        args=(x,y, x_unlab_wk, None,
+                                                              domain_labels))
 
                 losses = [self._strategy.reduce(
                     tf.distribute.ReduceOp.MEAN, 
@@ -380,10 +426,13 @@ class GUI(object):
         """
         ds = self._training_dataset(batch_size, num_samples, sampling, indexlist)
         
-        if self._semi_supervised:
+        if self._semi_supervised or self._domain_adapt:
             #for (x, x_unlab), y in ds:
-            for (x,y), (unlab_wk, unlab_str) in ds:
-                loss, ss_loss = self._training_function(x, y, unlab_wk, unlab_str)
+            # in semisupervised case- b is strongly-augmented data for FixMatch
+            # in domain adaptation case- b is a label for the domain of each
+            # image in unlab_wk
+            for (x,y), (unlab_wk, b) in ds:
+                loss, ss_loss = self._training_function(x, y, unlab_wk, b)
                 self.training_loss.append(loss.numpy())
                 self.semisup_loss.append(ss_loss.numpy())
         else:
