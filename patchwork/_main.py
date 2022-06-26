@@ -20,6 +20,7 @@ from patchwork._util import _load_img, build_optimizer
 from patchwork._badge import KPlusPlusSampler, _build_output_gradient_function#_v1
 from patchwork._labelprop import _get_weighted_adjacency_matrix, _propagate_labels
 from patchwork._labelprop import LabelPropagator
+from patchwork._error_visualizer import ErrorVisualizer
 
 EPSILON = 1e-5
 
@@ -37,8 +38,8 @@ class GUI(object):
                  num_parallel_calls=2, logdir=None, aug=True, 
                  fixmatch_aug=DEFAULT_FIXMATCH_AUGMENT, dim=4,
                  tracking_uri=None, experiment_name=None, strategy=None,
-                 diversity_sampling_proj_dim=None, diversity_sampler_batch_size=64,
-                 diversity_sampling_power=2):
+                 diversity_sampling_proj_dim=None, default_prediction_batch_size=64,
+                 labelprop_tab=False, errorviz_tab=False):
         """
         Initialize either with a set of feature vectors or a feature extractor
         
@@ -63,10 +64,11 @@ class GUI(object):
         :diversity_sampling_proj_dim: set to a positive integer to enable diversity
             sampling. average-pooled feature vectors will be projected to this 
             dimension.
-        :diversity_sampler_batch_size: batch size to use for initial feature generation
-            for the diversity sampler
-        :diversity_sampling_power: power to raise distances to for probabilities for
-            k++ sampling.
+        :default_prediction_batch_size: batch size to use for initial feature generation
+            for the diversity sampler and error visualization
+        :labelprop_tab: whether to include a GUI tab for label propagation
+        :errorviz_tab: whether to include a GUI tab for visualizing features and 
+            predictions on validation data
         """
         self.fine_tuning_model = None
         self.df = df.copy()
@@ -75,6 +77,7 @@ class GUI(object):
         self._aug = aug
         self._badge_sampler = None
         self._fixmatch_aug = fixmatch_aug
+        self._default_prediction_batch_size = default_prediction_batch_size
         
         if strategy is None:
             strategy = tf.distribute.get_strategy()
@@ -111,10 +114,9 @@ class GUI(object):
                 index=df.index)
         
 
-        self._div_sampling_power = diversity_sampling_power
         if diversity_sampling_proj_dim is not None:
             logging.info("computing projected embeddings for diversity sampling")
-            self.build_projected_embeddings(diversity_sampler_batch_size,
+            self.build_projected_embeddings(default_prediction_batch_size,
                                             diversity_sampling_proj_dim)
         else:
             self._diversity_sampler = None
@@ -139,7 +141,10 @@ class GUI(object):
         # make a train manager- pass this object to it
         self.trainmanager = TrainManager(self)
         # make a label propagator
-        self.labelpropagator = LabelPropagator(self)
+        if labelprop_tab:
+            self.labelpropagator = LabelPropagator(self)
+        if errorviz_tab:
+            self.errorvisualizer = ErrorVisualizer(self)
         # default optimizer
         self._opt = tf.keras.optimizers.Adam(1e-3)
 
@@ -219,6 +224,13 @@ class GUI(object):
         """
         
         """
+        tabs = [("Annotate", self.labeler.panel()),
+                       ("Model", self.modelpicker.panel()), 
+                       ("Train", self.trainmanager.panel())]
+        if hasattr(self, "labelpropagator"):
+            tabs.append(("Label Propagation", self.labelpropagator.panel()))
+        if hasattr(self, "errorvisualizer"):
+            tabs.append(("Error Visualizer", self.errorvisualizer.panel()))
         return pn.Tabs(("Annotate", self.labeler.panel()),
                        ("Model", self.modelpicker.panel()), 
                        ("Train", self.trainmanager.panel()),
@@ -322,10 +334,12 @@ class GUI(object):
                                           unlabeled_indices=unlabeled_indices)
         return self._strategy.experimental_distribute_dataset(ds)
 
-    def _pred_dataset(self, batch_size=32):
+    def _pred_dataset(self, batch_size=None):
         """
         Build a dataset for predictions
         """
+        if batch_size is None:
+            batch_size = self._default_prediction_batch_size
         num_steps = int(np.ceil(len(self.df)/batch_size))
         if self.feature_vecs is None:
             files = self.df["filepath"].values
@@ -342,10 +356,12 @@ class GUI(object):
             
         
         
-    def _val_dataset(self, batch_size=32):
+    def _val_dataset(self, batch_size=None):
         """
         Build a dataset of just validation examples
         """
+        if batch_size is None:
+            batch_size = self._default_prediction_batch_size
         val_df = self.df[self.df.validation]
         ys = val_df[self.classes].values.copy()
         ys[np.isnan(ys)] = -1

@@ -37,7 +37,7 @@ def _scatter(d, p, c):
     return points*pos*error
 
 
-def _build_scatter_holomap(df, pred_df, embeds):
+def _build_scatter_holomap(df, pred_df, embeds, return_dict=False):
     """
     :df: dataframe of filepaths, labels, and subsets
     :pred_df: dataframe of predictions
@@ -48,7 +48,10 @@ def _build_scatter_holomap(df, pred_df, embeds):
     df["x"] = embeds[:,0]
     df["y"] = embeds[:,1]
     
-    return hv.HoloMap({c:_scatter(df, pred_df, c) for c in categories})
+    if return_dict:
+        return {c:_scatter(df, pred_df, c) for c in categories}
+    else:
+        return hv.HoloMap({c:_scatter(df, pred_df, c) for c in categories})
 
 
 
