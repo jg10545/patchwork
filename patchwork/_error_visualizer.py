@@ -31,7 +31,7 @@ class ErrorVisualizer():
         
     def _update_features(self):
         ds = self._pw._val_dataset()
-        
+        steps = int(np.ceil(self._pw.df.validation.sum()/self._pw._default_prediction_batch_size))
         fcn = self._pw.models["feature_extractor"]
         inpt = tf.keras.layers.Input(fcn.input_shape[1:])
         net = fcn(inpt)
