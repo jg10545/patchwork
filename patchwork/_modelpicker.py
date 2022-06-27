@@ -169,7 +169,6 @@ class ModelPicker(object):
                 "domain_confusion_weight_lambda":domain_lambda,
                 "fixmatch_tau":self._semisup["tau"].value,
                 "batch_size_multiplier_mu":self._semisup["mu"].value}
-            self._pw
         self._pw._model_params["weight_decay"] = self._weight_decay.value
         
 
