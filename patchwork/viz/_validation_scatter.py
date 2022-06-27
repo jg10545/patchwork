@@ -10,7 +10,7 @@ def _get_tsne_features(features):
     """
     Normalize and compute T-SNE embeddings for an (N,d) array of features
     """
-    features = sklearn.preprocessing.Normalizer().fit_transform(features)
+    features = sklearn.preprocessing.Normalizer().fit_transform(features.astype(np.float64))
     return sklearn.manifold.TSNE(2, init="pca", learning_rate="auto").fit_transform(features)
 
 
