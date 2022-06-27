@@ -24,14 +24,16 @@ def _scatter(d, p, c):
     """
     hovertool = bokeh.models.tools.HoverTool(tooltips=TOOLTIPS)
 
-    points = hv.Points(d).opts(color=hv.dim("subset"), size=4*(1+hv.dim("entropy")),
+    points = hv.Points(d, kdims=["x", "y"]).opts(color=hv.dim("subset"),
+                                                 size=4*(1+hv.dim("entropy")),
                                alpha=0.5, cmap="category20", marker="o", 
                                tools=[hovertool],
                                width=600, height=500, xaxis=None, yaxis=None)
 
-    pos = hv.Points(d[d[c] == 1]).opts(size=4*(1+hv.dim("entropy")), alpha=1, line_width=2,
+    pos = hv.Points(d[d[c] == 1], kdims=["x", "y"]).opts(size=4*(1+hv.dim("entropy")),
+                                                         alpha=1, line_width=2,
                                         marker="o", fill_color=None, line_color="darkblue")
-    error = hv.Points(d[d[c] != d.pred]).opts(size=4*(1+hv.dim("entropy")), alpha=1,
+    error = hv.Points(d[d[c] != d.pred], kdims=["x", "y"]).opts(size=4*(1+hv.dim("entropy")), alpha=1,
                                               line_width=2, marker="x", fill_color=None,
                                               line_color="firebrick")
     return points*pos*error
