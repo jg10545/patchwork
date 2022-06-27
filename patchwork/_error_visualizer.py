@@ -47,7 +47,7 @@ class ErrorVisualizer():
         
         val = self._pw.df.validation
         val_df = self._pw.df[val]
-        val_pred_df = self.pw.pred_df[val]
+        val_pred_df = self._pw.pred_df[val]
         
         assert self._embeds.shape[0] == len(val_df), "WRONG NUMBER OF VALIDATION EXAMPLES???"
         self._figures = _build_scatter_holomap(val_df, val_pred_df, self._embeds, return_dict=True)
