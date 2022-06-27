@@ -38,7 +38,7 @@ class ErrorVisualizer():
         net = self._pw.models["fine_tuning"](net)
         model = tf.keras.Model(inpt, net)
         
-        features = model.predict(ds)
+        features = model.predict(ds, steps=steps)
         self._embeds = _get_tsne_features(features)
         
         
