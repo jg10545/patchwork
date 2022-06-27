@@ -4,6 +4,7 @@ import panel as pn
 import tensorflow as tf
 import logging
 import os
+from tqdm import tqdm
 
 
 
@@ -605,6 +606,47 @@ class GUI(object):
         self.pred_df = _propagate_labels(self.df, self._adjacency_matrix,
                                          t=iterations)
     
+    def random_hyperparameter_search(self, N, semisup_lambda=None, 
+                                     learning_rate=None, finetune=None, 
+                                     lr_decay=False,
+                                     optimizer=False,
+                                     samplingstrategy=False):
+        """
+        
+        """
+        for _ in tqdm(range(N)):
+            
+            if semisup_lambda is not None:
+                s = semisup_lambda
+                self.modelpicker._semisup["lambda"].value = np.random.uniform(s[0],s[1])
+                
+            if learning_rate is not None:
+                l = learning_rate
+                newval = np.exp(np.random.uniform(np.log(l[0]), np.log(l[1])))
+                self.trainmanager._learn_rate.value = newval
+                
+            if finetune is not None:
+                f = finetune
+                newval = np.random.randint(f[0], f[1])
+                self.trainmanager._fine_tune_after.value = newval
+                
+            if lr_decay:
+                newval = np.random.choice(["none", "cosine"])
+                self.trainmanager._lr_decay.value = newval
+                
+            if optimizer:
+                newval = np.random.choice(["adam", "momentum"])
+                self.trainmanager._opt_chooser.value = newval
+                
+            if samplingstrategy:
+                newval = np.random.choice(["class", "instance", "squareroot"])
+                self.trainmanager._sample_chooser.value = newval
+                
+            
+                
+                
+            self.modelpicker._build_callback()
+            self.trainmanager._train_callback()
     
     
     
