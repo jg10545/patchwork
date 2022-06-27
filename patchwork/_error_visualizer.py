@@ -33,7 +33,7 @@ class ErrorVisualizer():
         ds = self._pw._val_dataset()
         
         fcn = self._pw.models["feature_extractor"]
-        inpt = tf.keras.layers.Input(fcn.input_shape)
+        inpt = tf.keras.layers.Input(fcn.input_shape[1:])
         net = fcn(inpt)
         net = self._pw.models["fine_tuning"](net)
         model = tf.keras.Model(inpt, net)
