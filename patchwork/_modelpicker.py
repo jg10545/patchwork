@@ -164,7 +164,7 @@ class ModelPicker(object):
         else:
             domain_lambda = self._semisup["lambda"].value
             fm_lambda = 0
-            self._pw._model_params["semisup"] = {
+        self._pw._model_params["semisup"] = {
                 "fixmatch_weight_lambda":fm_lambda,
                 "domain_confusion_weight_lambda":domain_lambda,
                 "fixmatch_tau":self._semisup["tau"].value,
