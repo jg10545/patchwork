@@ -585,12 +585,11 @@ class GUI(object):
         self._diversity_sampler = KPlusPlusSampler(matrix, indices=indices)
         
     def _update_diversity_sampler(self):
-        p = self._div_sampling_power
         if self._diversity_sampler is not None:
             X = self._diversity_sampler.X
             indices = list(find_labeled_indices(self.df)) + \
                     list(find_excluded_indices(self.df))
-            self._diversity_sampler = KPlusPlusSampler(X, p=p, indices=indices)  
+            self._diversity_sampler = KPlusPlusSampler(X, indices=indices)  
         
      
    
