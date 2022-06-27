@@ -46,7 +46,7 @@ class ErrorVisualizer():
         self._update_features()
         
         val = self._pw.df.validation
-        val_df = self.pw.df[val]
+        val_df = self._pw.df[val]
         val_pred_df = self.pw.pred_df[val]
         
         assert self._embeds.shape[0] == len(val_df), "WRONG NUMBER OF VALIDATION EXAMPLES???"
