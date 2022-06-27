@@ -232,11 +232,7 @@ class GUI(object):
             tabs.append(("Label Propagation", self.labelpropagator.panel()))
         if hasattr(self, "errorvisualizer"):
             tabs.append(("Error Visualizer", self.errorvisualizer.panel()))
-        return pn.Tabs(("Annotate", self.labeler.panel()),
-                       ("Model", self.modelpicker.panel()), 
-                       ("Train", self.trainmanager.panel()),
-                       ("Label Propagation", self.labelpropagator.panel())
-                       )
+        return pn.Tabs(*tabs)
     
     def serve(self, **kwargs):
         """
