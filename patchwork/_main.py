@@ -181,8 +181,8 @@ class GUI(object):
             for k in self._model_params["output"]:
                 if k != "num_params":
                     params[k] = self._model_params["output"][k]
-            for k in self._model_params["fixmatch"]:
-                params["fixmatch_"+k] = self._model_params["fixmatch"][k]
+            for k in self._model_params["semisup"]:
+                params["semisup_"+k] = self._model_params["semisup"][k]
             params["num_params"] = self._model_params["fine_tuning"]["num_params"] + \
                                     self._model_params["output"]["num_params"]
                                     
@@ -270,7 +270,7 @@ class GUI(object):
         """
         bs = int(batch_size*mu)
         filepaths, labels = stratified_subset_sample(self.df, bs)
-        self._num_domains = len(self.ds.subset.unique())
+        self._num_domains = len([s for s in self.ds.subset.unique() if isinstance(s, str)])
         return  dataset(filepaths, labels, imshape=self._imshape, 
                        num_channels=self._num_channels,
                        num_parallel_calls=self._num_parallel_calls, 
@@ -306,13 +306,13 @@ class GUI(object):
             # we're doing semisupervised learning
             if self._semi_supervised:
                 unlab_ds = self._fixmatch_unlab_dataset(batch_size, 
-                                                        self._model_params["fixmatch"]["mu"])
+                                                        self._model_params["semisup"]["batch_size_multiplier_mu"])
                 # stitch together the labeled and unlabeled datasets
                 ds = tf.data.Dataset.zip((ds, unlab_ds))
             # or include unlabeled data if we're doing domain adaptation
             elif self._domain_adapt:
                 unlab_ds = self._domain_adaptation_dataset(batch_size, 
-                                                        self._model_params["fixmatch"]["mu"])
+                                                        self._model_params["semisup"]["batch_size_multiplier_mu"])
                 # stitch together the labeled and unlabeled datasets
                 ds = tf.data.Dataset.zip((ds, unlab_ds))
                 
@@ -475,14 +475,29 @@ class GUI(object):
         return meanloss_distributed
             
     
-    def predict_on_all(self, batch_size=32):
+    def predict_on_all(self, batch_size=None):
         """
         Run inference on all the data; save to self.pred_df
         """
+        if batch_size is None:
+            batch_size = self._default_prediction_batch_size
         ds, num_steps = self._pred_dataset(batch_size)
         predictions = self.models["full"].predict(ds, steps=num_steps)
 
         self.pred_df.loc[:, self.classes] = predictions
+        
+    
+    def predict_on_val(self, batch_size=None):
+        """
+        Run inference on validation data only; save to self.pred_df
+        """
+        if batch_size is None:
+            batch_size = self._default_prediction_batch_size
+        ds = self._val_dataset(batch_size)
+        num_steps = int(np.ceil(len(self.df)/batch_size))
+        predictions = self.models["full"].predict(ds, steps=num_steps)
+
+        self.pred_df.loc[self.df.validation, self.classes] = predictions
     
     def _stratified_sample(self, N=None):
         return stratified_sample(self.df, N)
@@ -613,12 +628,14 @@ class GUI(object):
             
             if semisup_lambda is not None:
                 s = semisup_lambda
-                self.modelpicker._semisup["lambda"].value = np.random.uniform(s[0],s[1])
+                self.modelpicker._semisup["lambda"].value = float(np.random.uniform(s[0], 
+                                                                  s[1], dtype=np.float32))
                 
             if learning_rate is not None:
                 l = learning_rate
-                newval = np.exp(np.random.uniform(np.log(l[0]), np.log(l[1])))
-                self.trainmanager._learn_rate.value = newval
+                newval = np.exp(np.random.uniform(np.log(l[0]), np.log(l[1]),
+                                                  dtype=np.float32))
+                self.trainmanager._learn_rate.value = float(newval)
                 
             if finetune is not None:
                 f = finetune

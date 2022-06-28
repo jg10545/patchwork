@@ -187,7 +187,7 @@ def stratified_subset_sample(df, N=1000):
     """
     not_excluded = (df["exclude"] != True)&(df["validation"] != True)
     assert "subset" in df.columns, "can't stratify by subset if there's no subset"
-    subsets = df.subset.unique()
+    subsets = [s for s in df.subset.unique() if isinstance(s, str)]
     
     indexlist = []
     for s in subsets:

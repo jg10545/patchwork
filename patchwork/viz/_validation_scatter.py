@@ -1,7 +1,12 @@
 import numpy as np
-import holoviews as hv
 import bokeh.models.tools
 import sklearn.manifold, sklearn.preprocessing
+import warnings
+
+try:
+    import holoviews as hv
+except:
+    warnings.warn("holoviews not installed")
 
 from patchwork._sample import PROTECTED_COLUMN_NAMES
 
@@ -11,10 +16,11 @@ def _get_tsne_features(features):
     Normalize and compute T-SNE embeddings for an (N,d) array of features
     """
     features = sklearn.preprocessing.Normalizer().fit_transform(features.astype(np.float64))
-    return sklearn.manifold.TSNE(2, init="pca", learning_rate="auto").fit_transform(features)
+    return sklearn.manifold.TSNE(2, init="pca").fit_transform(features)
 
 
 def _scatter(d, p, c):
+
     d = d.copy()
     d["entropy"] = -1*d[c].values*np.log2(p[c].values+1e-5) - \
                         (1-d[c].values)*np.log2(1-p[c].values+1e-5)

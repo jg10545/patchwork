@@ -39,6 +39,7 @@ class ErrorVisualizer():
         model = tf.keras.Model(inpt, net)
         
         features = model.predict(ds, steps=steps)
+        self._features = features
         self._embeds = _get_tsne_features(features)
         
         

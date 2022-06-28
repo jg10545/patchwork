@@ -205,7 +205,7 @@ class TrainManager():
         return pn.Row(controls, figures)
     
     
-    def _train_callback(self, *event):
+    def _train_callback(self, *event, update_val_only=False):
         # check for abort condition
         abort = False
         epochs_since_improving = 0
@@ -226,7 +226,9 @@ class TrainManager():
                                              "batches_per_epoch":self._batches_per_epoch.value,
                                              "epochs":self._epochs.value,
                                              "sampling":self._sample_chooser.value,
-                                             "fine_tune_after":self._fine_tune_after.value}
+                                             "fine_tune_after":self._fine_tune_after.value,
+                                             "lr_decay":self._lr_decay.value,
+                                             "optimizer":self._opt_chooser.value}
         
         # tensorflow function for computing test loss
         meanloss = self.pw._build_loss_tf_fn()
@@ -283,7 +285,10 @@ class TrainManager():
             # skip this if we're aborting
             if not abort:
                 self._footer.object = "### EVALUATING"
-                self.pw.predict_on_all(self._pred_batch_size.value)
+                if update_val_only:
+                    self.pw.predict_on_val(self._pred_batch_size.value)
+                else:
+                    self.pw.predict_on_all(self._pred_batch_size.value)
                 self.pw._mlflow_track_run()
 
         if not abort:
