@@ -269,7 +269,7 @@ class GUI(object):
         """
         bs = int(batch_size*mu)
         filepaths, labels = stratified_subset_sample(self.df, bs)
-        self._num_domains = len([s for s in self.ds.subset.unique() if isinstance(s, str)])
+        self._num_domains = len([s for s in self.df.subset.unique() if isinstance(s, str)])
         return  dataset(filepaths, labels, imshape=self._imshape, 
                        num_channels=self._num_channels,
                        num_parallel_calls=self._num_parallel_calls, 
