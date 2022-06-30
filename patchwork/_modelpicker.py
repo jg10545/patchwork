@@ -17,7 +17,7 @@ class ModelPicker(object):
     """
     For building fine-tuning models
     """
-    def __init__(self, num_classes, feature_shape, pw, feature_extractor=None):
+    def __init__(self, num_classes, feature_shape, pw):#, feature_extractor=None):
         """
         
         """
@@ -30,7 +30,7 @@ class ModelPicker(object):
         self._num_classes = num_classes
         #self._inpt_channels = inpt_channels
         self._pw = pw
-        self._feature_extractor = feature_extractor
+        #self._feature_extractor = feature_extractor
         self._weight_decay = pn.widgets.LiteralInput(name="Weight decay", value=0., type=float)
         # ------- FINE TUNING MODEL SELECTION AND CONFIGURATION -------
         # dropdown and watcher to pick model type
@@ -174,9 +174,10 @@ class ModelPicker(object):
 
         # 3) GENERATE FULL MODEL (for inference)
         with self._pw._strategy.scope():
-            if self._feature_extractor is not None:
-                inpt = tf.keras.layers.Input(self._feature_extractor.input_shape[1:])
-                net = self._feature_extractor(inpt)
+            feature_extractor = self._pw.models["feature_extractor"]
+            if feature_extractor is not None:
+                inpt = tf.keras.layers.Input(feature_extractor.input_shape[1:])
+                net = feature_extractor(inpt)
             else:
                 inpt = tf.keras.layers.Input(fine_tuning_model.input_shape[1:])
                 net = inpt

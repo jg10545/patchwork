@@ -74,7 +74,7 @@ class GUI(object):
         self.fine_tuning_model = None
         self.df = df.copy()
         self.feature_vecs = feature_vecs
-        self.feature_extractor = feature_extractor
+        #self.feature_extractor = feature_extractor
         self._aug = aug
         self._badge_sampler = None
         self._fixmatch_aug = fixmatch_aug
@@ -390,7 +390,7 @@ class GUI(object):
         trainfunc = build_training_function(self.loss_fn, opt,
                             self.models["fine_tuning"],
                             self.models["output"],
-                            feature_extractor=self.feature_extractor,
+                            feature_extractor=self.models["feature_extractor"],
                             lam=self._model_params["semisup"]["fixmatch_weight_lambda"],
                             tau=self._model_params["semisup"]["fixmatch_tau"],
                             weight_decay=weight_decay,

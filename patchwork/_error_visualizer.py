@@ -32,11 +32,12 @@ class ErrorVisualizer():
     def _update_features(self):
         ds = self._pw._val_dataset()
         steps = int(np.ceil(self._pw.df.validation.sum()/self._pw._default_prediction_batch_size))
-        fcn = self._pw.models["feature_extractor"]
-        inpt = tf.keras.layers.Input(fcn.input_shape[1:])
-        net = fcn(inpt)
-        net = self._pw.models["fine_tuning"](net)
-        model = tf.keras.Model(inpt, net)
+        with self._pw._strategy.scope():
+            fcn = self._pw.models["feature_extractor"]
+            inpt = tf.keras.layers.Input(fcn.input_shape[1:])
+            net = fcn(inpt)
+            net = self._pw.models["fine_tuning"](net)
+            model = tf.keras.Model(inpt, net)
         
         features = model.predict(ds, steps=steps)
         self._features = features
