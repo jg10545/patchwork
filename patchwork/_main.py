@@ -137,8 +137,7 @@ class GUI(object):
             
 
         self.modelpicker = ModelPicker(len(self.classes),
-                                       self._feature_shape, self,
-                                       feature_extractor=feature_extractor)
+                                       self._feature_shape, self)
         # make a train manager- pass this object to it
         self.trainmanager = TrainManager(self)
         # make a label propagator
