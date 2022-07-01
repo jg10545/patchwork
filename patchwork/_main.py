@@ -628,12 +628,11 @@ class GUI(object):
             if semisup_lambda is not None:
                 s = semisup_lambda
                 self.modelpicker._semisup["lambda"].value = float(np.random.uniform(s[0], 
-                                                                  s[1], dtype=np.float32))
+                                                                  s[1]).astype(np.float32))
                 
             if learning_rate is not None:
                 l = learning_rate
-                newval = np.exp(np.random.uniform(np.log(l[0]), np.log(l[1]),
-                                                  dtype=np.float32))
+                newval = np.exp(np.random.uniform(np.log(l[0]), np.log(l[1]))).astype(np.float32)
                 self.trainmanager._learn_rate.value = float(newval)
                 
             if finetune is not None:
