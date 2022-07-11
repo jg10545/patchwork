@@ -83,11 +83,13 @@ def build_training_function(loss_fn, opt, fine_tuning, output, feature_extractor
                 crossent_tensor = K.binary_crossentropy(pseudolabels,
                                                         preds_str)
                 semisup_loss = tf.reduce_mean(mask*crossent_tensor)
+                semisup_weight = lam
             elif domain_weight > 0:
                 if feature_extractor is not None:
                     x_unlab_wk = feature_extractor(x_unlab_wk, training=True)
                 features = fine_tuning(x_unlab_wk, training=True)
                 semisup_loss = _compute_mmd_loss(features, domain_labels, num_domains)
+                semisup_weight = domain_weight
             else:
                 semisup_loss = 0
             
@@ -102,7 +104,7 @@ def build_training_function(loss_fn, opt, fine_tuning, output, feature_extractor
             if (weight_decay > 0)&(feature_extractor is not None)&finetune:
                 l2_loss += compute_l2_loss(feature_extractor)
             
-            total_loss = training_loss + weight_decay*l2_loss + max(lam, domain_weight)*semisup_loss
+            total_loss = training_loss + weight_decay*l2_loss + semisup_weight*semisup_loss
                 
         # compute and apply gradients
         gradients = tape.gradient(total_loss, trainvars)
