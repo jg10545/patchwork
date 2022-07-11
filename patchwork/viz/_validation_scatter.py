@@ -32,7 +32,7 @@ def _scatter(d, p, c):
 
     points = hv.Points(d, kdims=["x", "y"]).opts(color=hv.dim("subset"),
                                                  size=4*(1+hv.dim("entropy")),
-                               alpha=0.5, cmap="category20", marker="o", 
+                               alpha=0.5, cmap="glasbey_dark", marker="o", 
                                tools=[hovertool],
                                width=600, height=500, xaxis=None, yaxis=None)
 
