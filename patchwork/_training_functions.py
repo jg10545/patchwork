@@ -92,6 +92,7 @@ def build_training_function(loss_fn, opt, fine_tuning, output, feature_extractor
                 semisup_weight = domain_weight
             else:
                 semisup_loss = 0
+                semisup_weight 0
             
             # supervised loss function between labels and predictions
             training_loss = loss_fn(y, y_pred)
