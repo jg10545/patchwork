@@ -20,7 +20,7 @@ def _compute_mmd_loss(features, domain_labels, num_domains, eps=1e-5):
     domain_counts = tf.reduce_sum(dense_domain_labels, 0, keepdims=True)
     domain_means = tf.transpose(tf.matmul(features, dense_domain_labels, transpose_a=True)/(domain_counts+eps))
     
-    loss = 0
+    loss = 0.
     for i in tf.range(1,num_domains):
         shuffled_means = tf.gather(domain_means, (np.arange(num_domains)+i)%num_domains)
         loss += tf.reduce_sum((domain_means-shuffled_means)**2)/num_domains
