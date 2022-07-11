@@ -91,7 +91,10 @@ class GUI(object):
         self._num_parallel_calls = num_parallel_calls
         self._semi_supervised = False
         self._domain_adapt = False
-        self._num_domains = 0
+        if "subset" in self.df.columns:
+            self._num_domains = len([s for s in self.df.subset.unique() if isinstance(s, str)])
+        else:
+            self._num_domains = 0
         self._logdir = logdir
         self.models = {"feature_extractor":feature_extractor, 
                        "feature_extractor_backup":feature_extractor, 
@@ -269,7 +272,7 @@ class GUI(object):
         """
         bs = int(batch_size*mu)
         filepaths, labels = stratified_subset_sample(self.df, bs)
-        self._num_domains = len([s for s in self.df.subset.unique() if isinstance(s, str)])
+        
         return  dataset(filepaths, labels, imshape=self._imshape, 
                        num_channels=self._num_channels,
                        num_parallel_calls=self._num_parallel_calls, 
