@@ -9,7 +9,7 @@ from tensorflow.python.framework import constant_op
 
 class CosineDecayWarmup(tf.keras.optimizers.schedules.LearningRateSchedule):
     def __init__(self, initial_learning_rate, decay_steps,
-                  alpha=0.01, warmup_steps=2000, name=None):
+                  alpha=0.01, warmup_steps=5000, name=None):
         
         """
         Cosine decay with linear warmup.
