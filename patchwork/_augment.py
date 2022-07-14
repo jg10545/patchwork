@@ -317,11 +317,6 @@ def _random_shear(x, shear=0.3, **kwargs):#, outputshape=(128,128)):
     return tf.reshape(distorted, shape)
 
 
-def _shuffle_channels(x, prob=0.25, **kwargs):
-    if _choose(prob):
-        perm = tf.random.shuffle(tf.range(x.shape[-1]))
-        x = tf.stack([x[:,:,p] for p in perm], -1)
-    return x
 
 SINGLE_AUG_FUNC = {
     "gaussian_blur":_gaussian_blur,
@@ -344,14 +339,13 @@ SINGLE_AUG_FUNC = {
     "autocontrast":_random_autocontrast,
     "shear":_random_shear,
     "pixel_mask":_pixel_mask,
-    "shuffle_channels":_shuffle_channels
 }
 
 
 AUGMENT_ORDERING = ["flip_left_right", "flip_up_down", "rot90", "shear",
                     "zoom_scale", "center_zoom_scale", "solarize",
                     "jitter", "brightness_delta",
-                    "contrast_delta", "saturation_delta", "hue_delta", "shuffle_channels",
+                    "contrast_delta", "saturation_delta", "hue_delta", 
                     "gaussian_blur", "gaussian_noise", "autocontrast",
                     "drop_color", "sobel_prob", "jpeg_degrade", "mask", "pixel_mask"]
 

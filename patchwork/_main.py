@@ -333,7 +333,7 @@ class GUI(object):
                                           unlabeled_indices=unlabeled_indices)
         return self._strategy.experimental_distribute_dataset(ds)
 
-    def _pred_dataset(self, batch_size=None):
+    def _pred_dataset(self, batch_size=None, distribute=True):
         """
         Build a dataset for predictions
         """
@@ -350,8 +350,10 @@ class GUI(object):
         # PRE-EXTRACTED FEATURE CASE
         else:
             ds = tf.data.Dataset.from_tensor_slices(self.feature_vecs
-                                                      ).batch(batch_size)#, num_steps
-        return self._strategy.experimental_distribute_dataset(ds), num_steps
+                                                      ).batch(batch_size)
+        if distribute:
+            ds = self._strategy.experimental_distribute_dataset(ds)
+        return ds, num_steps
             
         
         
@@ -539,7 +541,7 @@ class GUI(object):
         # then run that function across all the iamges.
         output_gradients = np.concatenate(
             [compute_output_gradients(x).numpy() 
-             for x in self._pred_dataset()[0]], axis=0)
+             for x in self._pred_dataset(distribute=False)[0]], axis=0)
         # find the indices that have already been fully 
         # labeled, so we can avoid sampling nearby
         indices = list(find_labeled_indices(self.df)) + \
@@ -586,7 +588,7 @@ class GUI(object):
         proj = np.random.normal(0, 1, size=(D, proj_dim))
         
         # generate predictions
-        ds, steps = self._pred_dataset(pred_batch_size)
+        ds, steps = self._pred_dataset(pred_batch_size, distribute=False)
         
         matrix = np.concatenate([
             tf.nn.l2_normalize(model(x), 1).numpy().dot(proj)
