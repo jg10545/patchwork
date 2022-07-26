@@ -62,7 +62,7 @@ def _jitter(x, strength=1., **kwargs):
     def _transform(i,img):
         if i == 0:
             delta = 0.8*strength
-            factor = tf.random.uniform([], 
+            factor = tf.random.uniform([],
                                        tf.maximum(1.0-delta, 0),
                                        1.0+delta)
             return img*factor
@@ -84,7 +84,7 @@ def _jitter(x, strength=1., **kwargs):
 
 
 def _poisson(lam):
-    return tf.random.poisson(shape=[], lam=lam, 
+    return tf.random.poisson(shape=[], lam=lam,
                                dtype=tf.int32)
 
 
@@ -107,7 +107,7 @@ def _add_gaussian_noise(x, prob=0.25, **kwargs):
 def _sobelize(x, prob=0.1, **kwargs):
     """
     Augmentation variant of sobelizer function
-    
+
     The first two channels are the sobel filter and
     the third will be zeros (so that it's compatible with
     standard network structures)
@@ -152,13 +152,13 @@ def _random_zoom(x, scale=0.1, imshape=(256,256), **kwargs):
     """
     Randomly zoom in on the image- augmented image will be between
     [scale] and 100% of original area.
-    
+
     Based on the random crop function in the SimCLR repo:
-    
+
     https://github.com/google-research/simclr/blob/7fd0c80092a650c5318ce08fd32f0931747ab966/data_util.py#L274
     """
     shape = tf.shape(x)
-    bbox = tf.constant([0.0, 0.0, 1.0, 1.0], 
+    bbox = tf.constant([0.0, 0.0, 1.0, 1.0],
                            dtype=tf.float32, shape=[1, 1, 4])
     aspect_ratio = imshape[1]/imshape[0] #width / height
     ar_range = (3. / 4 * aspect_ratio, 4. / 3. * aspect_ratio)
@@ -177,21 +177,13 @@ def _random_zoom(x, scale=0.1, imshape=(256,256), **kwargs):
     target_height, target_width, _ = tf.unstack(bbox_size)
     cropped_image = tf.image.crop_to_bounding_box(
             x, offset_y, offset_x, target_height, target_width)
-    
+
     x = tf.image.resize([cropped_image], imshape, method="bicubic")[0]
     return x
 
 def _center_crop(x, scale=0.1, imshape=(256,256), **kwargs):
-    # pick a random number between scale and 1
-    z = tf.random.uniform(np.array([1]), scale, 1)
-    # pick 4 edges between 0.25 and 1
-    #edges = tf.random.uniform(np.array([1,4]), 0.25, 1.)
-    edges = tf.random.uniform(np.array([1,4]), 0.5, 1.)
-    # rescale so average edge is 1
-    edges /= tf.reduce_mean(edges)
-    #box = (1-z**2)*tf.random.uniform(np.array([1,4]), 0, 0.5) * np.array([[1,1,-1,-1]], dtype=np.float32) 
-    box = (1-z)*edges * np.array([[1,1,-1,-1]], dtype=np.float32) 
-    box += np.array([0,0,1,1], dtype=np.float32)
+    z = tf.random.uniform(np.array([1]), 0, (1-scale)/2)
+    box = tf.stack([z, z, 1 - z, 1 - z], 1)
     ind = np.array([0], dtype=np.int32)
     return tf.image.crop_and_resize(tf.expand_dims(x, 0), box, ind, imshape)[0]
 
@@ -199,29 +191,29 @@ def _center_crop(x, scale=0.1, imshape=(256,256), **kwargs):
 def _random_mask(x, prob=0.25,  **kwargs):
     """
     Generates random rectangular masks
-    
+
     """
     if _choose(prob):
         H,W,C = x.shape
-    
+
         dh = tf.random.uniform([], minval=int(H/20), maxval=int(H/2), dtype=tf.int32)
         dw = tf.random.uniform([], minval=int(H/20), maxval=int(W/2), dtype=tf.int32)
-    
+
         xmin = tf.random.uniform([], minval=0, maxval=W-dw, dtype=tf.int32)
         ymin = tf.random.uniform([], minval=0, maxval=H-dh, dtype=tf.int32)
         xmax = xmin + dw
         ymax = ymin + dh
-    
+
         above_xmin = tf.cast(tf.range(0, W) >= xmin, tf.float32)
         above_ymin = tf.cast(tf.range(0, H) >= ymin, tf.float32)
 
         below_xmax = tf.cast(tf.range(0, W) < xmax, tf.float32)
         below_ymax = tf.cast(tf.range(0, H) < ymax, tf.float32)
-    
+
         prod1 = tf.matmul(tf.expand_dims(above_ymin,-1),tf.expand_dims(above_xmin,0))
         prod2 = tf.matmul(tf.expand_dims(below_ymax,-1),tf.expand_dims(below_xmax,0))
         mask = tf.expand_dims(prod1*prod2,-1)
-    
+
         x =  x*(1-mask) + 0.5*mask
     return x
 
@@ -254,8 +246,8 @@ def _gaussian_blur(x, prob=0.25, imshape=(256,256), **kwargs):
         # knock back down to 3 dimensions
         x = tf.squeeze(blurred, axis=0)
     return x
-        
-        
+
+
 
 def _random_brightness(x, brightness_delta=0.2, **kwargs):
     #print("USING ADDITIVE RANDOM_BRIGHTNESS")
@@ -298,7 +290,7 @@ def _random_jpeg_degrade(x, prob=0.25, **kwargs):
 def _random_shear(x, shear=0.3, **kwargs):#, outputshape=(128,128)):
     """
     Wrapper for tf.raw_ops.ImageProjectiveTransform
-    
+
     :x: (H,W,3) tensor for the input image
     :outputshape: tuple for image output size
     """
@@ -307,12 +299,12 @@ def _random_shear(x, shear=0.3, **kwargs):#, outputshape=(128,128)):
     shear_y = tf.random.uniform((), minval=-1*shear, maxval=shear)
     dx = -1*shape[1]*shear_x/2
     dy = -1*shape[0]*shear_y/2
-    
-    tfm = tf.stack([1, shear_x, dx, shear_y, 1, dy, 
-                     tf.constant(0.0, dtype=tf.float32), 
+
+    tfm = tf.stack([1, shear_x, dx, shear_y, 1, dy,
+                     tf.constant(0.0, dtype=tf.float32),
                      tf.constant(0.0, dtype=tf.float32)], axis=0)
     tfm = tf.reshape(tfm, [1,8])
-    distorted = tf.raw_ops.ImageProjectiveTransformV2(images=tf.expand_dims(x,0), transforms=tfm, 
+    distorted = tf.raw_ops.ImageProjectiveTransformV2(images=tf.expand_dims(x,0), transforms=tfm,
                                       output_shape=shape[:2], interpolation="BILINEAR")[0]
     return tf.reshape(distorted, shape)
 
@@ -345,7 +337,7 @@ SINGLE_AUG_FUNC = {
 AUGMENT_ORDERING = ["flip_left_right", "flip_up_down", "rot90", "shear",
                     "zoom_scale", "center_zoom_scale", "solarize",
                     "jitter", "brightness_delta",
-                    "contrast_delta", "saturation_delta", "hue_delta", 
+                    "contrast_delta", "saturation_delta", "hue_delta",
                     "gaussian_blur", "gaussian_noise", "autocontrast",
                     "drop_color", "sobel_prob", "jpeg_degrade", "mask", "pixel_mask"]
 
@@ -356,7 +348,7 @@ def _augment(im, aug_dict, imshape=None):
     for a in AUGMENT_ORDERING:
         if a in aug_dict:
             im = SINGLE_AUG_FUNC[a](im, aug_dict[a], imshape=imshape)
-    
+
     im = tf.clip_by_value(im, 0, 1)
     return im
 
