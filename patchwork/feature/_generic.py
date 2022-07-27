@@ -18,11 +18,12 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import accuracy_score, confusion_matrix
 from tensorboard.plugins.hparams import api as hp
 
-from patchwork.loaders import _get_features, _get_rotation_features
+from patchwork.loaders import _get_features, _get_rotation_features, dataset, stratified_training_dataset
 from patchwork.viz._projector import save_embeddings
 from patchwork.viz._kernel import _make_kernel_sprites
 from patchwork.viz._feature import _build_query_image
 from patchwork._util import build_optimizer
+from patchwork.feature._stratify import _get_cluster_indices
 
 
 INPUT_PARAMS = ["imshape", "num_channels", "norm", "batch_size",
@@ -37,16 +38,17 @@ _TENSORBOARD_DESCRIPTIONS = {
     "l2_loss":"Total squared magnitude of training weights for L2 loss computation. This is the value **before** rescaling by your weight decay parameter. this will be zero if weight decay is zero or if the LARS optimizer is used",
     "linear_classification_accuracy":"Downstream task test accuracy. Feature vectors for labeled images are average-pooled and used to train a multinomial regression model. Labeled points are deterministically split into 2/3 train, 1/3 test.",
     "first_convolution_filters":"Kernels from the first convolutional layer of the feature extractor.",
-    "closest_feature_vectors":"Image retrieval test. Each image in the leftmost column is from a different class in your labeled dataset; the images to the right are the images whose features had the smallest cosine simlarity."
+    "closest_feature_vectors":"Image retrieval test. Each image in the leftmost column is from a different class in your labeled dataset; the images to the right are the images whose features had the smallest cosine simlarity.",
+    "cluster_index_counts":"Distribution of training points per cluster"
 }
 
 
-def _run_this_epoch(flag, e): 
+def _run_this_epoch(flag, e):
     if isinstance(flag, bool):
         return flag
     else:
         if e > 0:
-            return e%flag == 0  
+            return e%flag == 0
         else:
             return False
 
@@ -56,12 +58,12 @@ SPECIAL_HPARAMS = {
     "opt_type":["adam", "momentum", "lars"]
     }
 
-def _configure_hparams(logdir, dicts, 
+def _configure_hparams(logdir, dicts,
                        metrics=["linear_classification_accuracy",
                                 "alignment", "uniformity"]):
     """
     Set up the tensorboard hyperparameter interface
-    
+
     :logdir: string; path to log directory
     :dicts: list of dictionaries containing hyperparameter values
     :metrics: list of strings; metric names
@@ -83,32 +85,32 @@ def _configure_hparams(logdir, dicts,
                 params[hp.HParam(k, hp.RealInterval(0., 10000000.))] = d[k]
     #
     hparams_config = hp.hparams_config(
-                        hparams=list(params.keys()), 
+                        hparams=list(params.keys()),
                         metrics=metrics)
-                
+
     # get a name for the run
     base_dir, run_name = os.path.split(logdir)
     if len(run_name) == 0:
         base_dir, run_name = os.path.split(base_dir)
     # record hyperparamers
     hp.hparams(params, trial_id=run_name)
-    
+
 
 def linear_classification_test(fcn, downstream_labels, avpool=True, rotation_task=False,
                                query_fig=False, **input_config):
     """
     Train a linear classifier on a fully-convolutional network
     and return out-of-sample results.
-    
+
     :fcn: Keras fully-convolutional network
-    :downstream_labels: dictionary mapping image file paths to labels, or a 
+    :downstream_labels: dictionary mapping image file paths to labels, or a
         dataset returning image/label pairs
     :avpool: average-pool feature tensors before fitting linear model. if False, flatten instead.
     :rotation_task: if True, use an unlabeled list of filepaths and measure performance on an
         image-rotation task (see "Evaluating Self-Supervised Pretraining Without Using Labels")
     :query_fig: set to an integer to return data for a figure showing images with similar vectors
     :input_config: kwargs for patchwork.loaders.dataset()
-    
+
     Returns
     :acc: float; test accuracy
     :cm: 2D numpy array; confusion matrix
@@ -116,23 +118,23 @@ def linear_classification_test(fcn, downstream_labels, avpool=True, rotation_tas
     """
     # load features into memory
     if rotation_task:
-        features, labels = _get_rotation_features(fcn, downstream_labels, 
-                                                  avpool=avpool, **input_config)     
-        
+        features, labels = _get_rotation_features(fcn, downstream_labels,
+                                                  avpool=avpool, **input_config)
+
     else:
-        features, labels = _get_features(fcn, downstream_labels, 
-                                            avpool=avpool, **input_config)     
+        features, labels = _get_features(fcn, downstream_labels,
+                                            avpool=avpool, **input_config)
     # build a deterministic train/test split
     split = np.array([(i%3 == 0) for i in range(features.shape[0])])
     trainvecs = features[~split]
     testvecs = features[split]
-    
+
     # rescale train and test
     scaler = StandardScaler().fit(trainvecs)
     trainvecs = scaler.transform(trainvecs)
     testvecs = scaler.transform(testvecs)
     # train a multinomial linear classifier
-    logreg = SGDClassifier(loss="log", max_iter=1000, n_jobs=-1, 
+    logreg = SGDClassifier(loss="log", max_iter=1000, n_jobs=-1,
                            learning_rate="adaptive", eta0=1e-2)
     logreg.fit(trainvecs, labels[~split])
     # make predictions on test set
@@ -140,7 +142,7 @@ def linear_classification_test(fcn, downstream_labels, avpool=True, rotation_tas
     # compute metrics and return
     acc = accuracy_score(labels[split], preds)
     cm = confusion_matrix(labels[split], preds)
-    
+
     if query_fig:
         fig = _build_query_image(features, labels, downstream_labels, query_fig)
         return acc, cm, fig
@@ -162,9 +164,9 @@ class EmptyContextManager():
 
 class GenericExtractor(object):
     """
-    Place to store common code for different feature extractor methods. Don't 
+    Place to store common code for different feature extractor methods. Don't
     actually use this to do anything.
-    
+
     To subclass this, replace:
         __init__
         _build_default_model
@@ -173,9 +175,9 @@ class GenericExtractor(object):
     """
     modelname = "GenericExtractor"
     _description = _TENSORBOARD_DESCRIPTIONS
-    
-    
-    def __init__(self, logdir=None, trainingdata=[], fcn=None, augment=False, 
+
+
+    def __init__(self, logdir=None, trainingdata=[], fcn=None, augment=False,
                  extractor_param=None, imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, shuffle=True, num_parallel_calls=None,
                  sobel=False, single_channel=False, strategy=None):
@@ -195,24 +197,24 @@ class GenericExtractor(object):
         :shuffle: (bool) whether to shuffle training set
         :num_parallel_calls: (int) number of threads for loader mapping
         :sobel: whether to replace the input image with its sobel edges
-        :single_channel: if True, expect a single-channel input image and 
+        :single_channel: if True, expect a single-channel input image and
             stack it num_channels times.
         """
         self.logdir = logdir
         self.strategy = strategy
-        
+
         if fcn is None:
             fcn = self._build_default_model()
         self.fcn = fcn
         self._models = {"fcn":fcn}
-        
+
         if logdir is not None:
             self._file_writer = tf.summary.create_file_writer(logdir, flush_millis=10000)
             self._file_writer.set_as_default()
         self.step = 0
-        
-        
-        
+
+
+
     def _parse_configs(self, metrics=["linear_classification_accuracy",
                                       "alignment", "uniformity"], **kwargs):
         """
@@ -231,41 +233,41 @@ class GenericExtractor(object):
                 self.input_config[k] = kwargs[k]
             else:
                 self.config[k] = kwargs[k]
-                
+
         if "notes" in kwargs:
             self._notes = kwargs["notes"]
         else:
             self._notes = None
-                
+
         # dump configuration to a YAML file
         config_path = os.path.join(self.logdir, "config.yml")
-        config_dict = {"model":self.config, "input":self.input_config, 
+        config_dict = {"model":self.config, "input":self.input_config,
                        "augment":self.augment_config}
         yaml.dump(config_dict, open(config_path, "w"), default_flow_style=False)
-        
+
         # save tensorboard hyperparameters
         # the only input parameter relevant to most hyperparameter tuning
         # questions is the batch size.
         dicts = [self.config, {"batch_size":self.input_config["batch_size"]},
                  self.augment_config]
         _configure_hparams(self.logdir, dicts, metrics)
-        
+
     def _build_default_model(self, **kwargs):
         # REPLACE THIS WHEN SUBCLASSING
         return True
-    
+
     def _run_training_epoch(self, **kwargs):
         # REPLACE THIS WHEN SUBCLASSING
         return True
-    
-    def fit(self, epochs=1, avpool=True, save=True, evaluate=True, 
+
+    def fit(self, epochs=1, avpool=True, save=True, evaluate=True,
             save_projections=False,
             visualize_kernels=False, log_fcn=False, query_fig=False):
         """
         Train the feature extractor. All kwargs after "avpool" can either be
         Boolean (whether to run after every epoch) or an integer (run after
         every N epochs)
-        
+
         :epochs: number of epochs to train for
         :avpool: if True, use average-pooled features for linear classifications
             during the evaluation step. if False, flatten the features.
@@ -274,15 +276,15 @@ class GenericExtractor(object):
         :save_projections: record projections from labeldict
         :visualize_kernels: record a visualization of the first convolutional
             layer's kernels
-        :log_fcn: log a copy of the FCN with the epoch number so it won't be 
+        :log_fcn: log a copy of the FCN with the epoch number so it won't be
             overwritten
         :query_fig: set to an integer to build a figure showing one example image
             per class, along with <query_fig> images with closest feature vectors
-        
+
         """
         for e in tqdm(range(epochs)):
             self._run_training_epoch()
-            
+
             if _run_this_epoch(save, e):
                 self.save()
             if _run_this_epoch(evaluate, e):
@@ -293,56 +295,56 @@ class GenericExtractor(object):
                 self.visualize_kernels()
             if _run_this_epoch(log_fcn, e):
                 self._log_fcn(e)
-    
+
     def save(self):
         """
         Write model(s) to disk
-        
+
         Note: tried to use SavedModel format for this and got a memory leak;
         think it's related to https://github.com/tensorflow/tensorflow/issues/32234
-        
+
         For now sticking with HDF5
         """
         for m in self._models:
             path = os.path.join(self.logdir, m+".h5")
             self._models[m].save(path, overwrite=True, save_format="h5")
-            
+
     def _log_fcn(self, e):
         """
         Write the FCN to disk with 'e' appended
         """
         path = os.path.join(self.logdir, f"fcn_{e}.h5")
         self._models["fcn"].save(path, save_format="h5")
-            
+
     def evaluate(self):
         # REPLACE THIS WHEN SUBCLASSING
         return True
-            
+
     def _record_scalars(self, metric=False, **scalars):
         for s in scalars:
             desc = self._description.get(s, None)
             tf.summary.scalar(s, scalars[s], step=self.step, description=desc)
-            
+
             if metric:
                 if hasattr(self, "_mlflow"):
                     self._log_metrics(scalars, step=self.step)
-            
+
     def _record_images(self, **images):
         for i in images:
             desc = self._description.get(i, None)
             tf.summary.image(i, images[i], step=self.step,
                              description=desc)
-            
+
     def _record_hists(self, **hists):
         for h in hists:
             desc = self._description.get(h, None)
             tf.summary.histogram(h, hists[h], step=self.step,
                                  description=desc)
-            
+
     def _linear_classification_test(self, avpool=True, query_fig=False):
-        
-         results = linear_classification_test(self.fcn, 
-                                    self._downstream_labels, 
+
+         results = linear_classification_test(self.fcn,
+                                    self._downstream_labels,
                                     avpool=avpool, query_fig=query_fig,
                                     **self.input_config)
          if query_fig:
@@ -350,22 +352,22 @@ class GenericExtractor(object):
              self._record_images(closest_feature_vectors=fig)
          else:
              acc, conf_mat =results
-         
+
          conf_mat = np.expand_dims(np.expand_dims(conf_mat, 0), -1)/conf_mat.max()
          self._record_scalars(linear_classification_accuracy=acc, metric=True)
          # commenting out the confusion matrix record- I don't think I've ever found
          # this actually useful
          #self._record_images(linear_classification_confusion_matrix=conf_mat)
-  
-                
+
+
     def rotation_classification_test(self, testdata=None, avpool=False):
         """
         Test the feature extractor's performance on a rotation-prediction
-        task. See "Evaluating Self-Supervised Pretraining Without Using 
+        task. See "Evaluating Self-Supervised Pretraining Without Using
         Labels" by Reed et al for why you'd want to do this!
-        
+
         https://arxiv.org/abs/2009.07724
-        
+
         :testdata: a list of filepaths, or a tf Dataset that loads and
             returns single images
         :avpool: if True, use average pooling instead of flattening.
@@ -375,13 +377,13 @@ class GenericExtractor(object):
                 testdata = self._testdata
             else:
                 assert False, "need images to sample from"
-        
-        acc, conf_mat = linear_classification_test(self.fcn, 
+
+        acc, conf_mat = linear_classification_test(self.fcn,
                                     testdata, avpool=avpool,
                                     rotation_task=True,
                                     **self.input_config)
         self._record_scalars(rotation_classification_accuracy=acc, metric=True)
-                
+
     def _build_optimizer(self, lr, lr_decay=0, opt_type="adam", decay_type="exponential",
                          weight_decay=None):
         # macro for creating the Keras optimizer
@@ -389,10 +391,10 @@ class GenericExtractor(object):
             opt = build_optimizer(lr, lr_decay, opt_type, decay_type,
                                   weight_decay=weight_decay)
         return opt
-    
 
-        
-            
+
+
+
     def _born_again_loss_function(self):
         """
         Generate a function that computes the Born-Again Network loss
@@ -406,13 +408,13 @@ class GenericExtractor(object):
                 """
                 Computes Kullback-Leibler divergence between student
                 and teacher model outputs
-                
+
                 Note that right now this function assumes multiple-output
                 models (hence the correction to make a single-output model
                         a list of length 1). i should make this more robust.
-                
-                :student_outputs: model outputs from the model being trained 
-                        (since we're probably already computing those elsewhere 
+
+                :student_outputs: model outputs from the model being trained
+                        (since we're probably already computing those elsewhere
                         in the training step)
                 :x: current training batch
                 """
@@ -426,16 +428,16 @@ class GenericExtractor(object):
             return _ban_loss
         else:
             return None
-        
+
     def scope(self):
         """
-        
+
         """
         if hasattr(self, "strategy") and (self.strategy is not None):
             return self.strategy.scope()
         else:
             return EmptyContextManager()
-        
+
     def _distribute_training_function(self, step_fn, jitcompile=False):
         """
         Pass a tensorflow function and distribute if necessary
@@ -450,13 +452,13 @@ class GenericExtractor(object):
                 per_example_losses = self.strategy.run(step_fn, args=(x,y))
 
                 lossdict = {k:self.strategy.reduce(
-                    tf.distribute.ReduceOp.MEAN, 
+                    tf.distribute.ReduceOp.MEAN,
                     per_example_losses[k], axis=None)
                     for k in per_example_losses}
 
                 return lossdict
         return training_step
-        
+
     def _distribute_dataset(self, ds):
         """
         Pass a tensorflow dataset and distribute if necessary
@@ -465,7 +467,7 @@ class GenericExtractor(object):
             return ds
         else:
             return self.strategy.experimental_distribute_dataset(ds)
-        
+
     def _get_current_learning_rate(self):
         # return the current value of the learning rate
         # CONSTANT LR CASE
@@ -474,26 +476,26 @@ class GenericExtractor(object):
         # LR SCHEDULE CASE
         else:
             return self._optimizer.lr(self.step)
-                
+
     def save_projections(self, proj_dim=0, sprite_size=50):
         """
         Use Tensorboard's projector to visualize the embeddings of images
-        in the downstream_labels dictionary or dataset. It does all this in 
+        in the downstream_labels dictionary or dataset. It does all this in
         memory, so probably not a great idea to call this if you have a
         million labels.
-        
+
         Each image is run through the FCN and then flattened.
-        
-        :proj_dim: Use PCA to reduce the dimension before saving. 0 
+
+        :proj_dim: Use PCA to reduce the dimension before saving. 0
                 to disable
-        :sprite_size: size of each sprite, in pixels. For now this 
+        :sprite_size: size of each sprite, in pixels. For now this
                 function assumes the patches are square.
         """
         labels = self._downstream_labels
         assert isinstance(labels, dict) & (len(labels)>0), "dont you need some labels?"
         save_embeddings(self._models["fcn"], labels, self.logdir,
                         proj_dim, sprite_size, **self.input_config)
-        
+
     def load_weights(self, logdir):
         """
         Update model weights from a previously trained model
@@ -509,15 +511,15 @@ class GenericExtractor(object):
         """
         kernels = np.expand_dims(_make_kernel_sprites(self._models["fcn"]),0)
         self._record_images(first_convolution_filters=kernels)
-        
+
     def track_with_mlflow(self, tracking_uri, experiment_name, run_name=None):
         """
         Connect to an MLflow server to log parameters and metrics
-        
+
         :tracking_uri: string; Address of local or remote tracking server.
-        :experiment_name: string; name of experiment to log to. if experiment 
+        :experiment_name: string; name of experiment to log to. if experiment
                 doesn't exist, creates one with this name
-        :run_name: string; name of run to log to. if run doesn't exist, 
+        :run_name: string; name of run to log to. if run doesn't exist,
             one will be created
         """
         # set up a connection to the server, an experiment, and the run
@@ -525,22 +527,22 @@ class GenericExtractor(object):
         mlflow.set_tracking_uri(tracking_uri)
         mlflow.set_experiment(experiment_name)
         run = mlflow.start_run(run_name=run_name)
-        
+
         self._mlflow = {"run":run}
         # log all our parameters for the model, input configuration, and
         # data augmentation
         mlflow.log_params({"model_"+k:self.config[k] for k in self.config})
-        mlflow.log_params({"input_"+k:self.input_config[k] for k in 
+        mlflow.log_params({"input_"+k:self.input_config[k] for k in
                            self.input_config})
         if self.augment_config is not False:
-            mlflow.log_params({"augment_"+k:self.augment_config[k] for k in 
+            mlflow.log_params({"augment_"+k:self.augment_config[k] for k in
                            self.augment_config})
         if self._notes is not None:
             mlflow.set_tag("mlflow.note.content", self._notes)
-            
+
         self._log_metrics = mlflow.log_metrics
 
-        
+
     def log_model(self, model_name=None):
         """
         Log the feature extractor to an MLflow server. Assumes you've
@@ -548,13 +550,49 @@ class GenericExtractor(object):
         """
         if model_name is None:
             model_name = self.modelname + "_FCN"
-            
+
         assert hasattr(self, "_mlflow"), "need to run track_with_mlflow() first"
         from mlflow.keras import log_model
         log_model(self._models["fcn"], model_name)
-        
+
     def __del__(self):
         if hasattr(self, "_mlflow"):
             import mlflow
             mlflow.end_run()
-        
+
+    def fit_with_stratified_sampling(self, trainfiles, epochs=1, k=100, proj_dim=128,
+                                     save=True, evaluate=True, save_projections=False,
+                                     visualize_kernels=False, log_fcn=False, query_fig=False):
+        """
+        EXPERIMENTAL
+
+        """
+        fcn = self._models["fcn"]
+        pred_ds = dataset(trainfiles, augment=False, shuffle=False,
+                          **self.input_config["imshape"])
+        # for each epoch
+        for e in tqdm(range(epochs)):
+            # get features, cluster them, and get indices
+            indices = _get_cluster_indices(fcn, pred_ds, k, num_channels=self.input_config["num_channels"],
+                                           proj_dim=proj_dim)
+            # let's leave a histogram in tensorboard
+            indexcounts = [(indices == i).sum() for i in range(k)]
+            self._record_hists(cluster_index_counts=indexcounts)
+
+            # use those indices to build a stratified training dataset
+            train_ds = stratified_training_dataset(trainfiles, indices, augment=self.augment_config,
+                                                   **self.input_config)
+            self._ds = self._distribute_dataset(train_ds)
+            # now train for an epoch
+            self._run_training_epoch()
+
+            if _run_this_epoch(save, e):
+                self.save()
+            if _run_this_epoch(evaluate, e):
+                self.evaluate(avpool=True, query_fig=query_fig)
+            if _run_this_epoch(save_projections, e):
+                self.save_projections()
+            if _run_this_epoch(visualize_kernels,e):
+                self.visualize_kernels()
+            if _run_this_epoch(log_fcn, e):
+                self._log_fcn(e)
