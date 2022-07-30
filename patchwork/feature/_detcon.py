@@ -57,8 +57,8 @@ def _build_segment_pair_dataset(imfiles, mean_scale=1000, num_samples=16, output
     ds = ds.map(_segment, num_parallel_calls=num_parallel_calls)
     # augment image and segmentation together
     def _seg_aug(img, seg):
-        img1, aug1 = _segment_aug(img, seg, augment, outputsize=outputsize)
-        img2, aug2 = _segment_aug(img, seg, augment, outputsize=outputsize)
+        img1, aug1 = _segment_aug(img, seg, augment, imshape=imshape, outputsize=outputsize)
+        img2, aug2 = _segment_aug(img, seg, augment, imshape=imshape, outputsize=outputsize)
         return img1, aug1, img2, aug2
     # dataset yields unbatched (image, segmentation, image, segmentation) tuples
     ds = ds.map(_seg_aug, num_parallel_calls=num_parallel_calls)
@@ -66,7 +66,7 @@ def _build_segment_pair_dataset(imfiles, mean_scale=1000, num_samples=16, output
     #ds = ds.filter(_filter_out_bad_segments)
     # finally, augment images separately
     aug2 = {k:augment[k] for k in augment if k not in SEG_AUG_FUNCTIONS}
-    _aug = augment_function(imshape, aug2)
+    _aug = augment_function(imshape, num_channels=num_channels, params=aug2)
     if len(aug2) > 0:
         def _augment_pair(img1, seg1, img2, seg2):
             #img1, seg1, img2, seg2 = x

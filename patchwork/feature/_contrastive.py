@@ -24,7 +24,7 @@ def _build_augment_pair_dataset(imfiles, imshape=(256, 256), batch_size=256,
     image.
     """
     assert augment, "don't you need to augment your data?"
-    _aug = augment_function(imshape, augment)
+    _aug = augment_function(imshape, num_channels=num_channels, params=augment)
     # CASE 1: User passes a custom tensorflow Dataset
     # define an pair augment function
     if isinstance(imfiles, tf.data.Dataset):

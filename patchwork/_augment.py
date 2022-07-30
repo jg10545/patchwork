@@ -99,9 +99,9 @@ def _drop_color(x, prob=0.25, **kwargs):
         x = tf.stack(num_channels*[x_mean], -1)
     return x
 
-def _add_gaussian_noise(x, prob=0.25, **kwargs):
+def _add_gaussian_noise(x, prob=0.25, imshape=(256,256), num_channels=3, **kwargs):
     if _choose(prob):
-        x = x + tf.random.normal(x.shape, mean=0., stddev=0.1)
+        x = x + tf.random.normal((imshape[0], imshape[1], num_channels), mean=0., stddev=0.1)
     return x
 
 def _sobelize(x, prob=0.1, **kwargs):
@@ -266,13 +266,13 @@ def _random_saturation(x, saturation_delta=0.5, **kwargs):
 def _random_hue(x, hue_delta=0.1, **kwargs):
     return tf.image.random_hue(x, hue_delta)
 
-def _random_left_right_flip(x, foo=False, **kwargs):
+def _random_left_right_flip(x, foo=None,  **kwargs):
     return tf.image.random_flip_left_right(x)
 
-def _random_up_down_flip(x, foo=False, **kwargs):
+def _random_up_down_flip(x, foo=None, **kwargs):
     return tf.image.random_flip_up_down(x)
 
-def _random_rotate(x, foo=False, **kwargs):
+def _random_rotate(x, foo=None, **kwargs):
     theta = tf.random.uniform(shape=[], minval=0, maxval=4, dtype=tf.int32)
     return tf.image.rot90(x, theta)
 
@@ -287,26 +287,30 @@ def _random_jpeg_degrade(x, prob=0.25, **kwargs):
     return x
 
 
-def _random_shear(x, shear=0.3, **kwargs):#, outputshape=(128,128)):
+def _random_shear(x, shear=0.3, imshape=(256,256), num_channels=3, **kwargs):#, outputshape=(128,128)):
     """
     Wrapper for tf.raw_ops.ImageProjectiveTransform
 
     :x: (H,W,3) tensor for the input image
     :outputshape: tuple for image output size
     """
-    shape = x.shape
+    #shape = x.shape
     shear_x = tf.random.uniform((), minval=-1*shear, maxval=shear)
     shear_y = tf.random.uniform((), minval=-1*shear, maxval=shear)
-    dx = -1*shape[1]*shear_x/2
-    dy = -1*shape[0]*shear_y/2
+    #dx = -1*shape[1]*shear_x/2
+    #dy = -1*shape[0]*shear_y/2
+    dx = -1 * imshape[1] * shear_x / 2
+    dy = -1 * imshape[0] * shear_y / 2
 
     tfm = tf.stack([1, shear_x, dx, shear_y, 1, dy,
                      tf.constant(0.0, dtype=tf.float32),
                      tf.constant(0.0, dtype=tf.float32)], axis=0)
     tfm = tf.reshape(tfm, [1,8])
     distorted = tf.raw_ops.ImageProjectiveTransformV2(images=tf.expand_dims(x,0), transforms=tfm,
-                                      output_shape=shape[:2], interpolation="BILINEAR")[0]
-    return tf.reshape(distorted, shape)
+                                      output_shape=imshape, interpolation="BILINEAR")[0]
+                                      #output_shape=shape[:2], interpolation="BILINEAR")[0]
+    print("shear reshape dimensions:", (imshape[0], imshape[1],num_channels))
+    return tf.reshape(distorted, (imshape[0], imshape[1],num_channels))#x.shape)
 
 
 
@@ -341,18 +345,18 @@ AUGMENT_ORDERING = ["flip_left_right", "flip_up_down", "rot90", "shear",
                     "gaussian_blur", "gaussian_noise", "autocontrast",
                     "drop_color", "sobel_prob", "jpeg_degrade", "mask", "pixel_mask"]
 
-def _augment(im, aug_dict, imshape=None):
+def _augment(im, aug_dict, imshape=None, num_channels=3):
     """
     Macro to do random image augmentation
     """
     for a in AUGMENT_ORDERING:
         if a in aug_dict:
-            im = SINGLE_AUG_FUNC[a](im, aug_dict[a], imshape=imshape)
+            im = SINGLE_AUG_FUNC[a](im, aug_dict[a], imshape=imshape, num_channels=num_channels)
 
     im = tf.clip_by_value(im, 0, 1)
     return im
 
-def augment_function(imshape, params=True):
+def augment_function(imshape, num_channels=3, params=True):
     """
     Define an augmentation function from a dictionary of parameters
     """
@@ -360,7 +364,7 @@ def augment_function(imshape, params=True):
         params = DEFAULT_AUGMENT_PARAMS
     @tf.function
     def _aug(x):
-        return _augment(x, params, imshape=imshape)
+        return _augment(x, params, imshape=imshape, num_channels=num_channels)
     return _aug
 
 
