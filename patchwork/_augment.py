@@ -294,11 +294,8 @@ def _random_shear(x, shear=0.3, imshape=(256,256), num_channels=3, **kwargs):#, 
     :x: (H,W,3) tensor for the input image
     :outputshape: tuple for image output size
     """
-    #shape = x.shape
     shear_x = tf.random.uniform((), minval=-1*shear, maxval=shear)
     shear_y = tf.random.uniform((), minval=-1*shear, maxval=shear)
-    #dx = -1*shape[1]*shear_x/2
-    #dy = -1*shape[0]*shear_y/2
     dx = -1 * imshape[1] * shear_x / 2
     dy = -1 * imshape[0] * shear_y / 2
 
@@ -307,10 +304,9 @@ def _random_shear(x, shear=0.3, imshape=(256,256), num_channels=3, **kwargs):#, 
                      tf.constant(0.0, dtype=tf.float32)], axis=0)
     tfm = tf.reshape(tfm, [1,8])
     distorted = tf.raw_ops.ImageProjectiveTransformV2(images=tf.expand_dims(x,0), transforms=tfm,
-                                      output_shape=imshape, interpolation="BILINEAR")[0]
-                                      #output_shape=shape[:2], interpolation="BILINEAR")[0]
-    print("shear reshape dimensions:", (imshape[0], imshape[1],num_channels))
-    return tf.reshape(distorted, (imshape[0], imshape[1],num_channels))#x.shape)
+                                      output_shape=imshape, interpolation="BILINEAR",
+                                      fill_mode="REFLECT")[0]
+    return tf.reshape(distorted, (imshape[0], imshape[1],num_channels))
 
 
 
