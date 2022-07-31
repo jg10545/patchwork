@@ -12,5 +12,6 @@ from patchwork.feature._clip import CLIPTrainer
 from patchwork.feature._simsiam import SimSiamTrainer
 from patchwork.feature._vicreg import VICRegTrainer
 from patchwork.feature._rotation import RotationTrainer
+from patchwork.feature._nnclr import NNCLRTrainer
 
 import patchwork.feature.models
