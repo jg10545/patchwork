@@ -56,7 +56,7 @@ def _initialize_queue(embed_model, ds, queue_size, num_channels=3):
     embeddings = []
     counter = 0
     for x, y in ds:
-        embeddings.append(model(x, training=True).numpy())
+        embeddings.append(embed_model(x, training=True).numpy())
         counter += x.shape[0]
         if counter > queue_size:
             break
