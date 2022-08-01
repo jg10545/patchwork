@@ -53,12 +53,6 @@ def _initialize_queue(embed_model, ds, queue_size, num_channels=3):
     Create and populate the support queue. Call within a scope
     context of a distribution strategy.
     """
-    # make a normalized model
-    inpt = tf.keras.Input((None, None, 3))
-    net = embed_model(inpt)
-    net = tf.keras.layers.Normalization()(net)
-    model = tf.keras.Model(inpt, net)
-
     embeddings = []
     counter = 0
     for x, y in ds:
@@ -68,6 +62,7 @@ def _initialize_queue(embed_model, ds, queue_size, num_channels=3):
             break
 
     embeddings = np.concatenate(embeddings, 0)[:queue_size, :]
+    embeddings = tf.nn.l2_normalize(embeddings, 1)
     return tf.Variable(embeddings)
 
 
