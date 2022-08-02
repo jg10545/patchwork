@@ -276,12 +276,23 @@ def pick_indices(df, pred_df, M, label_status, exclude_status,
         col = sort_by.replace("maxent:","").strip()
         pred_df = pred_df.assign(entropy=shannon_entropy(pred_df[[col]].values))
         sample = pred_df["entropy"].nlargest(M)
+    # FINDING HIGHEST/LOWEST CASES DETERMINISTICALLY
+    elif "highest:" in sort_by:
+        col = sort_by.replace("highest: ", "")
+        sample = pred_df[col].nlargest(M)
+    elif "lowest:" in sort_by:
+        col = sort_by.replace("lowest: ", "")
+        sample = pred_df[col].nsmallest(M)
+    # FINDING HIGHEST/LOWEST CASES STOCHASTICALLY
     elif "high:" in sort_by:
         col = sort_by.replace("high: ", "")
-        sample = pred_df[col].nlargest(M)
+        # scale sampling probability by score
+        p = pred_df[col].values**4
+        sample = pred_df[col].sample(M, weights=p)
     elif "low:" in sort_by:
         col = sort_by.replace("low: ", "")
-        sample = pred_df[col].nsmallest(M)
+        p = (1-pred_df[col].values)**4
+        sample = pred_df[col].sample(M, weights=p)
     elif ("BADGE" in sort_by)&(sampler is not None):
         indices = np.array(sampler(M, include=subset.values))
         return indices
@@ -339,7 +350,7 @@ class Labeler():
         sort_opts= ["random", "max entropy", "BADGE"]
         if self._pw._diversity_sampler is not None:
             sort_opts.append("diversity")
-        for e in ["high: ", "low: ", "maxent: "]:
+        for e in ["highest: ", "high: ", "lowest: ", "low: ", "maxent: "]:
             for c in self._classes:
                 sort_opts.append(e+c)
                 

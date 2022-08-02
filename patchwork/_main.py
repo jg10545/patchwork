@@ -4,15 +4,16 @@ import panel as pn
 import tensorflow as tf
 import logging
 import os
+from tqdm import tqdm
 
 
 
 from patchwork._labeler import Labeler
 from patchwork._modelpicker import ModelPicker
-from patchwork._trainmanager import TrainManager, _auc
+from patchwork._trainmanager import TrainManager, _auc_and_acc
 from patchwork._sample import stratified_sample, find_unlabeled, find_excluded_indices
 from patchwork._sample import _build_in_memory_dataset, find_labeled_indices
-from patchwork._sample import PROTECTED_COLUMN_NAMES
+from patchwork._sample import PROTECTED_COLUMN_NAMES, stratified_subset_sample
 from patchwork._training_functions import build_training_function
 from patchwork.loaders import dataset, _fixmatch_unlab_dataset
 from patchwork._losses import entropy_loss, masked_binary_crossentropy
@@ -20,6 +21,7 @@ from patchwork._util import _load_img, build_optimizer
 from patchwork._badge import KPlusPlusSampler, _build_output_gradient_function#_v1
 from patchwork._labelprop import _get_weighted_adjacency_matrix, _propagate_labels
 from patchwork._labelprop import LabelPropagator
+from patchwork._error_visualizer import ErrorVisualizer
 
 EPSILON = 1e-5
 
@@ -37,8 +39,8 @@ class GUI(object):
                  num_parallel_calls=2, logdir=None, aug=True, 
                  fixmatch_aug=DEFAULT_FIXMATCH_AUGMENT, dim=4,
                  tracking_uri=None, experiment_name=None, strategy=None,
-                 diversity_sampling_proj_dim=None, diversity_sampler_batch_size=64,
-                 diversity_sampling_power=2):
+                 diversity_sampling_proj_dim=None, default_prediction_batch_size=64,
+                 labelprop_tab=False, errorviz_tab=False):
         """
         Initialize either with a set of feature vectors or a feature extractor
         
@@ -63,18 +65,20 @@ class GUI(object):
         :diversity_sampling_proj_dim: set to a positive integer to enable diversity
             sampling. average-pooled feature vectors will be projected to this 
             dimension.
-        :diversity_sampler_batch_size: batch size to use for initial feature generation
-            for the diversity sampler
-        :diversity_sampling_power: power to raise distances to for probabilities for
-            k++ sampling.
+        :default_prediction_batch_size: batch size to use for initial feature generation
+            for the diversity sampler and error visualization
+        :labelprop_tab: whether to include a GUI tab for label propagation
+        :errorviz_tab: whether to include a GUI tab for visualizing features and 
+            predictions on validation data
         """
         self.fine_tuning_model = None
         self.df = df.copy()
         self.feature_vecs = feature_vecs
-        self.feature_extractor = feature_extractor
+        #self.feature_extractor = feature_extractor
         self._aug = aug
         self._badge_sampler = None
         self._fixmatch_aug = fixmatch_aug
+        self._default_prediction_batch_size = default_prediction_batch_size
         
         if strategy is None:
             strategy = tf.distribute.get_strategy()
@@ -86,6 +90,11 @@ class GUI(object):
         self._num_channels = num_channels
         self._num_parallel_calls = num_parallel_calls
         self._semi_supervised = False
+        self._domain_adapt = False
+        if "subset" in self.df.columns:
+            self._num_domains = len([s for s in self.df.subset.unique() if isinstance(s, str)])
+        else:
+            self._num_domains = 0
         self._logdir = logdir
         self.models = {"feature_extractor":feature_extractor, 
                        "feature_extractor_backup":feature_extractor, 
@@ -109,10 +118,9 @@ class GUI(object):
                 index=df.index)
         
 
-        self._div_sampling_power = diversity_sampling_power
         if diversity_sampling_proj_dim is not None:
             logging.info("computing projected embeddings for diversity sampling")
-            self.build_projected_embeddings(diversity_sampler_batch_size,
+            self.build_projected_embeddings(default_prediction_batch_size,
                                             diversity_sampling_proj_dim)
         else:
             self._diversity_sampler = None
@@ -132,12 +140,14 @@ class GUI(object):
             
 
         self.modelpicker = ModelPicker(len(self.classes),
-                                       self._feature_shape, self,
-                                       feature_extractor=feature_extractor)
+                                       self._feature_shape, self)
         # make a train manager- pass this object to it
         self.trainmanager = TrainManager(self)
         # make a label propagator
-        self.labelpropagator = LabelPropagator(self)
+        if labelprop_tab:
+            self.labelpropagator = LabelPropagator(self)
+        if errorviz_tab:
+            self.errorvisualizer = ErrorVisualizer(self)
         # default optimizer
         self._opt = tf.keras.optimizers.Adam(1e-3)
 
@@ -173,8 +183,8 @@ class GUI(object):
             for k in self._model_params["output"]:
                 if k != "num_params":
                     params[k] = self._model_params["output"][k]
-            for k in self._model_params["fixmatch"]:
-                params["fixmatch_"+k] = self._model_params["fixmatch"][k]
+            for k in self._model_params["semisup"]:
+                params["semisup_"+k] = self._model_params["semisup"][k]
             params["num_params"] = self._model_params["fine_tuning"]["num_params"] + \
                                     self._model_params["output"]["num_params"]
                                     
@@ -191,8 +201,9 @@ class GUI(object):
             for c in self.classes:
                 pos_labeled = pred[c][(df[c] == 1)&(df["validation"] == True)].values
                 neg_labeled = pred[c][(df[c] == 0)&(df["validation"] == True)].values
-                val_auc = _auc(pos_labeled, neg_labeled, rnd=8)
+                val_auc, val_acc = _auc_and_acc(pos_labeled, neg_labeled, rnd=8)
                 self._mlflow.log_metric(f"val_auc_{c}", val_auc, step=0)
+                self._mlflow.log_metric(f"val_acc_{c}", val_acc, step=0)
                 
     def log_model(self):
         """
@@ -216,11 +227,14 @@ class GUI(object):
         """
         
         """
-        return pn.Tabs(("Annotate", self.labeler.panel()),
+        tabs = [("Annotate", self.labeler.panel()),
                        ("Model", self.modelpicker.panel()), 
-                       ("Train", self.trainmanager.panel()),
-                       ("Label Propagation", self.labelpropagator.panel())
-                       )
+                       ("Train", self.trainmanager.panel())]
+        if hasattr(self, "labelpropagator"):
+            tabs.append(("Label Propagation", self.labelpropagator.panel()))
+        if hasattr(self, "errorvisualizer"):
+            tabs.append(("Error Visualizer", self.errorvisualizer.panel()))
+        return pn.Tabs(*tabs)
     
     def serve(self, **kwargs):
         """
@@ -230,7 +244,44 @@ class GUI(object):
         pn.serve(p, title="patchwork labeling adventure", **kwargs)
         
     
-    def _training_dataset(self, batch_size=32, num_samples=None):
+    def _fixmatch_unlab_dataset(self, batch_size, mu):
+        """
+        dataset for unlabeled part of the fixmatch algorithm
+        """
+        # train on anything not specifically labeled validation
+        all_filepaths = self.df.filepath[~self.df.validation].values
+        # in the FixMatch paper they use a larger batch size for
+        # unlabeled data
+        qN = batch_size*mu
+        # Make a tensorflow dataset that will return batches of
+        # (weakly augmented image, strongly augmented image) pairs
+        unlab_ds = _fixmatch_unlab_dataset(all_filepaths, 
+                                         self._aug,
+                                         self._fixmatch_aug,
+                                         imshape=self._imshape,
+                                         norm=self._norm,
+                                         num_channels=self._num_channels,
+                                         num_parallel_calls=self._num_parallel_calls,
+                                         batch_size=qN)
+        return unlab_ds
+    
+    def _domain_adaptation_dataset(self, batch_size, mu):
+        """
+        dataset for generating (image, domain) pairs for labeled/unlabeled
+        data for domain generalization algorithms
+        """
+        bs = int(batch_size*mu)
+        filepaths, labels = stratified_subset_sample(self.df, bs)
+        
+        return  dataset(filepaths, labels, imshape=self._imshape, 
+                       num_channels=self._num_channels,
+                       num_parallel_calls=self._num_parallel_calls, 
+                       batch_size=bs,
+                       augment=self._aug)[0]
+        
+    
+    def _training_dataset(self, batch_size=32, num_samples=None,
+                          sampling="class", indexlist=None):
         """
         Build a single-epoch training set.
         
@@ -244,7 +295,8 @@ class GUI(object):
             num_samples = len(self.df)
         # LIVE FEATURE EXTRACTOR CASE
         if self.feature_vecs is None:
-            files, ys = stratified_sample(self.df, num_samples)
+            files, ys = stratified_sample(self.df, num_samples, sampling=sampling,
+                                          indexlist=indexlist)
             # (x,y) dataset
             ds = dataset(files, ys, imshape=self._imshape, 
                        num_channels=self._num_channels,
@@ -255,21 +307,14 @@ class GUI(object):
             # include unlabeled data as well if 
             # we're doing semisupervised learning
             if self._semi_supervised:
-                # train on anything not specifically labeled validation
-                all_filepaths = self.df.filepath[~self.df.validation].values
-                # in the FixMatch paper they use a larger batch size for
-                # unlabeled data
-                qN = batch_size*self._model_params["fixmatch"]["mu"]
-                # Make a tensorflow dataset that will return batches of
-                # (weakly augmented image, strongly augmented image) pairs
-                unlab_ds = _fixmatch_unlab_dataset(all_filepaths, 
-                                                   self._aug,
-                                                   self._fixmatch_aug,
-                                                   imshape=self._imshape,
-                                                   norm=self._norm,
-                                                   num_channels=self._num_channels,
-                                                   num_parallel_calls=self._num_parallel_calls,
-                                                   batch_size=qN)
+                unlab_ds = self._fixmatch_unlab_dataset(batch_size, 
+                                                        self._model_params["semisup"]["batch_size_multiplier_mu"])
+                # stitch together the labeled and unlabeled datasets
+                ds = tf.data.Dataset.zip((ds, unlab_ds))
+            # or include unlabeled data if we're doing domain adaptation
+            elif self._domain_adapt:
+                unlab_ds = self._domain_adaptation_dataset(batch_size, 
+                                                        self._model_params["semisup"]["batch_size_multiplier_mu"])
                 # stitch together the labeled and unlabeled datasets
                 ds = tf.data.Dataset.zip((ds, unlab_ds))
                 
@@ -288,10 +333,12 @@ class GUI(object):
                                           unlabeled_indices=unlabeled_indices)
         return self._strategy.experimental_distribute_dataset(ds)
 
-    def _pred_dataset(self, batch_size=32):
+    def _pred_dataset(self, batch_size=None, distribute=True):
         """
         Build a dataset for predictions
         """
+        if batch_size is None:
+            batch_size = self._default_prediction_batch_size
         num_steps = int(np.ceil(len(self.df)/batch_size))
         if self.feature_vecs is None:
             files = self.df["filepath"].values
@@ -303,15 +350,19 @@ class GUI(object):
         # PRE-EXTRACTED FEATURE CASE
         else:
             ds = tf.data.Dataset.from_tensor_slices(self.feature_vecs
-                                                      ).batch(batch_size)#, num_steps
-        return self._strategy.experimental_distribute_dataset(ds), num_steps
+                                                      ).batch(batch_size)
+        if distribute:
+            ds = self._strategy.experimental_distribute_dataset(ds)
+        return ds, num_steps
             
         
         
-    def _val_dataset(self, batch_size=32):
+    def _val_dataset(self, batch_size=None):
         """
         Build a dataset of just validation examples
         """
+        if batch_size is None:
+            batch_size = self._default_prediction_batch_size
         val_df = self.df[self.df.validation]
         ys = val_df[self.classes].values.copy()
         ys[np.isnan(ys)] = -1
@@ -341,17 +392,32 @@ class GUI(object):
         
             
         trainfunc = build_training_function(self.loss_fn, opt,
-                                        self.models["fine_tuning"],
-                                        self.models["output"],
-                                        feature_extractor=self.feature_extractor,
-                                        lam=self._model_params["fixmatch"]["lambda"],
-                                        tau=self._model_params["fixmatch"]["tau"],
-                                        weight_decay=weight_decay,
-                                        finetune=finetune)
-        if self._model_params["fixmatch"]["lambda"] == 0:
+                            self.models["fine_tuning"],
+                            self.models["output"],
+                            feature_extractor=self.models["feature_extractor"],
+                            lam=self._model_params["semisup"]["fixmatch_weight_lambda"],
+                            tau=self._model_params["semisup"]["fixmatch_tau"],
+                            weight_decay=weight_decay,
+                            finetune=finetune,
+                            domain_weight=self._model_params["semisup"]["domain_confusion_weight_lambda"],
+                            num_domains=self._num_domains)
+        lam = self._model_params["semisup"]["fixmatch_weight_lambda"]
+        domain_weight = self._model_params["semisup"]["domain_confusion_weight_lambda"]
+        if (lam == 0)&(domain_weight == 0):
             @tf.function
             def training_step(x,y):
                 per_example_losses = self._strategy.run(trainfunc, args=(x,y))
+
+                losses = [self._strategy.reduce(
+                    tf.distribute.ReduceOp.MEAN, 
+                    k, axis=None) for k in per_example_losses]
+                return losses
+        elif (lam == 0)&(domain_weight > 0):
+            @tf.function
+            def training_step(x, y, x_unlab_wk, domain_labels):
+                per_example_losses = self._strategy.run(trainfunc, 
+                                                        args=(x,y, x_unlab_wk, None,
+                                                              domain_labels))
 
                 losses = [self._strategy.reduce(
                     tf.distribute.ReduceOp.MEAN, 
@@ -370,16 +436,20 @@ class GUI(object):
         
         self._training_function = training_step
 
-    def _run_one_training_epoch(self, batch_size=32, num_samples=None):
+    def _run_one_training_epoch(self, batch_size=32, num_samples=None,
+                                sampling="class", indexlist=None):
         """
         Run one training epoch
         """
-        ds = self._training_dataset(batch_size, num_samples)
+        ds = self._training_dataset(batch_size, num_samples, sampling, indexlist)
         
-        if self._semi_supervised:
+        if self._semi_supervised or self._domain_adapt:
             #for (x, x_unlab), y in ds:
-            for (x,y), (unlab_wk, unlab_str) in ds:
-                loss, ss_loss = self._training_function(x, y, unlab_wk, unlab_str)
+            # in semisupervised case- b is strongly-augmented data for FixMatch
+            # in domain adaptation case- b is a label for the domain of each
+            # image in unlab_wk
+            for (x,y), (unlab_wk, b) in ds:
+                loss, ss_loss = self._training_function(x, y, unlab_wk, b)
                 self.training_loss.append(loss.numpy())
                 self.semisup_loss.append(ss_loss.numpy())
         else:
@@ -409,14 +479,29 @@ class GUI(object):
         return meanloss_distributed
             
     
-    def predict_on_all(self, batch_size=32):
+    def predict_on_all(self, batch_size=None):
         """
         Run inference on all the data; save to self.pred_df
         """
+        if batch_size is None:
+            batch_size = self._default_prediction_batch_size
         ds, num_steps = self._pred_dataset(batch_size)
         predictions = self.models["full"].predict(ds, steps=num_steps)
 
         self.pred_df.loc[:, self.classes] = predictions
+        
+    
+    def predict_on_val(self, batch_size=None):
+        """
+        Run inference on validation data only; save to self.pred_df
+        """
+        if batch_size is None:
+            batch_size = self._default_prediction_batch_size
+        ds = self._val_dataset(batch_size)
+        num_steps = int(np.ceil(len(self.df)/batch_size))
+        predictions = self.models["full"].predict(ds, steps=num_steps)
+
+        self.pred_df.loc[self.df.validation, self.classes] = predictions
     
     def _stratified_sample(self, N=None):
         return stratified_sample(self.df, N)
@@ -441,7 +526,7 @@ class GUI(object):
                 if self.models[m] is not None:
                     self.models[m].save(os.path.join(self._logdir, m+".h5"))
                     
-    def compute_badge_embeddings(self):
+    def compute_badge_embeddings(self, select_output=None):
         """
         Use a trained model to compute output-gradient vectors for the
         BADGE algorithm for active learning.
@@ -451,11 +536,12 @@ class GUI(object):
         Note that this stores all output gradients IN MEMORY.
         """
         # compute badge embeddings- define a tf.function for it
-        compute_output_gradients = _build_output_gradient_function(self.models['full'])
+        compute_output_gradients = _build_output_gradient_function(self.models['full'],
+                                                            select_output=select_output)
         # then run that function across all the iamges.
         output_gradients = np.concatenate(
             [compute_output_gradients(x).numpy() 
-             for x in self._pred_dataset()[0]], axis=0)
+             for x in self._pred_dataset(distribute=False)[0]], axis=0)
         # find the indices that have already been fully 
         # labeled, so we can avoid sampling nearby
         indices = list(find_labeled_indices(self.df)) + \
@@ -485,7 +571,7 @@ class GUI(object):
         self._adjacency_matrix = _get_weighted_adjacency_matrix(features, n_neighbors, temp)
     
    
-    def build_projected_embeddings(self, pred_batch_size=32, proj_dim=128, p=2):
+    def build_projected_embeddings(self, pred_batch_size=32, proj_dim=128):
         """
         
         """
@@ -502,7 +588,7 @@ class GUI(object):
         proj = np.random.normal(0, 1, size=(D, proj_dim))
         
         # generate predictions
-        ds, steps = self._pred_dataset(pred_batch_size)
+        ds, steps = self._pred_dataset(pred_batch_size, distribute=False)
         
         matrix = np.concatenate([
             tf.nn.l2_normalize(model(x), 1).numpy().dot(proj)
@@ -515,15 +601,14 @@ class GUI(object):
                     list(find_excluded_indices(self.df))
         
         # initialize sampler
-        self._diversity_sampler = KPlusPlusSampler(matrix, p=p, indices=indices)
+        self._diversity_sampler = KPlusPlusSampler(matrix, indices=indices)
         
     def _update_diversity_sampler(self):
-        p = self._div_sampling_power
         if self._diversity_sampler is not None:
             X = self._diversity_sampler.X
             indices = list(find_labeled_indices(self.df)) + \
                     list(find_excluded_indices(self.df))
-            self._diversity_sampler = KPlusPlusSampler(X, p=p, indices=indices)  
+            self._diversity_sampler = KPlusPlusSampler(X, indices=indices)  
         
      
    
@@ -535,6 +620,48 @@ class GUI(object):
         self.pred_df = _propagate_labels(self.df, self._adjacency_matrix,
                                          t=iterations)
     
+    def random_hyperparameter_search(self, N, semisup_lambda=None, 
+                                     learning_rate=None, finetune=None, 
+                                     lr_decay=False,
+                                     optimizer=False,
+                                     samplingstrategy=False):
+        """
+        
+        """
+        for _ in tqdm(range(N)):
+            
+            if semisup_lambda is not None:
+                s = semisup_lambda
+                self.modelpicker._semisup["lambda"].value = float(np.random.uniform(s[0], 
+                                                                  s[1]).astype(np.float32))
+                
+            if learning_rate is not None:
+                l = learning_rate
+                newval = np.exp(np.random.uniform(np.log(l[0]), np.log(l[1]))).astype(np.float32)
+                self.trainmanager._learn_rate.value = float(newval)
+                
+            if finetune is not None:
+                f = finetune
+                newval = np.random.randint(f[0], f[1])
+                self.trainmanager._fine_tune_after.value = newval
+                
+            if lr_decay:
+                newval = np.random.choice(["none", "cosine"])
+                self.trainmanager._lr_decay.value = newval
+                
+            if optimizer:
+                newval = np.random.choice(["adam", "momentum"])
+                self.trainmanager._opt_chooser.value = newval
+                
+            if samplingstrategy:
+                newval = np.random.choice(["class", "instance", "squareroot"])
+                self.trainmanager._sample_chooser.value = newval
+                
+            
+                
+                
+            self.modelpicker._build_callback()
+            self.trainmanager._train_callback()
     
     
     

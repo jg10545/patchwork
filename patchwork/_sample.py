@@ -89,8 +89,31 @@ def find_subset(df, label_status, exclude_status, s):
         
 
 
+def _prepare_df_for_stratified_sampling(df):
+    """
+    Take a label dataframe and return a list of arrays for every 
+    combination of class and 0,1 value. 
+    
+    So a dataframe containing subset for classes "foo" and "bar"
+    should generate a list with four elements; the non-excluded non-validation
+    training points where foo=1, where foo=0, where bar=1, and where bar=0.
+    
+    Each array contains the indices of the matching rows of the dataframe
+    """
+    not_excluded = (df["exclude"] != True)&(df["validation"] != True)
+    categories = [x for x in df.columns if x not in PROTECTED_COLUMN_NAMES]
+    indexlist = []
+    
+    for c in categories:
+        for l in [0,1]:
+            subset = not_excluded&(df[c] == l)
+            if subset.sum() > 0:
+                indexlist.append(df[subset].index.values)
+    return indexlist
 
-def stratified_sample(df, N=1000, return_indices=False):
+
+def stratified_sample(df, N=1000, return_indices=False, sampling="class",
+                      indexlist=None):
     """
     Build a stratified sample from a dataset. Maps NAs in partially
     labeled records to -1.
@@ -99,54 +122,87 @@ def stratified_sample(df, N=1000, return_indices=False):
         labels in other columns
     :N: number of samples
     :return_indices: whether to return indices instead of file paths
+    :sampling: string; method to use to choose which subset to sample
+        from. can be "class", "instance", or "squareroot"
+            -"class": each class/label sampled with equal probability
+            -"instance": each data point samples with equal probability
+            -"squareroot": class/label chosen in proportion to the square
+                root of the number of examples
+    :indexlist: optional; precompute indices for stratification
     
     Returns
     (filepaths or indices), label vectors
     """
-    index = df.index.values
-    # figure out which records aren't excluded, either by being tagged
-    # "exclude" or tagged "validation"
-    not_excluded = (df["exclude"] != True)&(df["validation"] != True)
-    filepaths = df["filepath"].values
-    label_types = [x for x in df.columns if x not in PROTECTED_COLUMN_NAMES]
+    if indexlist is None:
+        indexlist = _prepare_df_for_stratified_sampling(df)
+    categories = [x for x in df.columns if x not in PROTECTED_COLUMN_NAMES]
+    num_cats = len(categories)
     
-    # build a hierarchical set of lists for sampling:
-    # outer list has two elements: negative and positive labels
-    # each of those lists has one list per class, so long as that class has
-    # the right type of labels
-    # each element of those is an array of indices meeting the class/label criteria
-    file_lists = [[
-            index[(df[l] == 0)&not_excluded] \
-            for l in label_types if (df[l][not_excluded] == 0).sum() > 0
-            ],
-            [
-            index[(df[l] == 1)&not_excluded] \
-            for l in label_types if (df[l][not_excluded] == 1).sum() > 0
-            ]]
-    num_lists = [len(file_lists[0]), len(file_lists[1])]
-    
-    outlist = []
-    ys = []
-    inds = []
-    for n in range(N):
-        # choose to sample a positive or negative label
-        z = np.random.choice([0,1])
-        # choose a category with positive/negative
-        i = np.random.choice(np.arange(num_lists[z]))
-        # choose an index consistent with i and z
-        ind = np.random.choice(file_lists[z][i])
-        inds.append(ind)
-        outlist.append(filepaths[ind])
-        # convert labels to a vector with None mapped to -1
-        y_vector = df[label_types].loc[ind].values.astype(float)
-        y_vector[np.isnan(y_vector)] = -1
-        ys.append(y_vector.astype(int))
-        
-    if return_indices:
-        return np.array(inds), np.stack(ys)
+    # find sampling probabilities
+    if sampling == "class":
+        p = np.ones(len(indexlist))
+    elif sampling == "instance":
+        p = np.array([float(len(f)) for f in indexlist])
+    elif sampling == "squareroot":
+        p = np.array([np.sqrt(len(f)) for f in indexlist])
     else:
-        return outlist, np.stack(ys)
+        assert False, "I don't know what to do with sampling == '%s'"%sampling
+    # normalize
+    p /= p.sum()
+    
+    # now do the actual sampling
+    inds = np.zeros(N, dtype=int)
+    sampchoice = np.arange(len(indexlist))
+    for n in range(N):
+        # choose which list to sample from
+        i = np.random.choice(sampchoice, p=p)
+        # pick an index
+        j = np.random.choice(indexlist[i])
+        inds[n] = j
+    # get a new dataframe where each row is a sample   
+    sampled = df.loc[inds,:]
+    # labels
+    ys = sampled[categories].values
+    # map missing values to -1
+    ys[np.isnan(ys)] = -1
+    # return labels with filepaths or indices
+    if return_indices:
+        return inds, ys
+    else:
+        return sampled.filepath.values, ys
 
+
+
+
+def stratified_subset_sample(df, N=1000):
+    """
+    Build a sample from a dataset, stratified by the "subset" column
+    
+    :df: DataFrame containing file paths (in a "filepath" column) and
+        labels in other columns
+    :N: number of samples
+    
+    Returns
+    (filepaths), label vectors
+    """
+    not_excluded = (df["exclude"] != True)&(df["validation"] != True)
+    assert "subset" in df.columns, "can't stratify by subset if there's no subset"
+    subsets = [s for s in df.subset.unique() if isinstance(s, str)]
+    
+    indexlist = []
+    for s in subsets:
+        sub = not_excluded&(df["subset"] == s)
+        indexlist.append(df[sub].index.values)
+    
+    inds = np.zeros(N, dtype=int)
+    ys = np.random.choice(np.arange(len(indexlist)), size=N)
+    for n in range(N):
+        # pick an index
+        inds[n] = np.random.choice(indexlist[ys[n]])
+    # get the associated filepaths
+    sampled = df["filepath"].loc[inds].values
+    
+    return sampled, ys
 
 def unlabeled_sample(df, N=1000):
     """

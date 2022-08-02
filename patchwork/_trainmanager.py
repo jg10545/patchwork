@@ -11,7 +11,9 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import panel as pn
 import tensorflow as tf
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import roc_auc_score, accuracy_score
+
+from patchwork._sample import _prepare_df_for_stratified_sampling
 
 
 
@@ -27,6 +29,21 @@ def _auc(pos, neg, rnd=3):
         return round(roc_auc_score(y_true, y_pred), rnd)
     else:
         return 0
+    
+    
+
+def _auc_and_acc(pos, neg, rnd=3):
+    """
+    macro for computing ROC AUC score and accuracy for display from arrays
+    of scores for positive and negative cases
+    """
+    if (len(pos) > 0)&(len(neg) > 0):
+        y_true = np.concatenate([np.ones(len(pos)), np.zeros(len(neg))])
+        y_pred = np.concatenate([pos, neg])
+        return round(roc_auc_score(y_true, y_pred), rnd), round(accuracy_score(y_true,
+                                                            (y_pred >= 0.5).astype(int)), rnd)
+    else:
+        return 0, 0
 
 
 def _empty_fig():
@@ -70,7 +87,7 @@ def _hist_fig(df, pred, c):
     # top plot: training data
     pos_labeled = pred[c][(df[c] == 1)&(df["validation"] == False)].values
     neg_labeled = pred[c][(df[c] == 0)&(df["validation"] == False)].values
-    train_auc = _auc(pos_labeled, neg_labeled)
+    train_auc, train_acc = _auc_and_acc(pos_labeled, neg_labeled)
     if len(pos_labeled) > 0: 
         ax1.hist(pos_labeled, bins=bins, alpha=0.5, 
                     label="labeled positive (train)", density=True)
@@ -84,7 +101,7 @@ def _hist_fig(df, pred, c):
     # bottom plot: validation data
     pos_labeled = pred[c][(df[c] == 1)&(df["validation"] == True)].values
     neg_labeled = pred[c][(df[c] == 0)&(df["validation"] == True)].values
-    test_auc = _auc(pos_labeled, neg_labeled)
+    test_auc, test_acc = _auc_and_acc(pos_labeled, neg_labeled)
     if len(pos_labeled) > 0:           
         ax2.hist(pos_labeled, bins=bins, alpha=0.5, 
                     label="labeled positive (val)", density=True)
@@ -97,10 +114,14 @@ def _hist_fig(df, pred, c):
     
     for a in [ax1, ax2]:
         a.legend(loc="upper left")
-        a.set_xlabel("assessed probability", fontsize=14)
         a.set_ylabel("frequency", fontsize=14)
-    title = "model outputs for '%s'\nAUC train %s, test AUC %s"%(c, train_auc, test_auc)
+    ax1.set_xticks([])
+    ax2.set_xlabel("model output", fontsize=14)
+    title = "model outputs for '%s'\ntraining AUC  %s, accuracy %s"%(c, train_auc, train_acc)
     ax1.set_title(title, fontsize=14)
+    
+    title = "test AUC  %s, accuracy %s"%(test_auc, test_acc)
+    ax2.set_title(title, fontsize=14)
     plt.close(fig)
     return fig
 
@@ -119,6 +140,9 @@ class TrainManager():
         self._abort = False
         self.pw = pw
         self._header = pn.pane.Markdown("#### Train model on current set of labeled patches")
+        self._sample_chooser = pn.widgets.Select(name="Sampling strategy", 
+                                                 options=["class", "instance", "squareroot"],
+                                                 value="class")
         self._opt_chooser = pn.widgets.Select(name="Optimizer", options=["adam", "momentum"],
                                               value="adam")
         self._learn_rate =  pn.widgets.LiteralInput(name="Initial learning rate", value=1e-3, type=float)                               
@@ -135,6 +159,9 @@ class TrainManager():
         self._train_button = pn.widgets.Button(name="Make it so")
         self._train_button.on_click(self._train_callback)
         
+        self._badge_chooser = pn.widgets.Select(name="Compute BADGE with respect to", 
+                                                 options=["all classes"]+pw.classes,
+                                                 value="all classes")
         self._compute_badge_gradients = pn.widgets.Button(name="Update BADGE gradients")
         self._compute_badge_gradients.on_click(self._badge_callback)
         
@@ -152,6 +179,7 @@ class TrainManager():
         Return code for a training panel
         """
         controls =  pn.Column(self._header,
+                        self._sample_chooser,
                         self._opt_chooser,
                         self._learn_rate,
                         self._lr_decay,
@@ -160,10 +188,13 @@ class TrainManager():
                          self._epochs,
                          self._fine_tune_after,
                          self._pred_batch_size,
-                         self._abort_condition,
+                         #self._abort_condition,
                         self._eval_after_training,
                         self._train_button,
+                        pn.layout.Divider(),
+                        self._badge_chooser,
                         self._compute_badge_gradients,
+                        pn.layout.Divider(),
                         self._footer)
         
         figures = pn.Column(pn.pane.Markdown("### Training Loss"),
@@ -174,7 +205,7 @@ class TrainManager():
         return pn.Row(controls, figures)
     
     
-    def _train_callback(self, *event):
+    def _train_callback(self, *event, update_val_only=False):
         # check for abort condition
         abort = False
         epochs_since_improving = 0
@@ -194,11 +225,18 @@ class TrainManager():
                                              "batch_size":self._batch_size.value,
                                              "batches_per_epoch":self._batches_per_epoch.value,
                                              "epochs":self._epochs.value,
-                                             "fine_tune_after":self._fine_tune_after.value}
+                                             "sampling":self._sample_chooser.value,
+                                             "fine_tune_after":self._fine_tune_after.value,
+                                             "lr_decay":self._lr_decay.value,
+                                             "optimizer":self._opt_chooser.value}
         
         # tensorflow function for computing test loss
         meanloss = self.pw._build_loss_tf_fn()
         val_ds = self.pw._val_dataset(self._batch_size.value)
+        # precompute subsets of dataframe for each class/label for
+        # stratified sampling
+        indexlist = _prepare_df_for_stratified_sampling(self.pw.df)
+        sampling = self._sample_chooser.value
         
         # for each epoch
         epochs = self._epochs.value
@@ -216,7 +254,8 @@ class TrainManager():
             
             
             N = self._batch_size.value * self._batches_per_epoch.value
-            self.pw._run_one_training_epoch(self._batch_size.value, N)
+            self.pw._run_one_training_epoch(self._batch_size.value, N,
+                                            sampling, indexlist)
             self.loss = self.pw.training_loss
             
             # at the end of each epoch compute test loss
@@ -246,7 +285,10 @@ class TrainManager():
             # skip this if we're aborting
             if not abort:
                 self._footer.object = "### EVALUATING"
-                self.pw.predict_on_all(self._pred_batch_size.value)
+                if update_val_only:
+                    self.pw.predict_on_val(self._pred_batch_size.value)
+                else:
+                    self.pw.predict_on_all(self._pred_batch_size.value)
                 self.pw._mlflow_track_run()
 
         if not abort:
@@ -256,8 +298,15 @@ class TrainManager():
             self._footer.object = "### DONE"
         
     def _badge_callback(self, *events):
+        # the BADGE chooser lets you compute BADGE embeddings for diversity 
+        # sampling with respect to all categories or just one
+        cat = self._badge_chooser.value
+        if cat == "all classes":
+            cat = None
+        else:
+            cat = self.pw.classes.index(cat)
         self._footer.object = "### COMPUTING BADGE GRADIENTS"
-        self.pw.compute_badge_embeddings()
+        self.pw.compute_badge_embeddings(cat)
         self._footer.object = "### DONE"
         
         

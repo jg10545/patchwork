@@ -5,8 +5,9 @@ import tensorflow as tf
 
 from patchwork.feature._generic import GenericExtractor
 from patchwork._util import compute_l2_loss, _compute_alignment_and_uniformity
-from patchwork.feature._moco import _build_augment_pair_dataset, _build_logits
+from patchwork.feature._moco import _build_logits
 from patchwork.feature._moco import copy_model, exponential_model_update
+from patchwork.feature._contrastive import _build_augment_pair_dataset
 
 from tqdm import tqdm
 
@@ -14,7 +15,7 @@ from tqdm import tqdm
 def _compute_buffer_gradient(buffer, q, all_logits, adv_tau, weight_decay):
     """
     Implementing equation 6 from the paper
-    
+
     :all_logits: [batch_size, K+1]
     """
     batch_size = all_logits.shape[0]
@@ -35,13 +36,13 @@ def _compute_buffer_gradient(buffer, q, all_logits, adv_tau, weight_decay):
     return update
 
 
-def _build_adco_training_step(model, mo_model, buffer, opt, 
+def _build_adco_training_step(model, mo_model, buffer, opt,
                               adv_opt, tau=0.12,  adv_tau=0.07, weight_decay=0):
     """
     Function to build tf.function for a MoCo training step. Basically just follow
     Algorithm 1 in He et al's paper.
     """
-    
+
     @tf.function
     def training_step(img1, img2):
         print("tracing training step")
@@ -53,14 +54,14 @@ def _build_adco_training_step(model, mo_model, buffer, opt,
         # Compute key vectors and normalize
         k = tf.nn.l2_normalize(mo_model(img2, training=False), 1)
 
-        # start recording gradients both for the query network and the 
+        # start recording gradients both for the query network and the
         # negative examples
         with tf.GradientTape() as tape, tf.GradientTape() as adv_tape:
             # pass query images through model and normalize
             q = model(img1, training=True)
             q = tf.nn.l2_normalize(q, 1)
             # compute logits
-            buff = tf.nn.l2_normalize(buffer, axis=1) 
+            buff = tf.nn.l2_normalize(buffer, axis=1)
             all_logits = _build_logits(q, k, buff, compare_batch=True)
             # --------------- MODEL LOSS --------------------
             loss = tf.reduce_mean(
@@ -70,27 +71,27 @@ def _build_adco_training_step(model, mo_model, buffer, opt,
             adv_loss = -1*tf.reduce_mean(
                     tf.nn.sparse_softmax_cross_entropy_with_logits(
                             labels, all_logits/adv_tau))
-            # --------------- WEIGHT DECAY --------------------          
+            # --------------- WEIGHT DECAY --------------------
             if weight_decay > 0:
                 l2_loss = compute_l2_loss(model)
                 outdict["l2_loss"] = l2_loss
                 loss += weight_decay*l2_loss
-                
+
                 adv_loss += weight_decay*tf.reduce_mean(buffer**2)
-                
+
         # ------------- UPDATE MODEL ----------------
         variables = model.trainable_variables
         gradients = tape.gradient(loss, variables)
         opt.apply_gradients(zip(gradients, variables))
         # also compute the "accuracy"; what fraction of the batch has
         # the key as the largest logit. from figure 2b of the MoCHi paper
-        nce_batch_accuracy = tf.reduce_mean(tf.cast(tf.argmax(all_logits, 
+        nce_batch_accuracy = tf.reduce_mean(tf.cast(tf.argmax(all_logits,
                                                               axis=1)==labels, tf.float32))
-        
+
         # ------------- UPDATE BUFFER ----------------
         adv_grad = adv_tape.gradient(adv_loss, [buffer])
         adv_opt.apply_gradients(zip(adv_grad, [buffer]))
-        
+
         outdict["loss"] = loss
         outdict["nce_batch_accuracy"] = nce_batch_accuracy
         return outdict
@@ -101,16 +102,16 @@ def _build_adco_training_step(model, mo_model, buffer, opt,
 class AdversarialContrastTrainer(GenericExtractor):
     """
     Class for training an Adversarial Contrast model.
-    
+
     Based on "AdCo: Adversarial Contrast for Efficient Learning of
     Unsupervised Representations from Self-Trained Negative
     Adversaries" by Hu et al
     """
     modelname = "MomentumContrast"
 
-    def __init__(self, logdir, trainingdata, testdata=None, fcn=None, 
+    def __init__(self, logdir, trainingdata, testdata=None, fcn=None,
                  augment=True, negative_examples=65536, alpha=0.999,
-                 tau=0.12, adv_tau=0.02, output_dim=128, num_hidden=2048, 
+                 tau=0.12, adv_tau=0.02, output_dim=128, num_hidden=2048,
                  weight_decay=1e-4,
                  lr=0.03, adv_lr=3.0, lr_decay=0, decay_type="exponential",
                  opt_type="momentum", adaptive=False,
@@ -142,7 +143,7 @@ class AdversarialContrastTrainer(GenericExtractor):
                unit interval)
         :batch_size: (int) batch size for training
         :num_parallel_calls: (int) number of threads for loader mapping
-        :single_channel: if True, expect a single-channel input image and 
+        :single_channel: if True, expect a single-channel input image and
                 stack it num_channels times.
         :notes: (string) any notes on the experiment that you want saved in the
                 config.yml file
@@ -155,10 +156,10 @@ class AdversarialContrastTrainer(GenericExtractor):
         self._downstream_labels = downstream_labels
         self.strategy = strategy
         self._adaptive = adaptive
-        
+
         self._file_writer = tf.summary.create_file_writer(logdir, flush_millis=10000)
         self._file_writer.set_as_default()
-        
+
         # if no FCN is passed- build one
         with self.scope():
             if fcn is None:
@@ -175,18 +176,18 @@ class AdversarialContrastTrainer(GenericExtractor):
             outpt = tf.keras.layers.Dense(output_dim)(dense)
             full_model = tf.keras.Model(inpt, outpt)
             mo_model = copy_model(full_model)
-        
+
             self._models = {"fcn":fcn, "full":full_model,
                             "momentum_encoder":mo_model}
-        
+
         # build training dataset
-        ds = _build_augment_pair_dataset(trainingdata, 
+        ds = _build_augment_pair_dataset(trainingdata,
                             imshape=imshape, batch_size=batch_size,
-                            num_parallel_calls=num_parallel_calls, 
-                            norm=norm, num_channels=num_channels, 
+                            num_parallel_calls=num_parallel_calls,
+                            norm=norm, num_channels=num_channels,
                             augment=augment, single_channel=single_channel)
         self._ds = self._distribute_dataset(ds)
-        
+
         # create optimizers for both steps
         self._optimizer = self._build_optimizer(lr, lr_decay, opt_type=opt_type,
                                                 decay_type=decay_type)
@@ -194,13 +195,13 @@ class AdversarialContrastTrainer(GenericExtractor):
         self._adv_optimizer = self._build_optimizer(adv_lr, lr_decay,
                                                     opt_type="momentum",
                                                     decay_type=decay_type)
-        
+
         # build buffer
         with self.scope():
-            self._buffer = tf.Variable(np.zeros((negative_examples, output_dim), 
+            self._buffer = tf.Variable(np.zeros((negative_examples, output_dim),
                                             dtype=np.float32),
                                        aggregation=tf.VariableAggregation.MEAN)
-        
+
         # build update step for momentum contrast update
         @tf.function
         def momentum_update_step():
@@ -213,24 +214,24 @@ class AdversarialContrastTrainer(GenericExtractor):
                                             tau=tau,
                                             adv_tau=adv_tau,
                                             weight_decay=weight_decay)
-        
+
         self._training_step = self._distribute_training_function(step_fn)
         # build evaluation dataset
         if testdata is not None:
-            self._test_ds = _build_augment_pair_dataset(testdata, 
+            self._test_ds = _build_augment_pair_dataset(testdata,
                             imshape=imshape, batch_size=batch_size,
-                            num_parallel_calls=num_parallel_calls, 
-                            norm=norm, num_channels=num_channels, 
+                            num_parallel_calls=num_parallel_calls,
+                            norm=norm, num_channels=num_channels,
                             augment=augment, single_channel=single_channel)
             self._test = True
         else:
             self._test = False
 
         self.step = 0
-        
-        
+
+
         # parse and write out config YAML
-        self._parse_configs(augment=augment, 
+        self._parse_configs(augment=augment,
                             negative_examples=negative_examples,
                             tau=tau, adv_tau=adv_tau, alpha=alpha,
                             output_dim=output_dim, num_hidden=num_hidden,
@@ -239,11 +240,11 @@ class AdversarialContrastTrainer(GenericExtractor):
                             opt_type=opt_type,
                             imshape=imshape, num_channels=num_channels,
                             norm=norm, batch_size=batch_size,
-                            num_parallel_calls=num_parallel_calls, 
+                            num_parallel_calls=num_parallel_calls,
                             single_channel=single_channel, notes=notes,
                             trainer="adco")
         self._prepopulate_buffer()
-        
+
     def _prepopulate_buffer(self):
         i = 0
         bs = self.input_config["batch_size"]
@@ -255,10 +256,10 @@ class AdversarialContrastTrainer(GenericExtractor):
                 i += 1
                 if i*bs >= K:
                     break
-        
+
     def _run_training_epoch(self, **kwargs):
         """
-        
+
         """
         for x, y in self._ds:
             # forward pass to update batchnorms
@@ -267,18 +268,18 @@ class AdversarialContrastTrainer(GenericExtractor):
             losses = self._training_step(x,y)
             self._record_scalars(**losses)
             self._record_scalars(learning_rate=self._get_current_learning_rate())
-                    
-            self.step += 1
-                
 
- 
+            self.step += 1
+
+
+
     def evaluate(self):
         if self._test:
             # if the user passed out-of-sample data to test- compute
             # alignment and uniformity measures
             alignment, uniformity = _compute_alignment_and_uniformity(
                                             self._test_ds, self._models["fcn"])
-            
+
             self._record_scalars(alignment=alignment,
                              uniformity=uniformity, metric=True)
             metrics=["linear_classification_accuracy",
@@ -286,7 +287,7 @@ class AdversarialContrastTrainer(GenericExtractor):
                                  "uniformity"]
         else:
             metrics=["linear_classification_accuracy"]
-            
+
         if self._downstream_labels is not None:
             # choose the hyperparameters to record
             if not hasattr(self, "_hparams_config"):
@@ -308,13 +309,13 @@ class AdversarialContrastTrainer(GenericExtractor):
             else:
                 hparams=None
             self._linear_classification_test(hparams, metrics=metrics)
-        
-        
+
+
     def load_weights(self, logdir):
         """
         Update model weights from a previously trained model
         """
         super().load_weights(logdir)
         self._prepopulate_buffer()
-            
-        
+
+
