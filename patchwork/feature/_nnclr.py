@@ -231,7 +231,8 @@ class NNCLRTrainer(SimCLRTrainer):
                                                 weight_decay=weight_decay)
 
         # initialize the support queue
-        self.Q = _initialize_queue(self._models["full"], self._ds,
+        with self.scope():
+            self.Q = _initialize_queue(self._models["full"], ds,
                                    queue_size, num_channels=num_channels)
         # build training step
         step_fn = _build_nnclr_training_step(
