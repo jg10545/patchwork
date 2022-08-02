@@ -12,9 +12,9 @@ SEG_AUG_FUNCTIONS = ["flip_left_right", "flip_up_down", "rot90", "shear", "zoom_
 
 def _get_segments(img, mean_scale=1000, num_samples=16, return_enough_segments=False):
     """
-    Wrapper for computing segments for an image. Inputs an image tensor and 
+    Wrapper for computing segments for an image. Inputs an image tensor and
     returns a stack of binary segmentation masks.
-    
+
     :img: (H,W,C) image tensor
     :mean_scale: average scale parameter for Felzenszwalb's algorithm. Actual
         value will be sampled from (0.5*mean_scale, 1.5*mean_scale), and min_size
@@ -22,12 +22,12 @@ def _get_segments(img, mean_scale=1000, num_samples=16, return_enough_segments=F
     :num_samples: number of segments to compute. if more segments are found than
         num_samples, they'll be uniformly subsampled without replacement; if fewer
         are found they'll be sampled with replacement.
-    :return_enough_segments: whether to include a Boolean indicator of whether 
+    :return_enough_segments: whether to include a Boolean indicator of whether
     """
     # randomly choose the segmentation scale
     scale = np.random.uniform(0.5*mean_scale, 1.5*mean_scale)
     # run heuristic segmentation
-    segments = skimage.segmentation.felzenszwalb(img, scale=scale, 
+    segments = skimage.segmentation.felzenszwalb(img, scale=scale,
                                                  min_size=int(scale))
     # sample a set of segmentations to use; bias toward larger ones
     max_segment = segments.max()
@@ -36,7 +36,7 @@ def _get_segments(img, mean_scale=1000, num_samples=16, return_enough_segments=F
     p = seg_count/seg_count.sum()
     # try this for error correction?
     if num_samples <= max_segment:
-        sampled_indices = np.random.choice(indices, p=p, size=num_samples, 
+        sampled_indices = np.random.choice(indices, p=p, size=num_samples,
                                            replace=False)
     else:
         warnings.warn("not enough unique segments; sampling WITH replacement")
@@ -44,7 +44,7 @@ def _get_segments(img, mean_scale=1000, num_samples=16, return_enough_segments=F
     # build normalized segment occupancy masks for each segment we choose
     seg_tensor = np.stack([(segments == i)/seg_count[i] for i in sampled_indices],
                           -1).astype(np.float32)
-    
+
     if return_enough_segments:
         enough_segs = num_samples <= max_segment
         return seg_tensor, enough_segs
@@ -64,26 +64,26 @@ def _get_grid_segments(imshape, num_samples=16):
             index += 1
     return seg
 
-def _segment_aug(img, seg, aug, outputsize=None):
+def _segment_aug(img, seg, aug, imshape=None, outputsize=None):
     """
     """
     num_channels = img.shape[-1]
-    imshape = (img.shape[0], img.shape[1])
+    if imshape is None:
+        imshape = (img.shape[0], img.shape[1])
     x = tf.concat([img, tf.cast(seg, tf.float32)], -1)
-
     for f in SEG_AUG_FUNCTIONS:
         if f in aug:
-            x = SINGLE_AUG_FUNC[f](x, aug[f], imshape=imshape)
-        
+            x = SINGLE_AUG_FUNC[f](x, aug[f], imshape=imshape, num_channels=x.shape[-1])
+
     img_aug = x[:,:,:num_channels]
     seg_aug = x[:,:,num_channels:]
-    
+
     if outputsize is not None:
         seg_aug = tf.image.resize(seg_aug, outputsize, method="area")
     # normalize segments
     norm = tf.expand_dims(tf.expand_dims(tf.reduce_sum(seg_aug, [0,1]),0),0)
     seg_aug /= (norm+1e-8)
-        
+
     return img_aug, seg_aug
 
 def _filter_out_bad_segments(img1, seg1, img2, seg2):
@@ -102,13 +102,13 @@ def _filter_out_bad_segments(img1, seg1, img2, seg2):
 
 def _prepare_embeddings(h, m):
     """
-    Combine FCN outputs with segmentation masks to build a batch of 
+    Combine FCN outputs with segmentation masks to build a batch of
     mask-pooled hidden vectors. Represents the calculation of h_{m}
     in the first equation in Henaff et al's paper
-    
+
     :h: batch of embeddings; (N,w,h,d)
     :m: batch of NORMALIZED segmentation tensors; (N,w,h,num_samples)
-    
+
     Returns a tensor of shape (N*num_samples, d)
     """
     d = h.shape[-1]
@@ -121,10 +121,9 @@ def _prepare_embeddings(h, m):
 def _prepare_mask(m1, m2):
     """
     :m1, m2: masks of segmentation tensors; (N,w,h,num_samples)
-    
+
     Returns a mask of shape (N*num_samples, 1)
     """
     m1_sum = tf.reduce_sum(m1, [1,2])
     m2_sum = tf.reduce_sum(m2, [1,2])
     return tf.reshape(m1_sum*m2_sum, [-1,1])
-    

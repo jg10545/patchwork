@@ -17,87 +17,88 @@ test_img_tensor = tf.constant(test_img, dtype=tf.float32)
 def test_default_augment():
     augfunc = augment_function(test_shape[:2])
     augmented = augfunc(test_img_tensor)
-    
+
     assert isinstance(augmented, tf.Tensor)
     assert augmented.get_shape() == test_img_tensor.get_shape()
-    
-    
+
+
 def test_poisson():
     c = _poisson(100)
-    
+
     assert c > 0
     assert c.dtype == tf.int32
-    
-    
+
+
 def test_random_zoom():
     img = np.random.uniform(0,1, (32,32,3)).astype(np.float32)
-    
+
     zoomed = _random_zoom(img, 0.1, (32,32))
     assert img.shape == zoomed.shape
     assert (zoomed.numpy() == img).all() == False
-    
-    
+
+
 def test_gaussian_blur():
     img = np.random.uniform(0,1, (32,32,3)).astype(np.float32)
-    
+
     blurred = _gaussian_blur(img, 1., (32,32))
     assert img.shape == blurred.shape
     #assert (blurred.numpy() == img).all() == False
-    
-    
+
+
 def test_center_crop():
     img = np.random.uniform(0,1, (32,32,3)).astype(np.float32)
-    
+
     zoomed = _center_crop(img, 0.1, (32,32))
     assert img.shape == zoomed.shape
     assert (zoomed.numpy() == img).all() == False
-    
+
 def test_choose():
     choice = _choose(0.5)
     assert choice.dtype == tf.bool
-    
-    
+
+
 def test_jitter():
     img = np.random.uniform(0,1, (32,32,3)).astype(np.float32)
-    
+
     jittered = _jitter(img, 1.)
     assert img.shape == jittered.shape
     assert (jittered.numpy() == img).all() == False
-    
+
 
 def test_random_jpeg_degrade():
     img = np.random.uniform(0,1, (32,32,3)).astype(np.float32)
-    
+
     degraded = _random_jpeg_degrade(img, 1.)
     assert img.shape == degraded.shape
     assert (degraded.numpy() == img).all() == False
-    
-    
+
+
+
 def test_random_shear():
     img = np.random.uniform(0,1, (32,32,3)).astype(np.float32)
-    
-    sheared = _random_shear(img, 0.4)
+
+    sheared = _random_shear(img, 0.4, imshape=(32,32), num_channels=3)
     assert img.shape == sheared.shape
     assert (sheared.numpy() == img).all() == False
-    
+
 def test_random_autocontrast():
     img = np.random.uniform(0,1, (32,32,3)).astype(np.float32)
-    
+
     adjusted = _random_autocontrast(img, 1.)
     assert img.shape == adjusted.shape
     assert (adjusted.numpy() == img).all() == False
-    
+
 def test_random_solarize():
     img = np.random.uniform(0,1, (32,32,3)).astype(np.float32)
-    
+
     solarized = _random_solarize(img, 1.)
     assert img.shape == solarized.shape
     assert (solarized.numpy() == img).all() == False
-    
+
 
 def test_pixel_mask():
     img = np.random.uniform(0,1, (32,32,3)).astype(np.float32)
-    
+
     degraded = _pixel_mask(img, 1.)
     assert img.shape == degraded.shape
     assert (degraded.numpy() == img).all() == False

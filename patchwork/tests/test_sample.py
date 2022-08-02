@@ -5,6 +5,7 @@ import pandas as pd
 from patchwork._sample import find_unlabeled, find_fully_labeled
 from patchwork._sample import find_partially_labeled, find_subset
 from patchwork._sample import stratified_sample, unlabeled_sample
+from patchwork._sample import stratified_subset_sample
 
 
 testdf = pd.DataFrame({
@@ -114,3 +115,21 @@ def test_stratified_sampler_sqrt_sampling():
     assert len(outlist) == N
     assert ys.shape[0] == N
     assert ys.shape[1] == 2
+    
+    
+def test_stratified_subset_sample():
+    N = 100
+    num_domains = 5
+    df = pd.DataFrame({"filepath":["%s.jpg"%i for i in range(N)],
+                  "subset":np.random.choice(["domain_%s"%i for i in range(num_domains)], size=N),
+                  "foo":np.random.choice([1,0,np.nan], size=N),
+                  "bar":np.random.choice([1,0,np.nan], size=N)})
+    df["exclude"] = False
+    df["validation"] = False
+    
+    num_samples = 101
+    s,y = stratified_subset_sample(df, num_samples)
+    
+    assert len(s) == num_samples
+    assert len(y) == num_samples
+    

@@ -5,9 +5,11 @@ import tensorflow.keras.backend as K
 #from patchwork._losses import entropy_loss
 from patchwork._util import compute_l2_loss
 from patchwork.feature._moco import exponential_model_update, copy_model
+from patchwork._domain import _compute_mmd_loss
 
 def build_training_function(loss_fn, opt, fine_tuning, output, feature_extractor=None, lam=0, 
-                            tau=0.95, weight_decay=0, finetune=False):
+                            tau=0.95, weight_decay=0, finetune=False, domain_weight=0, 
+                            num_domains=0):
     """
     Generate a tensorflow function for training the model.
     
@@ -18,6 +20,10 @@ def build_training_function(loss_fn, opt, fine_tuning, output, feature_extractor
     :feature_extractor: Keras model; fully-convolutional network for mapping raw
     :lam:
     :tau:
+    :weight_decay:
+    :finetune:
+    :domain_weight:
+    :num_domains:
     """
     trainvars = fine_tuning.trainable_variables + output.trainable_variables
     if finetune&(feature_extractor is not None):
@@ -36,7 +42,7 @@ def build_training_function(loss_fn, opt, fine_tuning, output, feature_extractor
         mask = tf.math.logical_or(confident_high, confident_low)
         return tf.cast(mask, tf.float32)
     
-    def training_step(x, y, x_unlab_wk=None, x_unlab_str=None):
+    def training_step(x, y, x_unlab_wk=None, x_unlab_str=None, domain_labels=None):
         # build pseudolabels and mask outside gradienttape
         if lam > 0:
             assert (x_unlab_wk is not None)&(x_unlab_str is not None)
@@ -71,13 +77,22 @@ def build_training_function(loss_fn, opt, fine_tuning, output, feature_extractor
             
             # semi-supervised case- loss function for unlabeled data
             if lam > 0:
+                assert domain_weight==0, "fixmatch + domain confusion not implemented"
                 preds_str = model(x_unlab_str, True)
 
                 crossent_tensor = K.binary_crossentropy(pseudolabels,
                                                         preds_str)
-                fixmatch_loss = tf.reduce_mean(mask*crossent_tensor)
+                semisup_loss = tf.reduce_mean(mask*crossent_tensor)
+                semisup_weight = lam
+            elif domain_weight > 0:
+                if feature_extractor is not None:
+                    x_unlab_wk = feature_extractor(x_unlab_wk, training=True)
+                features = fine_tuning(x_unlab_wk, training=True)
+                semisup_loss = _compute_mmd_loss(features, domain_labels, num_domains)
+                semisup_weight = domain_weight
             else:
-                fixmatch_loss = 0
+                semisup_loss = 0
+                semisup_weight = 0
             
             # supervised loss function between labels and predictions
             training_loss = loss_fn(y, y_pred)
@@ -90,11 +105,11 @@ def build_training_function(loss_fn, opt, fine_tuning, output, feature_extractor
             if (weight_decay > 0)&(feature_extractor is not None)&finetune:
                 l2_loss += compute_l2_loss(feature_extractor)
             
-            total_loss = training_loss + weight_decay*l2_loss + lam*fixmatch_loss
+            total_loss = training_loss + weight_decay*l2_loss + semisup_weight*semisup_loss
                 
         # compute and apply gradients
         gradients = tape.gradient(total_loss, trainvars)
         opt.apply_gradients(zip(gradients, trainvars))
 
-        return training_loss, fixmatch_loss
+        return training_loss, semisup_loss
     return training_step

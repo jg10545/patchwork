@@ -102,3 +102,24 @@ def test_training_step_feature_extractor_with_semisupervised():
     assert trainloss.shape == ()
     assert entloss.numpy() >= 0.
     assert trainloss.numpy() > 0.
+    
+    
+    
+def test_training_step_feature_extractor_with_domain_adaptation():
+    batchsize = 7
+    num_domains = 2
+    loss_fn = masked_binary_crossentropy
+    xb = np.ones((batchsize,5,5,3), dtype=np.float32)
+    yb = np.ones((batchsize,13), dtype=np.int64)
+    x_wk = np.ones((2*batchsize,5,5,3), dtype=np.float32)
+    domain_labels = np.random.randint(0,num_domains, size=2*batchsize)
+    # build training function
+    fn = build_training_function(loss_fn, opt, fine_tuning, output,
+                                 lam=0., feature_extractor=fcn,
+                                 domain_weight=1, num_domains=num_domains)
+    # run on a batch of data
+    trainloss, domainloss = fn(xb, yb, x_unlab_wk=x_wk, domain_labels=domain_labels)
+    assert domainloss.shape == ()
+    assert trainloss.shape == ()
+    assert domainloss.numpy() >= 0.
+    assert trainloss.numpy() > 0.

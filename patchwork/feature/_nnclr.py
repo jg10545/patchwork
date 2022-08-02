@@ -1,11 +1,11 @@
-# -*- coding: utf-8 -*-
-# -*- coding: utf-8 -*-
+import numpy as np
 import tensorflow as tf
 
 from patchwork.feature._generic import GenericExtractor, _TENSORBOARD_DESCRIPTIONS
 from patchwork._util import compute_l2_loss, _compute_alignment_and_uniformity
 
-from patchwork.feature._contrastive import _build_augment_pair_dataset
+from patchwork.feature._contrastive import _contrastive_loss, _build_augment_pair_dataset
+from patchwork.feature._simclr import _gather, _build_embedding_model, SimCLRTrainer
 
 try:
     bnorm = tf.keras.layers.experimental.SyncBatchNormalization
@@ -16,117 +16,105 @@ except:
 
 
 _DESCRIPTIONS = {
-    "mse_loss":"Mean-squared error loss between projections",
-    "std_loss":"Standard deviation loss to prevent mode collapse. Standard deviation is computed across the batch for each dimension in feature space. Hinge loss is computed on 1-std(x).",
-    "cov_loss":"Covariance loss computed across features"
-
+    "nt_xent_loss":"Contrastive crossentropy loss"
 }
 for d in _TENSORBOARD_DESCRIPTIONS:
     _DESCRIPTIONS[d] = _TENSORBOARD_DESCRIPTIONS[d]
 
 
 
-def _build_expander(fcn, imshape, num_channels, num_hidden, batchnorm=True):
+def _find_nearest_neighbors(z,Q):
     """
-    Create a Keras model that wraps the base encoder and
-    "expander" projection head
+    Find nearest neighbors for a batch of embeddings. Assumes
+    that both z and Q are l2-normalized!!
+
+    :z: (N,d) batch of embeddings
+    :Q: (queue_size, d) support queue
     """
-    inpt = tf.keras.layers.Input((imshape[0], imshape[1], num_channels))
-    net = fcn(inpt)
-    net = tf.keras.layers.GlobalAvgPool2D(dtype="float32")(net)
-    for i in range(2):
-        net = tf.keras.layers.Dense(num_hidden, dtype="float32")(net)
-        net = bnorm(dtype="float32")(net)
-        net = tf.keras.layers.Activation("relu", dtype="float32")(net)
-    net = tf.keras.layers.Dense(num_hidden, dtype="float32")(net)
-
-    embedding_model = tf.keras.Model(inpt, net)
-    return embedding_model
+    similarity = tf.matmul(z,Q, transpose_b=True)
+    # (N,)
+    nn_indices = tf.argmax(similarity, axis=1)
+    return tf.stop_gradient(tf.gather(Q, nn_indices))
 
 
 
-def _gather(tensor):
-    context = tf.distribute.get_replica_context()
-    rep_id = context.replica_id_in_sync_group
-
-    strategy =  tf.distribute.get_strategy()
-    num_replicas = strategy.num_replicas_in_sync
-
-    if num_replicas < 2:
-        return tensor
-
-    ext_tensor = tf.scatter_nd(
-        indices=[[rep_id]],
-        updates=[tensor],
-        shape=tf.concat([[num_replicas], tf.shape(tensor)], axis=0))
-
-    ext_tensor = context.all_reduce(tf.distribute.ReduceOp.SUM,
-                                            ext_tensor)
-    return tf.reshape(ext_tensor, [-1] + ext_tensor.shape.as_list()[2:])
-
-
-
-def _cov_loss(x):
-    N,d = x.shape
-    # get dxd matrix of
-    cov = tf.matmul(x, x, transpose_a=True)/(N-1)
-    # subtract off the diagonal elements
-    return (tf.reduce_sum(cov**2) - tf.reduce_sum(tf.linalg.diag_part(cov)**2))/d
-
-
-
-def _build_vicreg_training_step(embed_model, optimizer, lam=25, mu=25, nu=1,
-                                weight_decay=0, eps=1e-4):
+def _update_queue(z,Q):
     """
-    Generate a tensorflow function to run the training step for VICReg.
+    Update the support queue to include a new batch of embeddings
+    :z: (N,d) tensor
+    :Q: (queue_size, d) tf.Variable
+    """
+    queue_size = Q.shape[0]
+    Q.assign(tf.concat([z,Q],0)[:queue_size,:])
+
+
+def _initialize_queue(embed_model, ds, queue_size, num_channels=3):
+    """
+    Create and populate the support queue. Call within a scope
+    context of a distribution strategy.
+    """
+    embeddings = []
+    counter = 0
+    for x, y in ds:
+        embeddings.append(embed_model(x, training=True).numpy())
+        counter += x.shape[0]
+        if counter > queue_size:
+            break
+
+    embeddings = np.concatenate(embeddings, 0)[:queue_size, :]
+    embeddings = tf.nn.l2_normalize(embeddings, 1)
+    return tf.Variable(embeddings)
+
+
+def _build_nnclr_training_step(embed_model, optimizer, Q, temperature=0.1,
+                               weight_decay=0, eps=0):
+    """
+    Generate a tensorflow function to run the training step for NNCLR.
 
     :embed_model: full Keras model including both the convnet and
-        expander head
+        projection head
     :optimizer: Keras optimizer
-    :lam: loss weight for __
-    :mu: loss weight for __
-    :nu: loss weight for __
+    :Q:
+    :temperature: hyperparameter for scaling cosine similarities
     :weight_decay: coefficient for L2 loss
+    :eps:
 
     The training function returns:
     :loss: value of the loss function for training
+    :avg_cosine_sim: average value of the batch's matrix of dot products
     """
     # check whether we're in mixed-precision mode
     mixed = tf.keras.mixed_precision.global_policy().name == 'mixed_float16'
-    def training_step(x,y):
 
+    def training_step(x, y):
 
         with tf.GradientTape() as tape:
             # run images through model and normalize embeddings
-            z1 = embed_model(x, training=True)
-            z2 = embed_model(y, training=True)
+            z1 = tf.nn.l2_normalize(embed_model(x, training=True), 1)
+            z2 = tf.nn.l2_normalize(embed_model(y, training=True), 1)
 
-            # MSE "invariance" loss- doesn't require gathered embeddings
-            repr_loss = tf.reduce_mean(tf.losses.mse(z1,z2))
+            nn1 = _find_nearest_neighbors(z1, Q)
+            nn2 = _find_nearest_neighbors(z2, Q)
 
-            # gather across GPUs
+            # aggregate projections across replicas. z1 and z2 should
+            # now correspond to the global batch size (gbs, d)
             z1 = _gather(z1)
             z2 = _gather(z2)
+            nn1 = _gather(nn1)
+            nn2 = _gather(nn2)
 
-            batch_size, d = z1.shape
+            xent_loss1, batch_acc1 = _contrastive_loss(z1, nn2, temperature, eps=eps)
+            xent_loss2, batch_acc2 = _contrastive_loss(z2, nn1, temperature, eps=eps)
 
-            # variance/coviariance losses
-            z1 = z1 - tf.reduce_mean(z1, axis=0, keepdims=True)
-            z2 = z2 - tf.reduce_mean(z2, axis=0, keepdims=True)
-            # variance
-            std_1 = tf.math.sqrt(tf.math.reduce_variance(z1, axis=0)+eps)
-            std_2 = tf.math.sqrt(tf.math.reduce_variance(z2, axis=0)+eps)
-            std_loss = tf.reduce_mean(tf.nn.relu(1-std_1) + tf.nn.relu(1-std_2) )/2
-            # covariance
-            cov_loss = _cov_loss(z1) + _cov_loss(z2)
+            xent_loss = 0.5 * (xent_loss1 + xent_loss2)
+            batch_acc = 0.5 * (batch_acc1 + batch_acc2)
 
-            if (weight_decay > 0)&("LARS" not in optimizer._name):
+            if (weight_decay > 0) & ("LARS" not in optimizer._name):
                 l2_loss = compute_l2_loss(embed_model)
             else:
                 l2_loss = 0
 
-            loss = lam*repr_loss + mu*std_loss + nu*cov_loss + weight_decay*l2_loss
-
+            loss = xent_loss + weight_decay * l2_loss
             if mixed:
                 loss = optimizer.get_scaled_loss(loss)
 
@@ -136,28 +124,33 @@ def _build_vicreg_training_step(embed_model, optimizer, lam=25, mu=25, nu=1,
         optimizer.apply_gradients(zip(gradients,
                                       embed_model.trainable_variables))
 
+        # use one batch of embeddings to update the support queue
+        _update_queue(z1, Q)
 
-        return {"std_loss":std_loss,
-                "l2_loss":l2_loss,
-                "loss":loss,
-                "cov_loss":cov_loss,
-                "mse_loss":repr_loss}
+        return {"nt_xent_loss": xent_loss,
+                "l2_loss": l2_loss,
+                "loss": loss,
+                "nce_batch_acc": batch_acc}
+
     return training_step
 
 
-
-class VICRegTrainer(GenericExtractor):
+class NNCLRTrainer(SimCLRTrainer):
     """
-    Class for training a VICReg model.
+    Class for training a NNCLR model.
 
-    Based on "VICREG: VARIANCE-INVARIANCE-COVARIANCE RE- GULARIZATION FOR SELF-SUPERVISED LEARNING" by Bardes et al.
+    Based on "With a Little Help from My Friends: Nearest-Neighbor Contrastive
+    Learning of Visual Representations" by Dwibedi et al.
     """
-    modelname = "VICReg"
+    modelname = "NNCLR"
 
     def __init__(self, logdir, trainingdata, testdata=None, fcn=None,
-                 augment=True, lam=25, mu=25, nu=1, num_hidden=8192,
-                 weight_decay=0, lr=0.01, lr_decay=100000,
-                 decay_type="exponential", opt_type="adam",
+                 augment=True, temperature=0.1, num_hidden=2048, queue_size=32768,
+                 output_dim=256, batchnorm=True, weight_decay=0,
+                 num_projection_layers=3,
+                 decoupled=False, eps=0, q=0,
+                 lr=0.01, lr_decay=100000, decay_type="warmupcosine",
+                 opt_type="adam",
                  imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, num_parallel_calls=None,
                  single_channel=False, notes="",
@@ -168,11 +161,19 @@ class VICRegTrainer(GenericExtractor):
         :testdata: (list) filepaths of a batch of images to use for eval
         :fcn: (keras Model) fully-convolutional network to train as feature extractor
         :augment: (dict) dictionary of augmentation parameters, True for defaults
-        :lam: coefficient for MSE loss
-        :mu: coefficient for variance loss
-        :nu: coefficient for covariance loss
-        :num_hidden: number of hidden neurons in the network's projection head.
-        :weight_decay: coefficient for L2-norm loss.
+        :temperature: (float) the Boltzmann temperature parameter- rescale the cosine similarities by this factor before computing softmax loss.
+        :num_hidden: (int) number of hidden neurons in the network's projection head.
+        :queue_size: (int) number of examples in the support queue
+        :output_dim: (int) dimension of projection head's output space. Figure 8 in Chen et al's paper shows that their results did not depend strongly on this value.
+        :batchnorm: (bool) whether to include batch normalization in the projection head.
+        :weight_decay: (float) coefficient for L2-norm loss. The original SimCLR paper used 1e-6.
+        :num_projection_layers: (int) number of layers in the projection head, including the output layer
+        :decoupled: (bool) if True, use the modified loss function from "Decoupled Contrastive
+            Learning" by Yeh et al
+        :eps: (float) epsilon parameter from the Implicit Feature Modification paper ("Can
+             contrastive learning avoid shortcut solutions?" by Robinson et al)
+        :q: (float) RINCE loss parameter from "Robust Contrastive Learning against Noisy Views"
+            by Chuang et al
         :lr: (float) initial learning rate
         :lr_decay:  (int) number of steps for one decay period (0 to disable)
         :decay_type: (string) how to decay the learning rate- "exponential" (smooth exponential decay), "staircase" (non-smooth exponential decay), "cosine", or "warmupcosine"
@@ -208,8 +209,9 @@ class VICRegTrainer(GenericExtractor):
             self.fcn = fcn
             # Create a Keras model that wraps the base encoder and
             # the projection head
-            embed_model = _build_expander(fcn, imshape, num_channels,
-                                             num_hidden)
+            embed_model = _build_embedding_model(fcn, imshape, num_channels,
+                                             num_hidden, output_dim, batchnorm,
+                                             num_projection_layers)
 
         self._models = {"fcn":fcn,
                         "full":embed_model}
@@ -228,12 +230,14 @@ class VICRegTrainer(GenericExtractor):
                                                 decay_type=decay_type,
                                                 weight_decay=weight_decay)
 
-
+        # initialize the support queue
+        with self.scope():
+            self.Q = _initialize_queue(self._models["full"], ds,
+                                   queue_size, num_channels=num_channels)
         # build training step
-        step_fn = _build_vicreg_training_step(
-                embed_model, self._optimizer,
-                lam=lam, mu=mu, nu=nu,
-                weight_decay=weight_decay)
+        step_fn = _build_nnclr_training_step(
+                embed_model, self._optimizer, self.Q,
+                temperature, weight_decay=weight_decay, eps=eps)
         self._training_step = self._distribute_training_function(step_fn,
                                                                  jitcompile=jitcompile)
 
@@ -252,41 +256,17 @@ class VICRegTrainer(GenericExtractor):
         self.step = 0
 
         # parse and write out config YAML
-        self._parse_configs(augment=augment, lam=lam, mu=mu, nu=nu,
-                            num_hidden=num_hidden,
-                            weight_decay=weight_decay,
+        self._parse_configs(augment=augment, temperature=temperature,
+                            num_hidden=num_hidden, output_dim=output_dim,
+                            queue_size=queue_size,
+                            weight_decay=weight_decay, batchnorm=batchnorm,
                             lr=lr, lr_decay=lr_decay,
+                            decoupled=decoupled, eps=eps, q=q,
                             imshape=imshape, num_channels=num_channels,
                             norm=norm, batch_size=batch_size,
                             num_parallel_calls=num_parallel_calls,
                             single_channel=single_channel, notes=notes,
-                            trainer="vicreg", strategy=str(strategy),
+                            trainer="nnclr", strategy=str(strategy),
                             decay_type=decay_type, opt_type=opt_type)
-
-    def _run_training_epoch(self, **kwargs):
-        """
-
-        """
-        for x, y in self._ds:
-            lossdict = self._training_step(x,y)
-            self._record_scalars(**lossdict)
-            self._record_scalars(learning_rate=self._get_current_learning_rate())
-            self.step += 1
-
-    def evaluate(self, avpool=True, query_fig=False):
-
-        if self._test:
-            # if the user passed out-of-sample data to test- compute
-            # alignment and uniformity measures
-            alignment, uniformity = _compute_alignment_and_uniformity(
-                                            self._test_ds, self._models["fcn"])
-
-            self._record_scalars(alignment=alignment,
-                             uniformity=uniformity, metric=True)
-
-        if self._downstream_labels is not None:
-            self._linear_classification_test(avpool=avpool,
-                        query_fig=query_fig)
-
 
 
