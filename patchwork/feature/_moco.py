@@ -211,7 +211,7 @@ class MomentumContrastTrainer(GenericExtractor):
                  imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, num_parallel_calls=None,
                  single_channel=False, notes="",
-                 downstream_labels=None):
+                 downstream_labels=None, **kwargs):
         """
         :logdir: (string) path to log directory
         :trainingdata: (list) list of paths to training images
@@ -333,7 +333,7 @@ class MomentumContrastTrainer(GenericExtractor):
                             norm=norm, batch_size=batch_size,
                             num_parallel_calls=num_parallel_calls,
                             single_channel=single_channel, notes=notes,
-                            trainer="moco")
+                            trainer="moco", **kwargs)
         self._prepopulate_buffer()
 
     def _prepopulate_buffer(self):

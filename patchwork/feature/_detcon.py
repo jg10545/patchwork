@@ -203,7 +203,7 @@ class DetConTrainer(GenericExtractor):
                  imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, num_parallel_calls=None,
                  single_channel=False, notes="",
-                 downstream_labels=None, strategy=None):
+                 downstream_labels=None, strategy=None, **kwargs):
         """
         :logdir: (string) path to log directory
         :trainingdata: (list) list of paths to training images
@@ -332,7 +332,7 @@ class DetConTrainer(GenericExtractor):
                             num_parallel_calls=num_parallel_calls,
                             single_channel=single_channel, notes=notes,
                             trainer="detcon", strategy=str(strategy),
-                            decay_type=decay_type, opt_type=opt_type)
+                            decay_type=decay_type, opt_type=opt_type, **kwargs)
 
     def _run_training_epoch(self, **kwargs):
         """
