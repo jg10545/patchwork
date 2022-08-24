@@ -10,12 +10,6 @@ def _build_multi_output_fcn(oldfcn, layers):
     """
     Take a Keras feature extractor and
     """
-    #if pooling == "average pool":
-    #    pool = tf.keras.layers.GlobalAveragePooling2D
-    #elif pooling == "max pool":
-    #    pool = tf.keras.layers.GlobalMaxPool2D
-    #else:
-    #    assert False, "what kind of pooling is this?"
     # regex case
     if isinstance(layers, str):
         layers = [e for e, l in enumerate(oldfcn.layers)
@@ -24,9 +18,7 @@ def _build_multi_output_fcn(oldfcn, layers):
     inpt = oldfcn.input
     for l in layers:
         net = oldfcn.layers[l].output
-        #net = pool()(net)
         outputs.append(net)
-
     return tf.keras.Model(inpt, outputs)
 
 
@@ -115,7 +107,7 @@ class MultiscalePooling(param.Parameterized):
     """
     Concatenate pooled features from multiple layers
     """
-    pooling_type = param.ObjectSelector(default="average pool", objects=["max pool", "average pool", "attention"])
+    pooling_type = param.ObjectSelector(default="average pool", objects=["max pool", "average pool"])
     layers = param.String(default="add", doc="Comma-separated list of filters")
     use_dropout = param.Boolean(default=True, doc="Use layerwise dropout")
     dropout_rate = param.Number(0.5, bounds=(0.05, 0.95), step=0.05, doc="Spatial dropout rate.")
@@ -148,9 +140,7 @@ class MultiscalePooling(param.Parameterized):
                 assert False, "what kind of pooling is this?"
 
         # build new finetuning model to accept multiple inputs
-        #inputshapes = [l.shape[-1] for l in multi_output_fcn.outputs]
         inputshapes = [x.shape.as_list() for x in multi_output_fcn.outputs]
-        print(inputshapes)
         inputs = []
         outlayers = []
         for i in inputshapes:
