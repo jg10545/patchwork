@@ -13,6 +13,7 @@ from patchwork._fixmatch import FixMatchTrainer
 from patchwork._prep import prep_label_dataframe
 from patchwork._distill import distill
 from patchwork._tfrecord import save_dataset_to_tfrecords
+from patchwork._eval import sample_and_evaluate
 import patchwork.feature
 import patchwork.viz
 import patchwork.loaders
