@@ -6,16 +6,10 @@ import re
 from patchwork._layers import _next_layer
 
 
-def _build_multi_output_fcn(oldfcn, layers, pooling="average pool"):
+def _build_multi_output_fcn(oldfcn, layers):
     """
     Take a Keras feature extractor and
     """
-    if pooling == "average pool":
-        pool = tf.keras.layers.GlobalAveragePooling2D
-    elif pooling == "max pool":
-        pool = tf.keras.layers.GlobalMaxPool2D
-    else:
-        assert False, "what kind of pooling is this?"
     # regex case
     if isinstance(layers, str):
         layers = [e for e, l in enumerate(oldfcn.layers)
@@ -24,9 +18,7 @@ def _build_multi_output_fcn(oldfcn, layers, pooling="average pool"):
     inpt = oldfcn.input
     for l in layers:
         net = oldfcn.layers[l].output
-        net = pool()(net)
         outputs.append(net)
-
     return tf.keras.Model(inpt, outputs)
 
 
@@ -134,20 +126,30 @@ class MultiscalePooling(param.Parameterized):
             layers = self.layers
         # rebuild feature extractor
         multi_output_fcn = _build_multi_output_fcn(feature_extractor,
-                                                   layers,
-                                                   self.pooling_type)
+                                                   layers)
+
+        def pool(x):
+            if self.pooling_type == "average pool":
+                return tf.keras.layers.GlobalAveragePooling2D()(x)
+            elif self.pooling_type == "max pool":
+                return tf.keras.layers.GlobalMaxPool2D()(x)
+            elif self.pooling_type == "attention":
+                x = tf.keras.layers.MultiHeadAttention(1, 3)(x,x)
+                return tf.keras.layers.GlobalAvgPool2D()(x)
+            else:
+                assert False, "what kind of pooling is this?"
 
         # build new finetuning model to accept multiple inputs
-        inputshapes = [l.shape[-1] for l in multi_output_fcn.outputs]
+        inputshapes = [x.shape.as_list() for x in multi_output_fcn.outputs]
         inputs = []
         outlayers = []
         for i in inputshapes:
-            inpt = tf.keras.layers.Input(i)
-            net = inpt
+            inpt = tf.keras.layers.Input(i[1:])
+            net = pool(inpt)
             if self.use_dropout:
-                net = tf.keras.layers.Reshape([i, 1])(net)
+                net = tf.keras.layers.Reshape([i[-1], 1])(net)
                 net = tf.keras.layers.SpatialDropout1D(self.dropout_rate)(net)
-                net = tf.keras.layers.Reshape([i])(net)
+                net = tf.keras.layers.Reshape([i[-1]])(net)
             inputs.append(inpt)
             outlayers.append(net)
         net = tf.keras.layers.Concatenate()(outlayers)
