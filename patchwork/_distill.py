@@ -8,6 +8,7 @@ import patchwork as pw
 from patchwork._losses import multilabel_distillation_loss
 from patchwork._util import build_optimizer
 from patchwork.models import build_wide_resnet
+from patchwork.feature._generic import GenericExtractor
 
 _fcn = {"vgg16":tf.keras.applications.VGG16,
         "vgg19":tf.keras.applications.VGG19,
@@ -47,7 +48,7 @@ def _build_student_model(model, output_dim, imshape=(256,256), num_channels=3):
             else:
                 assert model.lower() in _fcn, "I don't know what to do with model type %s"%model
                 fcn = _fcn[model.lower()](weights=None, include_top=False)
-        
+
             inpt = tf.keras.layers.Input((imshape[0], imshape[1], num_channels))
             net = fcn(inpt)
             net = tf.keras.layers.Flatten()(net)
@@ -57,16 +58,180 @@ def _build_student_model(model, output_dim, imshape=(256,256), num_channels=3):
         assert isinstance(model, tf.keras.Model), "what is this model i dont even"
         assert model.output_shape[-1] == output_dim, "model output doesn't match output dimension"
     return model
-        
-    
-    
+
+
+
+
+
+class Distillerator(GenericExtractor):
+    """
+    Class for training a SimCLR model.
+
+    Based on "A Simple Framework for Contrastive Learning of Visual
+    Representations" by Chen et al.
+    """
+    modelname = "SimCLR"
+
+    def __init__(self, filepaths, ys, student,  testfiles=None, testlabels=None,
+            lr=1e-3, opt_type="momentum", lr_decay=0, decay_type="exponential",
+            imshape=(256,256), num_channels=3, batch_size=128,
+            num_parallel_calls=6, logdir=logdir,
+            class_names=None, strategy=None,  augment=False,
+            **kwargs):
+        """
+
+
+        """
+        assert augment is not False, "this method needs an augmentation scheme"
+        self.logdir = logdir
+        self.trainingdata = trainingdata
+        self._downstream_labels = downstream_labels
+        self.strategy = strategy
+        self._description = _DESCRIPTIONS
+        self._class_names = class_names
+        self._testlabels = tests
+
+        self._file_writer = tf.summary.create_file_writer(logdir, flush_millis=10000)
+        self._file_writer.set_as_default()
+
+        # build model
+        with self.scope():
+            self._models ={"student":_build_student_model(student, output_dim,
+                                   imshape, num_channels)}
+
+        # SET UP THE INPUT PIPELINE
+        ds, ns = pw.loaders.dataset(filepaths, ys=ys, imshape=imshape,
+                                        num_channels=num_channels, shuffle=True,
+                                        batch_size=batch_size, num_parallel_calls=num_parallel_calls,
+                                        **kwargs)
+        self._ds = strategy.experimental_distribute_dataset(ds)
+        """
+        # build training dataset
+        ds = _build_augment_pair_dataset(trainingdata,
+                                   imshape=imshape, batch_size=batch_size,
+                                   num_parallel_calls=num_parallel_calls,
+                                   norm=norm, num_channels=num_channels,
+                                   augment=augment,
+                                   single_channel=single_channel)
+        self._ds = self._distribute_dataset(ds)"""
+
+        # create optimizer
+        self._optimizer = self._build_optimizer(lr, lr_decay, opt_type=opt_type,
+                                                decay_type=decay_type,
+                                                weight_decay=weight_decay)
+
+
+        # build training step
+
+        # CREATE A TRAINING FUNCTION
+        def step_fn(x, y):
+            with tf.GradientTape() as tape:
+                student_pred = student(x, training=True)
+                loss = multilabel_distillation_loss(y, student_pred, 1.)
+
+            gradients = tape.gradient(loss, student.trainable_variables)
+            opt.apply_gradients(zip(gradients, student.trainable_variables))
+            return loss
+
+        # AND DISTRIBUTE IF NECESSARY
+        """
+        @tf.function
+        def train_step(x, y):
+            per_example_losses = strategy.run(step_fn, args=(x, y))
+            return strategy.reduce(tf.distribute.ReduceOp.MEAN,
+                                   per_example_losses, axis=None)"""
+        self._training_step = self._distribute_training_function(step_fn)
+        """
+        step_fn = _build_simclr_training_step(
+                embed_model, self._optimizer,
+                temperature, weight_decay=weight_decay,
+                decoupled=decoupled, eps=eps, q=q)
+        self._training_step = self._distribute_training_function(step_fn,
+                                                                 jitcompile=jitcompile)"""
+
+        if (testfiles is not None) & (testlabels is not None):
+            self._test_ds, self._test_ns = pw.loaders.dataset(testfiles, imshape=imshape,
+                                                  num_channels=num_channels, shuffle=False,
+                                                  batch_size=batch_size,
+                                                  num_parallel_calls=num_parallel_calls,
+                                                  augment=False)
+            self._test = True
+        else:
+            self._test = False
+        """
+        if testdata is not None:
+            self._test_ds =  _build_augment_pair_dataset(testdata,
+                                        imshape=imshape, batch_size=batch_size,
+                                        num_parallel_calls=num_parallel_calls,
+                                        norm=norm, num_channels=num_channels,
+                                        augment=augment,
+                                        single_channel=single_channel)"""
+
+
+
+
+        self.step = 0
+
+        # parse and write out config YAML
+        self._parse_configs(augment=augment,
+                            lr=lr, lr_decay=lr_decay,
+                            imshape=imshape, num_channels=num_channels,
+                            norm=norm, batch_size=batch_size,
+                            num_parallel_calls=num_parallel_calls,
+                            single_channel=single_channel, notes=notes,
+                            trainer="distill", strategy=str(strategy),
+                            decay_type=decay_type, opt_type=opt_type, **kwargs)
+
+    def _run_training_epoch(self, **kwargs):
+        """
+
+        """
+        for x, y in self._ds:
+            lossdict = self._training_step(x,y)
+            self._record_scalars(**lossdict)
+            self._record_scalars(learning_rate=self._get_current_learning_rate())
+            self.step += 1
+
+    def evaluate(self, **kwargs):
+
+        if self._test:
+            predictions = self._models["student"].predict(self._test_ds, steps=self._test_ns)
+            # compute performance metrics for each category
+            # for i in range(output_dim):
+            for e, c in enumerate(self._class_names):
+                self._record_scalars(
+                    **{f"auc_{c}":roc_auc_score(self._testlabels[:, e], predictions[:, e]),
+                       f"acc_{c}":accuracy_score(self._testlabels[:, e],
+                                                                 (predictions[:, e] >= 0.5).astype(int))}
+                )
+
+                """
+                outputs["auc_%s" % c].append(auc)
+                outputs["accuracy_%s" % c].append(acc)
+                if tracking_uri is not None:
+                    mlflow.log_metrics({"auc_%s" % c: auc, "accuracy_%s" % c: acc},
+                                       step=step)"""
+            """
+            # if the user passed out-of-sample data to test- compute
+            # alignment and uniformity measures
+            alignment, uniformity = _compute_alignment_and_uniformity(
+                                            self._test_ds, self._models["fcn"])
+
+            self._record_scalars(alignment=alignment,
+                             uniformity=uniformity, metric=True)
+
+        if self._downstream_labels is not None:
+            self._linear_classification_test(avpool=avpool,
+                        query_fig=query_fig)"""
+
+
 
 def distill(filepaths, ys, student, epochs=5, testfiles=None, testlabels=None,
             lr=1e-3, opt_type="momentum", lr_decay=0, decay_type="exponential",
             imshape=(256,256), num_channels=3, batch_size=128,
             num_parallel_calls=6,
-            class_names=None, 
-            tracking_uri=None, experiment_name=None, 
+            class_names=None,
+            tracking_uri=None, experiment_name=None,
             strategy=None, outfile=None, **kwargs):
     """
     Distill a student model from pre-computed teacher outputs.
@@ -110,7 +275,7 @@ def distill(filepaths, ys, student, epochs=5, testfiles=None, testlabels=None,
         Distribution strategy for training on multiple GPUs
     outfile : str; optional
         Path to a location to save the model at the end of every epoch
-    **kwargs : 
+    **kwargs :
         Additional arguments passed to pw.loaders.dataset
 
     Returns
@@ -134,7 +299,7 @@ def distill(filepaths, ys, student, epochs=5, testfiles=None, testlabels=None,
                            "decay_type":decay_type})
         if isinstance(student, str):
             mlflow.log_param("student", student)
-    
+
     output_dim = ys.shape[1]
     outputs = {}
     with strategy.scope():
@@ -146,33 +311,33 @@ def distill(filepaths, ys, student, epochs=5, testfiles=None, testlabels=None,
         # SET UP THE MODEL
         student = _build_student_model(student, output_dim,
                                    imshape, num_channels)
-    
+
     # SET UP TESTING IF NECESSARY
     if (testfiles is not None)&(testlabels is not None):
         test_ds, test_ns = pw.loaders.dataset(testfiles, imshape=imshape,
                                 num_channels=num_channels, shuffle=False,
-                                batch_size=batch_size, 
+                                batch_size=batch_size,
                                 num_parallel_calls=num_parallel_calls,
                                 augment=False)
         #for c in range(output_dim):
         for c in class_names:
             outputs["auc_%s"%c] = []
             outputs["accuracy_%s"%c] = []
-        
-    
+
+
     # SET UP THE INPUT PIPELINE
     ds, ns = pw.loaders.dataset(filepaths, ys=ys, imshape=imshape,
                                 num_channels=num_channels, shuffle=True,
                                 batch_size=batch_size, num_parallel_calls=num_parallel_calls,
                                 **kwargs)
     ds = strategy.experimental_distribute_dataset(ds)
-        
+
     # CREATE A TRAINING FUNCTION
     def step_fn(x,y):
         with tf.GradientTape() as tape:
             student_pred = student(x, training=True)
             loss = multilabel_distillation_loss(y, student_pred, 1.)
-        
+
         gradients = tape.gradient(loss, student.trainable_variables)
         opt.apply_gradients(zip(gradients, student.trainable_variables))
         return loss
@@ -182,8 +347,8 @@ def distill(filepaths, ys, student, epochs=5, testfiles=None, testlabels=None,
         per_example_losses = strategy.run(step_fn, args=(x,y))
         return strategy.reduce(tf.distribute.ReduceOp.MEAN,
                                per_example_losses, axis=None)
-    
-    
+
+
     # TRAIN THE STUDENT MODEL
     train_loss = []
     step = 0
@@ -191,7 +356,7 @@ def distill(filepaths, ys, student, epochs=5, testfiles=None, testlabels=None,
         for x, y in ds:
             train_loss.append(train_step(x,y).numpy())
             step += 1
-            
+
         # AT THE END OF EVERY EPOCH RUN TESTS
         if (testfiles is not None)&(testlabels is not None):
             predictions = student.predict(test_ds, steps=test_ns)
@@ -208,11 +373,10 @@ def distill(filepaths, ys, student, epochs=5, testfiles=None, testlabels=None,
         # AND SAVE A COPY OF THE MODEL
         if outfile is not None:
             student.save(outfile)
-            
-           
+
+
     outputs["train_loss"] = train_loss
     if tracking_uri is not None:
         mlflow.keras.log_model(student, "student_model")
         mlflow.end_run()
     return student, outputs
-    
