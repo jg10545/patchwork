@@ -67,12 +67,12 @@ def _build_student_model(model, output_dim, imshape=(256,256), num_channels=3):
     return model
 
 
-def _build_distillation_training_function(student, opt, weight_decay=0):
+def _build_distillation_training_function(student, opt, weight_decay=0, temp=1):
     def step_fn(x, y):
         lossdict = {}
         with tf.GradientTape() as tape:
             student_pred = student(x, training=True)
-            lossdict["kl_loss"] = multilabel_distillation_loss(y, student_pred, 1.)
+            lossdict["kl_loss"] = multilabel_distillation_loss(y, student_pred, temp=temp)
             loss = lossdict["kl_loss"]
             if weight_decay > 0:
                 lossdict["l2_loss"] = compute_l2_loss(student)
@@ -93,7 +93,7 @@ class Distillerator(GenericExtractor):
     modelname = "Distillerator"
 
     def __init__(self, filepaths, ys, student,  testfiles=None, testlabels=None,
-            lr=1e-3, opt_type="adam", lr_decay=0, decay_type="warmupcosine",
+            lr=1e-3, opt_type="adam", lr_decay=0, decay_type="warmupcosine", temp=1,
             imshape=(256,256), num_channels=3, batch_size=128, norm=255, single_channel=False,
             num_parallel_calls=6, logdir=None, weight_decay=1e-6,
             class_names=None, strategy=None,  augment=False, notes="",
@@ -139,7 +139,8 @@ class Distillerator(GenericExtractor):
         # build training function and distribute
         self._training_step = self._distribute_training_function(_build_distillation_training_function(self._models["student"],
                                                                                                        self._optimizer,
-                                                                                                       weight_decay))
+                                                                                                       weight_decay=weight_decay,
+                                                                                                       temp=temp))
         # set up testing
         if (testfiles is not None) & (testlabels is not None):
             self._test_ds, self._test_ns = pw.loaders.dataset(testfiles, imshape=imshape,
@@ -153,7 +154,7 @@ class Distillerator(GenericExtractor):
         self.step = 0
 
         # parse and write out config YAML
-        self._parse_configs(augment=augment,
+        self._parse_configs(augment=augment, temp=temp,
                             lr=lr, lr_decay=lr_decay,
                             imshape=imshape, num_channels=num_channels,
                             norm=norm, batch_size=batch_size,

@@ -2,7 +2,7 @@
 import numpy as np
 import tensorflow as tf
 
-from patchwork._distill import _build_student_model, distill, Distillerator
+from patchwork._distill import _build_student_model,  Distillerator
 
 
 def test_student_model_with_premade_model():
