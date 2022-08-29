@@ -194,5 +194,5 @@ class Distillerator(GenericExtractor):
         Save a visualization to TensorBoard of all the kernels in the first
         convolutional layer
         """
-        super(Distillerator).visualize_kernels(self._models["student"])
+        super().visualize_kernels(self._models["student"])
 
