@@ -154,6 +154,7 @@ class Distillerator(GenericExtractor):
         self.step = 0
 
         # parse and write out config YAML
+        metrics = [f"auc_{c}" for c in class_names] + [f"acc_{c}" for c in class_names]
         self._parse_configs(augment=augment, temp=temp,
                             lr=lr, lr_decay=lr_decay,
                             imshape=imshape, num_channels=num_channels,
@@ -162,7 +163,8 @@ class Distillerator(GenericExtractor):
                             single_channel=single_channel, notes=notes,
                             trainer="distill", strategy=str(strategy),
                             weight_decay=weight_decay,
-                            decay_type=decay_type, opt_type=opt_type, **kwargs)
+                            decay_type=decay_type, opt_type=opt_type,
+                            metrics=metrics, **kwargs)
 
     def _run_training_epoch(self, **kwargs):
         """
