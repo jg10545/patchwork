@@ -507,12 +507,14 @@ class GenericExtractor(object):
             savedloc = os.path.join(logdir, k+".h5")
             self._models[k].load_weights(savedloc)
 
-    def visualize_kernels(self):
+    def visualize_kernels(self, model=None):
         """
         Save a visualization to TensorBoard of all the kernels in the first
         convolutional layer
         """
-        kernels = np.expand_dims(_make_kernel_sprites(self._models["fcn"]),0)
+        if model is None:
+            model = self._models["fcn"]
+        kernels = np.expand_dims(_make_kernel_sprites(model),0)
         self._record_images(first_convolution_filters=kernels)
 
     def track_with_mlflow(self, tracking_uri, experiment_name, run_name=None):

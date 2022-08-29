@@ -187,3 +187,10 @@ class Distillerator(GenericExtractor):
                                                                  (predictions[:, e] >= 0.5).astype(int))}
                 )
 
+    def visualize_kernels(self, model=None):
+        """
+        Save a visualization to TensorBoard of all the kernels in the first
+        convolutional layer
+        """
+        super(Distillerator).visualize_kernels(self._models["student"])
+
