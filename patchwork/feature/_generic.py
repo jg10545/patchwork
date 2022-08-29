@@ -240,17 +240,19 @@ class GenericExtractor(object):
             self._notes = None
 
         # dump configuration to a YAML file
-        config_path = os.path.join(self.logdir, "config.yml")
-        config_dict = {"model":self.config, "input":self.input_config,
+        if self.logdir is not None:
+            config_path = os.path.join(self.logdir, "config.yml")
+            config_dict = {"model":self.config, "input":self.input_config,
                        "augment":self.augment_config}
-        yaml.dump(config_dict, open(config_path, "w"), default_flow_style=False)
+            yaml.dump(config_dict, open(config_path, "w"), default_flow_style=False)
 
         # save tensorboard hyperparameters
         # the only input parameter relevant to most hyperparameter tuning
         # questions is the batch size.
         dicts = [self.config, {"batch_size":self.input_config["batch_size"]},
                  self.augment_config]
-        _configure_hparams(self.logdir, dicts, metrics)
+        if self.logdir is not None:
+            _configure_hparams(self.logdir, dicts, metrics)
 
     def _build_default_model(self, **kwargs):
         # REPLACE THIS WHEN SUBCLASSING
@@ -305,9 +307,10 @@ class GenericExtractor(object):
 
         For now sticking with HDF5
         """
-        for m in self._models:
-            path = os.path.join(self.logdir, m+".h5")
-            self._models[m].save(path, overwrite=True, save_format="h5")
+        if self.logdir is not None:
+            for m in self._models:
+                path = os.path.join(self.logdir, m+".h5")
+                self._models[m].save(path, overwrite=True, save_format="h5")
 
     def _log_fcn(self, e):
         """
@@ -504,12 +507,14 @@ class GenericExtractor(object):
             savedloc = os.path.join(logdir, k+".h5")
             self._models[k].load_weights(savedloc)
 
-    def visualize_kernels(self):
+    def visualize_kernels(self, model=None):
         """
         Save a visualization to TensorBoard of all the kernels in the first
         convolutional layer
         """
-        kernels = np.expand_dims(_make_kernel_sprites(self._models["fcn"]),0)
+        if model is None:
+            model = self._models["fcn"]
+        kernels = np.expand_dims(_make_kernel_sprites(model),0)
         self._record_images(first_convolution_filters=kernels)
 
     def track_with_mlflow(self, tracking_uri, experiment_name, run_name=None):
