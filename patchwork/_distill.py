@@ -24,7 +24,7 @@ _DESCRIPTIONS = {
 for d in _TENSORBOARD_DESCRIPTIONS:
     _DESCRIPTIONS[d] = _TENSORBOARD_DESCRIPTIONS[d]
 
-    
+
 def _load_img_to_array(f):
     return np.array(Image.open(f)).astype(np.float32)/255
 
@@ -204,11 +204,13 @@ class Distillerator(GenericExtractor):
             for e in range(len(self._class_names)):
                 row = []
                 # find highest-valued negative case
-                p = index[self.testlabels[:,e] == 0]
-                row.append(_load_img_to_array(self.testfiles[p.argmax()]))
+                i = index[self.testlabels[:,e] == 0]
+                p = predictions[self.testlabels[:, e] == 0]
+                row.append(_load_img_to_array(self.testfiles[i[p.argmax()]]))
                 # and lowest-valued positive case
-                p = index[self.testlabels[:,e] == 1]
-                row.append(_load_img_to_array(self.testfiles[p.argmin()]))
+                i = index[self.testlabels[:,e] == 1]
+                p = predictions[self.testlabels[:, e] == 1]
+                row.append(_load_img_to_array(self.testfiles[i[p.argmin()]]))
                 cols.append(np.concatenate(row,0))
             worstcases = np.expand_dims(np.concatenate(cols,1),0)
             self._record_images(worst_test_predictions=worstcases)
