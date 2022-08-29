@@ -106,6 +106,8 @@ class Distillerator(GenericExtractor):
         self.logdir = logdir
         self.filepaths = filepaths
         self.ys = ys
+        self.testfiles = testfiles
+        self.testlabels = testlabels
         self.strategy = strategy
         self._description = _DESCRIPTIONS
         if class_names is None:
