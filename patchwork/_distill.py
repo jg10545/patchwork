@@ -205,11 +205,11 @@ class Distillerator(GenericExtractor):
                 row = []
                 # find highest-valued negative case
                 i = index[self.testlabels[:,e] == 0]
-                p = predictions[self.testlabels[:, e] == 0]
+                p = predictions[self.testlabels[:, e] == 0,e]
                 row.append(_load_img_to_array(self.testfiles[i[p.argmax()]]))
                 # and lowest-valued positive case
                 i = index[self.testlabels[:,e] == 1]
-                p = predictions[self.testlabels[:, e] == 1]
+                p = predictions[self.testlabels[:, e] == 1,e]
                 row.append(_load_img_to_array(self.testfiles[i[p.argmin()]]))
                 cols.append(np.concatenate(row,0))
             worstcases = np.expand_dims(np.concatenate(cols,1),0)
