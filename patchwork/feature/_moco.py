@@ -322,7 +322,7 @@ class MomentumContrastTrainer(GenericExtractor):
                 momentum_encoder,
                 self._optimizer,
                 self._buffer,
-                batches_in_buffer, alpha, temperature, weight_decay,
+                alpha, temperature, weight_decay,
                 N, s, s_prime, margin)
         self._training_step = self._distribute_training_function(trainstep)
         # build evaluation dataset
