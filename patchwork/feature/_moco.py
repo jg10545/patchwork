@@ -138,7 +138,8 @@ def _build_logits(q, k, buffer, N=0, s=0, s_prime=0, margin=0, compare_batch=Fal
     return all_logits
 
 
-def _build_momentum_contrast_training_step(model, mo_model, optimizer, buffer, batches_in_buffer, alpha=0.999, tau=0.07, weight_decay=0, N=0, s=0, s_prime=0, margin=0):
+def _build_momentum_contrast_training_step(model, mo_model, optimizer, buffer, alpha=0.999, tau=0.07, weight_decay=0,
+                                           N=0, s=0, s_prime=0, margin=0):
     """
     Function to build tf.function for a MoCo training step. Basically just follow
     Algorithm 1 in He et al's paper.
