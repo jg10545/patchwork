@@ -6,7 +6,8 @@ from patchwork.feature._generic import GenericExtractor
 from patchwork._augment import augment_function
 from patchwork.loaders import load_dataset_from_tfrecords
 from patchwork._util import compute_l2_loss, _compute_alignment_and_uniformity
-from patchwork.feature._contrastive import _build_augment_pair_dataset
+from patchwork.feature._contrastive import _build_augment_pair_dataset, _contrastive_loss
+from patchwork.feature._simclr import _build_embedding_model
 from patchwork.loaders import _generate_imtypes, _build_load_function
 
 def copy_model(mod):
@@ -19,6 +20,17 @@ def copy_model(mod):
     for orig, clone in zip(mod.trainable_variables, new_model.trainable_variables):
         clone.assign(orig)
     return new_model
+
+
+
+def _update_queue(z,Q):
+    """
+    Update the support queue to include a new batch of embeddings
+    :z: (N,d) tensor
+    :Q: (queue_size, d) tf.Variable
+    """
+    queue_size = Q.shape[0]
+    Q.assign(tf.concat([z,Q],0)[:queue_size,:])
 
 
 def exponential_model_update(slow, fast, alpha=0.999, update_bn=False):
@@ -82,9 +94,6 @@ def _build_logits(q, k, buffer, N=0, s=0, s_prime=0, margin=0, compare_batch=Fal
     all_logits = tf.concat([positive_logits, negative_logits], axis=1)
     # from MoChi paper
     if (N > 0)&(s > 0):
-        # i'm pretty sure we don't want to compute gradients through
-        # any of the synthetic embedding creation
-        #with tape.stop_recording():
         # find the top-N negative logits- the N hardest "naturally
         # occurring" negatives. inds is (batch_size, N)
         vals, inds = tf.math.top_k(negative_logits, k=N)
@@ -136,7 +145,7 @@ def _build_momentum_contrast_training_step(model, mo_model, optimizer, buffer, b
     """
 
     @tf.function
-    def training_step(img1, img2, step):
+    def training_step(img1, img2):
         print("tracing training step")
         batch_size = img1.shape[0]
         # compute averaged embeddings. tensor is (N,d)
@@ -176,8 +185,9 @@ def _build_momentum_contrast_training_step(model, mo_model, optimizer, buffer, b
         weight_diff = exponential_model_update(mo_model, model, alpha)
 
         # update buffer
-        i = step % batches_in_buffer
-        _ = buffer[batch_size*i:batch_size*(i+1),:].assign(k)
+        #i = step % batches_in_buffer
+        #_ = buffer[batch_size*i:batch_size*(i+1),:].assign(k)
+        _update_queue(k, buffer)
 
         # also compute the "accuracy"; what fraction of the batch has
         # the key as the largest logit. from figure 2b of the MoCHi paper
@@ -202,8 +212,9 @@ class MomentumContrastTrainer(GenericExtractor):
     modelname = "MomentumContrast"
 
     def __init__(self, logdir, trainingdata, testdata=None, fcn=None,
-                 augment=True, batches_in_buffer=10, alpha=0.999,
-                 temperature=0.07, output_dim=128, num_hidden=2048,
+                 augment=True, K=4096, alpha=0.999,
+                 temperature=0.1, output_dim=128, num_hidden=2048,
+                 batchnorm=True, num_projection_layers=2,
                  copy_weights=False, weight_decay=0,
                  N=0, s=0, s_prime=0, margin=0,
                  lr=0.01, lr_decay=100000, decay_type="exponential",
@@ -211,18 +222,20 @@ class MomentumContrastTrainer(GenericExtractor):
                  imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, num_parallel_calls=None,
                  single_channel=False, notes="",
-                 downstream_labels=None, **kwargs):
+                 downstream_labels=None, strategy=None, **kwargs):
         """
         :logdir: (string) path to log directory
         :trainingdata: (list) list of paths to training images
         :testdata: (list) filepaths of a batch of images to use for eval
         :fcn: (keras Model) fully-convolutional network to train as feature extractor
         :augment: (dict) dictionary of augmentation parameters, True for defaults
-        :batches_in_buffer:
+        :K: memory buffer size
         :alpha: momentum parameter for updating the momentum encoder
         :temperature: temperature parameter for noise-contrastive loss
         :output_dim: dimension for features to be projected into for NCE loss
         :num_hidden: number of neurons in the projection head's hidden layer (from the MoCoV2 paper)
+        :batchnorm: bool, whether to use batch normalization in projection head
+        :num_projection_layers: int; number of layers in projection head
         :copy_weights: if True, copy the query model weights at the beginning as well
             as the structure.
         :weight_decay: L2 loss weight; 0 to disable
@@ -250,6 +263,7 @@ class MomentumContrastTrainer(GenericExtractor):
         self.logdir = logdir
         self.trainingdata = trainingdata
         self._downstream_labels = downstream_labels
+        self.strategy = strategy
 
         self._file_writer = tf.summary.create_file_writer(logdir, flush_millis=10000)
         self._file_writer.set_as_default()
@@ -259,17 +273,19 @@ class MomentumContrastTrainer(GenericExtractor):
             if fcn is None:
                 fcn = tf.keras.applications.ResNet50V2(weights=None, include_top=False)
             self.fcn = fcn
+            full_model = _build_embedding_model(fcn, imshape, num_channels, num_hidden, output_dim,
+                           batchnorm=batchnorm, num_projection_layers=num_projection_layers)
             # from "technical details" in paper- after FCN they did global pooling
             # and then a dense layer. i assume linear outputs on it.
-            inpt = tf.keras.layers.Input((None, None, num_channels))
-            features = fcn(inpt)
-            pooled = tf.keras.layers.GlobalAvgPool2D()(features)
+            #inpt = tf.keras.layers.Input((None, None, num_channels))
+            #features = fcn(inpt)
+            #pooled = tf.keras.layers.GlobalAvgPool2D()(features)
             # MoCoV2 paper adds a hidden layer
-            dense = tf.keras.layers.Dense(num_hidden)(pooled)
-            dense = tf.keras.layers.BatchNormalization()(dense)
-            dense = tf.keras.layers.Activation("relu")(dense)
-            outpt = tf.keras.layers.Dense(output_dim)(dense)
-            full_model = tf.keras.Model(inpt, outpt)
+            #dense = tf.keras.layers.Dense(num_hidden)(pooled)
+            #dense = tf.keras.layers.BatchNormalization()(dense)
+            #dense = tf.keras.layers.Activation("relu")(dense)
+            #outpt = tf.keras.layers.Dense(output_dim)(dense)
+            #full_model = tf.keras.Model(inpt, outpt)
 
             if copy_weights:
                 momentum_encoder = copy_model(full_model)
@@ -279,30 +295,35 @@ class MomentumContrastTrainer(GenericExtractor):
                         "full":full_model,
                         "momentum_encoder":momentum_encoder}
 
+        # build buffer
+        d = output_dim
+        self._buffer = tf.Variable(np.zeros((K,d), dtype=np.float32))
+        print("BUFFER CURRENTLY POPULATED WITH ZEROS")
+
         # build training dataset
-        self._ds = _build_augment_pair_dataset(trainingdata,
+        ds = _build_augment_pair_dataset(trainingdata,
                             imshape=imshape, batch_size=batch_size,
                             num_parallel_calls=num_parallel_calls,
                             norm=norm, num_channels=num_channels,
                             augment=augment, single_channel=single_channel)
+        self._ds = self._distribute_dataset(ds)
+
 
         # create optimizer
         self._optimizer = self._build_optimizer(lr, lr_decay, opt_type=opt_type,
                                                 decay_type=decay_type)
 
-        # build buffer
-        K = batch_size*batches_in_buffer
-        d = output_dim
-        self._buffer = tf.Variable(np.zeros((K,d), dtype=np.float32))
+
 
         # build training step
-        self._training_step = _build_momentum_contrast_training_step(
+        trainstep = _build_momentum_contrast_training_step(
                 full_model,
                 momentum_encoder,
                 self._optimizer,
                 self._buffer,
                 batches_in_buffer, alpha, temperature, weight_decay,
                 N, s, s_prime, margin)
+        self._training_step = self._distribute_training_function(trainstep)
         # build evaluation dataset
         if testdata is not None:
             self._test_ds = _build_augment_pair_dataset(testdata,
@@ -316,17 +337,15 @@ class MomentumContrastTrainer(GenericExtractor):
         self._test_labels = None
         self._old_test_labels = None
 
-        # build prediction dataset for clustering
 
         self.step = 0
-        self._step_var = tf.Variable(0, dtype=tf.int64)
 
 
         # parse and write out config YAML
-        self._parse_configs(augment=augment,
-                            batches_in_buffer=batches_in_buffer,
+        self._parse_configs(augment=augment, K=K,
                             alpha=alpha, temperature=temperature, output_dim=output_dim,
                             num_hidden=num_hidden, weight_decay=weight_decay,
+                            batchnorm=batchnorm, num_projection_layers=num_projection_layers,
                             N=N, s=s, s_prime=s_prime, margin=margin,
                             lr=lr, lr_decay=lr_decay, opt_type=opt_type,
                             imshape=imshape, num_channels=num_channels,
@@ -334,7 +353,6 @@ class MomentumContrastTrainer(GenericExtractor):
                             num_parallel_calls=num_parallel_calls,
                             single_channel=single_channel, notes=notes,
                             trainer="moco", **kwargs)
-        self._prepopulate_buffer()
 
     def _prepopulate_buffer(self):
         i = 0
@@ -353,13 +371,11 @@ class MomentumContrastTrainer(GenericExtractor):
 
         """
         for x, y in self._ds:
-            #loss, weight_diff = self._training_step(x,y, self._step_var)
-            lossdict = self._training_step(x,y, self._step_var)
+            lossdict = self._training_step(x,y)
 
             self._record_scalars(**lossdict)
             self._record_scalars(learning_rate=self._get_current_learning_rate())
 
-            self._step_var.assign_add(1)
             self.step += 1
 
 
@@ -378,11 +394,11 @@ class MomentumContrastTrainer(GenericExtractor):
                                              query_fig=query_fig)
 
 
-    def load_weights(self, logdir):
-        """
-        Update model weights from a previously trained model
-        """
-        super().load_weights(logdir)
-        self._prepopulate_buffer()
+    #def load_weights(self, logdir):
+    #    """
+    #    Update model weights from a previously trained model
+    #    """
+    #    super().load_weights(logdir)
+    #    self._prepopulate_buffer()
 
 
