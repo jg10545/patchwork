@@ -174,7 +174,7 @@ def _build_momentum_contrast_training_step(model, mo_model, optimizer, buffer, a
             # create labels (correct class is 0)- (N,)
             #labels = tf.zeros((batch_size,), dtype=tf.int32)
             # create labels (correct class is the batch index)
-            labels = tf.arange((batch_size,), dtype=tf.int32)
+            labels = tf.range((batch_size,), dtype=tf.int32)
             # compute crossentropy loss
             xent_loss = tf.reduce_mean(
                     tf.nn.sparse_softmax_cross_entropy_with_logits(
