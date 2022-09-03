@@ -374,6 +374,7 @@ class MomentumContrastTrainer(GenericExtractor):
                 axis=1)
             k = _gather(k)
             _update_queue(k,self._buffer)
+            return {}
         # distribute the buffer-filling function
         buffer_step = self._distribute_training_function(_buffer_step)
         # now pull from the training set until the buffer should be full
