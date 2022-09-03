@@ -7,7 +7,7 @@ from patchwork._augment import augment_function
 from patchwork.loaders import load_dataset_from_tfrecords
 from patchwork._util import compute_l2_loss, _compute_alignment_and_uniformity
 from patchwork.feature._contrastive import _build_augment_pair_dataset, _contrastive_loss
-from patchwork.feature._simclr import _build_embedding_model
+from patchwork.feature._simclr import _build_embedding_model, _gather
 from patchwork.loaders import _generate_imtypes, _build_load_function
 
 def copy_model(mod):
@@ -79,6 +79,7 @@ def _build_logits(q, k, buffer, N=0, s=0, s_prime=0, margin=0, compare_batch=Fal
     :logits: [batch_size, buffer_size+1] if compare_batch is False
         [batch_size, batch_size+buffer_size] if compare_batch is True
     """
+    """
     if compare_batch:
         assert margin==0, "NOT IMPLEMENTED"
         positive_logits = tf.matmul(q, k, transpose_b=True)
@@ -87,7 +88,8 @@ def _build_logits(q, k, buffer, N=0, s=0, s_prime=0, margin=0, compare_batch=Fal
         positive_logits = tf.squeeze(
                 tf.matmul(tf.expand_dims(q,1),
                       tf.expand_dims(k,1), transpose_b=True),
-                axis=-1) - margin
+                axis=-1) - margin"""
+    positive_logits = tf.matmul(q,k, transpose_b=True)
     # and negative logits- (batch_size, buffer_size)
     negative_logits = tf.matmul(q, buffer, transpose_b=True)
     # assemble positive and negative- (batch_size, buffer_size+1)
@@ -170,13 +172,18 @@ def _build_momentum_contrast_training_step(model, mo_model, optimizer, buffer, a
             # compute MoCo and/or MoCHi logits
             all_logits = _build_logits(q, k, buffer, N, s, s_prime, margin)
             # create labels (correct class is 0)- (N,)
-            labels = tf.zeros((batch_size,), dtype=tf.int32)
+            #labels = tf.zeros((batch_size,), dtype=tf.int32)
+            # create labels (correct class is the batch index)
+            labels = tf.arange((batch_size,), dtype=tf.int32)
             # compute crossentropy loss
-            loss = tf.reduce_mean(
+            xent_loss = tf.reduce_mean(
                     tf.nn.sparse_softmax_cross_entropy_with_logits(
                             labels, all_logits/tau))
             if weight_decay > 0:
-                loss += weight_decay*compute_l2_loss(model)
+                l2_loss = compute_l2_loss(model)
+            else:
+                l2_loss = 0
+            loss = xent_loss + weight_decay*l2_loss
 
         # update fast model
         variables = model.trainable_variables
@@ -196,6 +203,7 @@ def _build_momentum_contrast_training_step(model, mo_model, optimizer, buffer, a
                                                               axis=1)==0, tf.float32))
 
         return {"loss":loss, "weight_diff":weight_diff,
+                "l2_loss":l2_loss, "nt_xent_loss":xent_loss,
                 "nce_batch_acc":nce_batch_accuracy}
     return training_step
 
@@ -296,11 +304,6 @@ class MomentumContrastTrainer(GenericExtractor):
                         "full":full_model,
                         "momentum_encoder":momentum_encoder}
 
-        # build buffer
-        d = output_dim
-        self._buffer = tf.Variable(np.zeros((K,d), dtype=np.float32))
-        print("BUFFER CURRENTLY POPULATED WITH ZEROS")
-
         # build training dataset
         ds = _build_augment_pair_dataset(trainingdata,
                             imshape=imshape, batch_size=batch_size,
@@ -308,6 +311,12 @@ class MomentumContrastTrainer(GenericExtractor):
                             norm=norm, num_channels=num_channels,
                             augment=augment, single_channel=single_channel)
         self._ds = self._distribute_dataset(ds)
+
+        # build buffer
+        with self.scope():
+            d = output_dim
+            self._buffer = tf.Variable(np.zeros((K, d), dtype=np.float32))
+        self._prepopulate_buffer(batch_size, K)
 
 
         # create optimizer
@@ -355,16 +364,24 @@ class MomentumContrastTrainer(GenericExtractor):
                             single_channel=single_channel, notes=notes,
                             trainer="moco", **kwargs)
 
-    def _prepopulate_buffer(self):
-        i = 0
-        bs = self.input_config["batch_size"]
-        bib = self.config["batches_in_buffer"]
-        for x,y in self._ds:
+    def _prepopulate_buffer(self, batch_size, K):
+        # define a function that takes a batch, runs it through
+        # the momentum encoder, aggregates across GPUs, and
+        # adds to the memory buffer
+        def _buffer_step(x,y):
             k = tf.nn.l2_normalize(
-                    self._models["momentum_encoder"](y, training=True), axis=1)
-            _ = self._buffer[bs*i:bs*(i+1),:].assign(k)
+                    self._models["momentum_encoder"](y, training=True),
+                axis=1)
+            k = _gather(k)
+            _update_queue(k,self._buffer)
+        # distribute the buffer-filling function
+        buffer_step = self._distribute_training_function(_buffer_step)
+        # now pull from the training set until the buffer should be full
+        i = 0
+        for x,y in self._ds:
+            buffer_step(x,y)
             i += 1
-            if i >= bib:
+            if i >= K/batch_size:
                 break
 
     def _run_training_epoch(self, **kwargs):
