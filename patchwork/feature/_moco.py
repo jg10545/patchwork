@@ -210,8 +210,10 @@ def _build_momentum_contrast_training_step(model, mo_model, optimizer, buffer, a
 
         # also compute the "accuracy"; what fraction of the batch has
         # the key as the largest logit. from figure 2b of the MoCHi paper
+        #nce_batch_accuracy = tf.reduce_mean(tf.cast(tf.argmax(all_logits,
+        #                                                      axis=1)==0, tf.float32))
         nce_batch_accuracy = tf.reduce_mean(tf.cast(tf.argmax(all_logits,
-                                                              axis=1)==0, tf.float32))
+                                                              axis=1)==tf.cast(labels,tf.int64), tf.float32))
 
         return {"loss":loss, "weight_diff":weight_diff,
                 "l2_loss":l2_loss, "nt_xent_loss":xent_loss,
