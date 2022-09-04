@@ -163,42 +163,18 @@ def _build_momentum_contrast_training_step(model, mo_model, optimizer, buffer, a
         print("tracing training step")
         batch_size = img1.shape[0]
         # compute averaged embeddings. tensor is (N,d)
-        """
-        # my shot at an alternative to shuffling BN
-        a = int(batch_size/4)
-        b = int(batch_size/2)
-        c = int(3*batch_size/4)
-
-        k1 = mo_model(tf.concat([img2[:a,:,:,:], img2[c:,:,:,:]], 0),
-                      training=True)
-        k2 = mo_model(img2[a:c,:,:,:], training=True)
-        k = tf.nn.l2_normalize(tf.concat([
-                k1[:a,:], k2, k1[a:,:]], axis=0
-            ), axis=1)"""
         k1 = tf.nn.l2_normalize(mo_model(img1, training=True), axis=1)
         k2 = tf.nn.l2_normalize(mo_model(img2, training=True), axis=1)
         with tf.GradientTape() as tape:
-            # compute normalized embeddings for each
-            """
-            # separately-augmented batch of pairs of images. tensor is (N,d)
-            q1 = model(img1[:b,:,:,:], training=True)
-            q2 = model(img1[b:,:,:,:], training=True)
-            q = tf.nn.l2_normalize(tf.concat([q1,q2], 0), axis=1)"""
+            # compute normalized embeddings for each batch of augmented images
             q1 = tf.nn.l2_normalize(model(img1, training=True), axis=1)
             q2 = tf.nn.l2_normalize(model(img2, training=True), axis=1)
             # compute MoCo and/or MoCHi logits
-            """all_logits = _build_logits(q, k, buffer, N, s, s_prime, margin)"""
             all_logits1 = _build_logits(q1, k2, buffer, N, s, s_prime, margin)
             all_logits2 = _build_logits(q2, k1, buffer, N, s, s_prime, margin)
-            # create labels (correct class is 0)- (N,)
-            #labels = tf.zeros((batch_size,), dtype=tf.int32)
             # create labels (correct class is the batch index)
             labels = tf.range((batch_size), dtype=tf.int32)
             # compute crossentropy loss
-            """
-            xent_loss = tf.reduce_mean(
-                    tf.nn.sparse_softmax_cross_entropy_with_logits(
-                            labels, all_logits/tau))"""
             xent_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
                     labels, all_logits1 / tau)) + tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
                     labels, all_logits2 / tau))
@@ -216,16 +192,10 @@ def _build_momentum_contrast_training_step(model, mo_model, optimizer, buffer, a
         weight_diff = exponential_model_update(mo_model, model, alpha)
 
         # update buffer
-        #i = step % batches_in_buffer
-        #_ = buffer[batch_size*i:batch_size*(i+1),:].assign(k)
         _update_queue(k1, buffer)
 
         # also compute the "accuracy"; what fraction of the batch has
         # the key as the largest logit. from figure 2b of the MoCHi paper
-        #nce_batch_accuracy = tf.reduce_mean(tf.cast(tf.argmax(all_logits,
-        #                                                      axis=1)==0, tf.float32))
-        """nce_batch_accuracy = tf.reduce_mean(tf.cast(tf.argmax(all_logits,
-                                                              axis=1)==tf.cast(labels,tf.int64), tf.float32))"""
         nce_batch_accuracy = tf.reduce_mean(tf.cast(tf.argmax(all_logits1,
                                                               axis=1) == tf.cast(labels, tf.int64), tf.float32))
 
