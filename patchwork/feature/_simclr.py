@@ -49,12 +49,15 @@ def _build_embedding_model(fcn, imshape, num_channels, num_hidden, output_dim,
         # for every projection layer except the final one: ReLU activation
         for _ in range(num_projection_layers-1):
             net = tf.keras.layers.Dense(num_hidden, dtype="float32")(net)
-            if batchnorm:
+            if batchnorm == "layernorm":
+                print("USING LAYERNORM")
+                net = tf.keras.layers.LayerNormalization(dtype="float32")(net)
+            elif batchnorm:
                 net = bnorm(dtype="float32")(net)
             net = tf.keras.layers.Activation("relu", dtype="float32")(net)
         # for the final layer- linear activation and no bias
         net = tf.keras.layers.Dense(output_dim, use_bias=False, dtype="float32")(net)
-        if batchnorm:
+        if bool(batchnorm)&(batchnorm != "layernorm"):
             net = bnorm(dtype="float32")(net)
 
     else:
