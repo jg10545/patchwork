@@ -2,13 +2,24 @@
 import numpy as np
 import tensorflow as tf
 
-from patchwork.feature._generic import GenericExtractor
+from patchwork.feature._generic import GenericExtractor, _TENSORBOARD_DESCRIPTIONS
 from patchwork._augment import augment_function
 from patchwork.loaders import load_dataset_from_tfrecords
 from patchwork._util import compute_l2_loss, _compute_alignment_and_uniformity
 from patchwork.feature._contrastive import _build_augment_pair_dataset, _contrastive_loss
 from patchwork.feature._simclr import _build_embedding_model, _gather
 from patchwork.loaders import _generate_imtypes, _build_load_function
+
+
+_DESCRIPTIONS = {
+    "nt_xent_loss":"Contrastive crossentropy loss",
+    "nce_batch_acc":"training accuracy for the contrastive learning task",
+    "weight_diff":"total squared difference in the values of weights between the encoder and momentum encoder"
+}
+for d in _TENSORBOARD_DESCRIPTIONS:
+    _DESCRIPTIONS[d] = _TENSORBOARD_DESCRIPTIONS[d]
+
+
 
 def copy_model(mod):
     """
@@ -273,6 +284,7 @@ class MomentumContrastTrainer(GenericExtractor):
         self.trainingdata = trainingdata
         self._downstream_labels = downstream_labels
         self.strategy = strategy
+        self._description = _DESCRIPTIONS
 
         self._file_writer = tf.summary.create_file_writer(logdir, flush_millis=10000)
         self._file_writer.set_as_default()
