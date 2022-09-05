@@ -193,9 +193,6 @@ dctrainer.fit(10)
   * Modified loss function from [RINCE](https://arxiv.org/abs/2201.04309): set kwarg `q` above zero. The RINCE paper used `q=1`.
   * Modified projection head from [DirectCLR](https://arxiv.org/abs/2110.09348): set kwarg `num_hidden=0`.
 
-### Differences between the paper and `patchwork`
-
-I haven't implemented the LARS optimizer used in the paper. Using the `opt_type` kwarg you can choose Adam or momentum optimizers.
 
 
 ### Example code
@@ -268,12 +265,13 @@ If the hardware you're using doesn't have enough memory for the giant batch size
 
 The MoCo paper has some discussion on how batch normalization can cause their algorithm to learn a shortcut; their solution is to shuffle embeddings across GPUs for comparison (and then shuffling back after).
 
-The `patchwork` implementation attempts to accomplish the same effect while requiring only one GPU- each batch is divided in half, the halves passed through the network, and then projected representations are reassembled before computing the contrastive loss. The division used for the key network is different from the division used for the query network, so that each direct comparison between augmented images is sampled from different batch statistics.
+The `patchwork` implementation **does not include the shuffle and deshuffle operations**. Rather, it assumes your feature extractor doesn't use batchnorm (e.g. ConvNext), and the projection head uses layernorm instead of batchnorm.
 
 I have not yet implemented distributed training for MoCo.
 
 ### Example code
 
+Pass a `tf.distribute` Strategy object to parallelize across GPUs.
 
 ```{python}
 import tensorflow as tf
@@ -298,7 +296,7 @@ pw.viz.augplot(trainfiles, aug_params)
 log_dir = "/path/to/my/log_dir/"
 
 # train
-trainer = pw.feature..MomentumContrastTrainer(
+trainer = pw.feature.MomentumContrastTrainer(
         log_dir,
         trainfiles,
         fcn=fcn,
@@ -306,11 +304,11 @@ trainer = pw.feature..MomentumContrastTrainer(
         augment=aug_params,
         lr=3e-2,
         weight_decay=1e-4,
-        decay_type="staircase",
+        decay_type="warmupcosine",
         lr_decay=10000,
         alpha=0.999,
         temperature=0.07,
-        batches_in_buffer=50,
+        K=16384,
         num_hidden=512,
         output_dim=64,
         batch_size=128,

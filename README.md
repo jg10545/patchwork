@@ -41,7 +41,7 @@ If you don't want to use my crappy GUI for training a supervised model, you're s
 
 ### Semi-supervised fine tuning
 
-This part's pretty unimaginative- starting with the model you trained using `patchwork.GUI` (or your own model) as a teacher, use `patchwork.distill()` to train a student model.
+This part's pretty unimaginative- starting with the model you trained using `patchwork.GUI` (or your own model) as a teacher, use `patchwork.Distillerator()` to train a student model.
 
 `patchwork` has been tested with `tensorflow` 2.0.
 
@@ -52,7 +52,7 @@ This part's pretty unimaginative- starting with the model you trained using `pat
 ## Installation
 
 use pip
-                                        
+
 
 ## Credits
 
