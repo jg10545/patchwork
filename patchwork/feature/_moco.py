@@ -265,6 +265,8 @@ class MomentumContrastTrainer(GenericExtractor):
         :notes: (string) any notes on the experiment that you want saved in the
                 config.yml file
         :downstream_labels: dictionary mapping image file paths to labels
+        :strategy: if distributing across multiple GPUs, pass a tf.distribute
+            Strategy object here
         :initial_step: start optimizer at this step
         """
         assert augment is not False, "this method needs an augmentation scheme"
@@ -280,7 +282,7 @@ class MomentumContrastTrainer(GenericExtractor):
         # if no FCN is passed- build one
         with self.scope():
             if fcn is None:
-                fcn = tf.keras.applications.ResNet50V2(weights=None, include_top=False)
+                fcn = tf.keras.applications.ResNet50(weights=None, include_top=False)
             self.fcn = fcn
             full_model = _build_embedding_model(fcn, imshape, num_channels, num_hidden, output_dim,
                            batchnorm="layernorm", num_projection_layers=num_projection_layers)
