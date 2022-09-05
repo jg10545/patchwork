@@ -157,8 +157,8 @@ def _build_momentum_contrast_training_step(model, mo_model, optimizer, buffer, a
     Function to build tf.function for a MoCo training step. Basically just follow
     Algorithm 1 in He et al's paper.
     """
-
-    @tf.function
+    # check whether we're in mixed-precision mode
+    mixed = tf.keras.mixed_precision.global_policy().name == 'mixed_float16'
     def training_step(img1, img2):
         print("tracing training step")
         batch_size = img1.shape[0]
@@ -183,6 +183,8 @@ def _build_momentum_contrast_training_step(model, mo_model, optimizer, buffer, a
             else:
                 l2_loss = 0
             loss = xent_loss + weight_decay*l2_loss
+            if mixed:
+                loss = optimizer.get_scaled_loss(loss)
 
         # update fast model
         variables = model.trainable_variables
