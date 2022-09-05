@@ -42,19 +42,20 @@ def _build_embedding_model(fcn, imshape, num_channels, num_hidden, output_dim,
                                        num_channels[1]))
         inpt = [inpt0, inpt1]
     net = fcn(inpt)
-    #net = tf.keras.layers.Flatten()(net)
     net = tf.keras.layers.GlobalAvgPool2D(dtype="float32")(net)
     # NORMAL SimCLR CASE
     if num_hidden > 0:
         # for every projection layer except the final one: ReLU activation
         for _ in range(num_projection_layers-1):
             net = tf.keras.layers.Dense(num_hidden, dtype="float32")(net)
-            if batchnorm:
+            if batchnorm == "layernorm":
+                net = tf.keras.layers.LayerNormalization(dtype="float32")(net)
+            elif batchnorm:
                 net = bnorm(dtype="float32")(net)
             net = tf.keras.layers.Activation("relu", dtype="float32")(net)
         # for the final layer- linear activation and no bias
         net = tf.keras.layers.Dense(output_dim, use_bias=False, dtype="float32")(net)
-        if batchnorm:
+        if bool(batchnorm)&(batchnorm != "layernorm"):
             net = bnorm(dtype="float32")(net)
 
     else:
@@ -181,7 +182,8 @@ class SimCLRTrainer(GenericExtractor):
                  imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, num_parallel_calls=None,
                  single_channel=False, notes="",
-                 downstream_labels=None, strategy=None, jitcompile=False, **kwargs):
+                 downstream_labels=None, strategy=None, jitcompile=False,
+                 initial_step=0, **kwargs):
         """
         :logdir: (string) path to log directory
         :trainingdata: (list) list of paths to training images
@@ -219,6 +221,7 @@ class SimCLRTrainer(GenericExtractor):
         :downstream_labels: dictionary mapping image file paths to labels
         :strategy: if distributing across multiple GPUs, pass a tf.distribute
             Strategy object here
+        :initial_step: start optimizer at this step
         """
         assert augment is not False, "this method needs an augmentation scheme"
         self.logdir = logdir
@@ -256,7 +259,8 @@ class SimCLRTrainer(GenericExtractor):
         # create optimizer
         self._optimizer = self._build_optimizer(lr, lr_decay, opt_type=opt_type,
                                                 decay_type=decay_type,
-                                                weight_decay=weight_decay)
+                                                weight_decay=weight_decay,
+                                                initial_step=initial_step)
 
 
         # build training step

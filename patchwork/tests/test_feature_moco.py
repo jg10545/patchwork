@@ -56,7 +56,7 @@ def test_build_logits_no_mochi():
     all_logits = _build_logits(q, k, buffer)
     assert len(all_logits.shape) == 2
     assert all_logits.shape[0] == batch_size
-    assert all_logits.shape[1] == K +1
+    assert all_logits.shape[1] == K + batch_size # because pairwise comparisons across the batch are included
 
 def test_build_logits_with_margin():
     batch_size = 7
@@ -69,7 +69,7 @@ def test_build_logits_with_margin():
     all_logits = _build_logits(q, k, buffer, margin=100)
     assert len(all_logits.shape) == 2
     assert all_logits.shape[0] == batch_size
-    assert all_logits.shape[1] == K +1
+    assert all_logits.shape[1] == K + batch_size
 
 
 def test_build_logits_with_mochi():
@@ -85,7 +85,7 @@ def test_build_logits_with_mochi():
     all_logits = _build_logits(q, k, buffer, N, s)
     assert len(all_logits.shape) == 2
     assert all_logits.shape[0] == batch_size
-    assert all_logits.shape[1] == K +1 + s
+    assert all_logits.shape[1] == K + batch_size + s
 
 def test_build_logits_with_mochi_and_query_mixing():
     batch_size = 7
@@ -101,7 +101,7 @@ def test_build_logits_with_mochi_and_query_mixing():
     all_logits = _build_logits(q, k, buffer, N, s, s_prime)
     assert len(all_logits.shape) == 2
     assert all_logits.shape[0] == batch_size
-    assert all_logits.shape[1] == K +1 + s + s_prime
+    assert all_logits.shape[1] == K + batch_size + s + s_prime
 
 
 def test_build_logits_with_mochi_and_more_samples_than_N():
@@ -118,19 +118,6 @@ def test_build_logits_with_mochi_and_more_samples_than_N():
     all_logits = _build_logits(q, k, buffer, N, s, s_prime)
     assert len(all_logits.shape) == 2
     assert all_logits.shape[0] == batch_size
-    assert all_logits.shape[1] == K +1 + s + s_prime
+    assert all_logits.shape[1] == K + batch_size + s + s_prime
 
 
-
-def test_build_logits_with_batch_comparison():
-    batch_size = 7
-    embed_dim = 5
-    K = 13
-
-    q = tf.nn.l2_normalize(np.random.normal(0, 1, size=(batch_size, embed_dim)).astype(np.float32), axis=1)
-    k = tf.nn.l2_normalize(np.random.normal(0, 1, size=(batch_size, embed_dim)).astype(np.float32), axis=1)
-    buffer = tf.Variable(tf.nn.l2_normalize(np.random.normal(0, 1, size=(K,embed_dim)).astype(np.float32), axis=1))
-    all_logits = _build_logits(q, k, buffer, compare_batch=True)
-    assert len(all_logits.shape) == 2
-    assert all_logits.shape[0] == batch_size
-    assert all_logits.shape[1] == K + batch_size
