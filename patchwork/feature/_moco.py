@@ -220,7 +220,7 @@ class MomentumContrastTrainer(GenericExtractor):
     def __init__(self, logdir, trainingdata, testdata=None, fcn=None,
                  augment=True, K=4096, alpha=0.999,
                  temperature=0.1, output_dim=128, num_hidden=2048,
-                 batchnorm=True, num_projection_layers=2,
+                 num_projection_layers=2,
                  copy_weights=False, weight_decay=0,
                  N=0, s=0, s_prime=0, margin=0,
                  lr=0.01, lr_decay=100000, decay_type="exponential",
@@ -228,7 +228,8 @@ class MomentumContrastTrainer(GenericExtractor):
                  imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, num_parallel_calls=None,
                  single_channel=False, notes="",
-                 downstream_labels=None, strategy=None, **kwargs):
+                 downstream_labels=None, strategy=None,
+                 initial_step=0, **kwargs):
         """
         :logdir: (string) path to log directory
         :trainingdata: (list) list of paths to training images
@@ -264,6 +265,7 @@ class MomentumContrastTrainer(GenericExtractor):
         :notes: (string) any notes on the experiment that you want saved in the
                 config.yml file
         :downstream_labels: dictionary mapping image file paths to labels
+        :initial_step: start optimizer at this step
         """
         assert augment is not False, "this method needs an augmentation scheme"
         self.logdir = logdir
@@ -281,18 +283,7 @@ class MomentumContrastTrainer(GenericExtractor):
                 fcn = tf.keras.applications.ResNet50V2(weights=None, include_top=False)
             self.fcn = fcn
             full_model = _build_embedding_model(fcn, imshape, num_channels, num_hidden, output_dim,
-                           batchnorm=batchnorm, num_projection_layers=num_projection_layers)
-            # from "technical details" in paper- after FCN they did global pooling
-            # and then a dense layer. i assume linear outputs on it.
-            #inpt = tf.keras.layers.Input((None, None, num_channels))
-            #features = fcn(inpt)
-            #pooled = tf.keras.layers.GlobalAvgPool2D()(features)
-            # MoCoV2 paper adds a hidden layer
-            #dense = tf.keras.layers.Dense(num_hidden)(pooled)
-            #dense = tf.keras.layers.BatchNormalization()(dense)
-            #dense = tf.keras.layers.Activation("relu")(dense)
-            #outpt = tf.keras.layers.Dense(output_dim)(dense)
-            #full_model = tf.keras.Model(inpt, outpt)
+                           batchnorm="layernorm", num_projection_layers=num_projection_layers)
 
             if copy_weights:
                 momentum_encoder = copy_model(full_model)
@@ -319,7 +310,8 @@ class MomentumContrastTrainer(GenericExtractor):
 
         # create optimizer
         self._optimizer = self._build_optimizer(lr, lr_decay, opt_type=opt_type,
-                                                decay_type=decay_type)
+                                                decay_type=decay_type, weight_decay=weight_decay,
+                                                initial_step=initial_step)
 
 
 
@@ -353,7 +345,7 @@ class MomentumContrastTrainer(GenericExtractor):
         self._parse_configs(augment=augment, K=K,
                             alpha=alpha, temperature=temperature, output_dim=output_dim,
                             num_hidden=num_hidden, weight_decay=weight_decay,
-                            batchnorm=batchnorm, num_projection_layers=num_projection_layers,
+                            num_projection_layers=num_projection_layers,
                             N=N, s=s, s_prime=s_prime, margin=margin,
                             lr=lr, lr_decay=lr_decay, opt_type=opt_type,
                             imshape=imshape, num_channels=num_channels,

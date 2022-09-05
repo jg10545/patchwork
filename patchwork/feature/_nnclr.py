@@ -154,7 +154,8 @@ class NNCLRTrainer(SimCLRTrainer):
                  imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, num_parallel_calls=None,
                  single_channel=False, notes="",
-                 downstream_labels=None, strategy=None, jitcompile=False, **kwargs):
+                 downstream_labels=None, strategy=None, jitcompile=False,
+                 initial_step=0, **kwargs):
         """
         :logdir: (string) path to log directory
         :trainingdata: (list) list of paths to training images
@@ -191,6 +192,7 @@ class NNCLRTrainer(SimCLRTrainer):
         :downstream_labels: dictionary mapping image file paths to labels
         :strategy: if distributing across multiple GPUs, pass a tf.distribute
             Strategy object here
+        :initial_step: start optimizer at this step
         """
         assert augment is not False, "this method needs an augmentation scheme"
         self.logdir = logdir
@@ -228,7 +230,8 @@ class NNCLRTrainer(SimCLRTrainer):
         # create optimizer
         self._optimizer = self._build_optimizer(lr, lr_decay, opt_type=opt_type,
                                                 decay_type=decay_type,
-                                                weight_decay=weight_decay)
+                                                weight_decay=weight_decay,
+                                                initial_step=initial_step)
 
         # initialize the support queue
         with self.scope():
