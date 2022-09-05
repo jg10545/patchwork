@@ -388,11 +388,11 @@ class GenericExtractor(object):
         self._record_scalars(rotation_classification_accuracy=acc, metric=True)
 
     def _build_optimizer(self, lr, lr_decay=0, opt_type="adam", decay_type="exponential",
-                         weight_decay=None):
+                         weight_decay=None, initial_step=0):
         # macro for creating the Keras optimizer
         with self.scope():
             opt = build_optimizer(lr, lr_decay, opt_type, decay_type,
-                                  weight_decay=weight_decay)
+                                  weight_decay=weight_decay, initial_step=initial_step)
         return opt
 
 

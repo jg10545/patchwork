@@ -24,7 +24,7 @@ _DESCRIPTIONS = {
 for d in _TENSORBOARD_DESCRIPTIONS:
     _DESCRIPTIONS[d] = _TENSORBOARD_DESCRIPTIONS[d]
 
-    
+
 def _load_img_to_array(f):
     return np.array(Image.open(f)).astype(np.float32)/255
 
@@ -103,13 +103,34 @@ class Distillerator(GenericExtractor):
             class_names=None, strategy=None,  augment=False, notes="",
             **kwargs):
         """
-
-
+        :filepaths: list of N strings giving location of image files
+        :ys: (N, num_classes) numpy array giving multiclass teacher output for each image
+        :student: keras model (or string "vgg16", "vgg19", "resnet50", "inception", or
+            "mobilenet") for the student. should have output (num_classes).
+        :testfiles: list of N_test strings giving locations of test images
+        :testlabels: (N_test, num_classes) numpy array of test labels. every entry should be
+            zero or 1.
+        :lr: learning rate
+        :opt_type: str; optimizer type ("adam", "momentum", "lars")
+        :lr_decay: int; steps for learning rate decay
+        :decay_type: str; decay type ("exponential", "cosine", "warmupcosine")
+        :temp: float; Gibbs temperature for KL loss
+        :imshape: (tuple) image dimensions in H,W
+        :num_channels: (int) number of image channels
+        :norm: (int or float) normalization constant for images (for rescaling to
+               unit interval)
+        :batch_size: (int) batch size for training
+        :num_parallel_calls: (int) number of threads for loader mapping
+        :single_channel: if True, expect a single-channel input image and
+                stack it num_channels times.
+        :strategy: if distributing across multiple GPUs, pass a tf.distribute
+            Strategy object here
+        :augment: dict containing augmentation parameters
         """
         output_dim = ys.shape[1]
         self.logdir = logdir
-        self.filepaths = filepaths
-        self.ys = ys
+        self.filepaths = list(filepaths)
+        self.ys = ys.astype(np.float32)
         self.testfiles = testfiles
         self.testlabels = testlabels
         self.strategy = strategy
@@ -204,11 +225,13 @@ class Distillerator(GenericExtractor):
             for e in range(len(self._class_names)):
                 row = []
                 # find highest-valued negative case
-                p = index[self.testlabels[:,e] == 0]
-                row.append(_load_img_to_array(self.testfiles[p.argmax()]))
+                i = index[self.testlabels[:,e] == 0]
+                p = predictions[self.testlabels[:, e] == 0,e]
+                row.append(_load_img_to_array(self.testfiles[i[p.argmax()]]))
                 # and lowest-valued positive case
-                p = index[self.testlabels[:,e] == 1]
-                row.append(_load_img_to_array(self.testfiles[p.argmin()]))
+                i = index[self.testlabels[:,e] == 1]
+                p = predictions[self.testlabels[:, e] == 1,e]
+                row.append(_load_img_to_array(self.testfiles[i[p.argmin()]]))
                 cols.append(np.concatenate(row,0))
             worstcases = np.expand_dims(np.concatenate(cols,1),0)
             self._record_images(worst_test_predictions=worstcases)
