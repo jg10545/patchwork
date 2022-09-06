@@ -163,21 +163,21 @@ def _build_momentum_contrast_training_step(model, mo_model, optimizer, buffer, a
         print("tracing training step")
         batch_size = img1.shape[0]
         # compute averaged embeddings. tensor is (N,d)
-        k1 = tf.nn.l2_normalize(mo_model(img1, training=True), axis=1)
+        #k1 = tf.nn.l2_normalize(mo_model(img1, training=True), axis=1)
         k2 = tf.nn.l2_normalize(mo_model(img2, training=True), axis=1)
         with tf.GradientTape() as tape:
             # compute normalized embeddings for each batch of augmented images
             q1 = tf.nn.l2_normalize(model(img1, training=True), axis=1)
-            q2 = tf.nn.l2_normalize(model(img2, training=True), axis=1)
+            #q2 = tf.nn.l2_normalize(model(img2, training=True), axis=1)
             # compute MoCo and/or MoCHi logits
             all_logits1 = _build_logits(q1, k2, buffer, N, s, s_prime, margin)
-            all_logits2 = _build_logits(q2, k1, buffer, N, s, s_prime, margin)
+            #all_logits2 = _build_logits(q2, k1, buffer, N, s, s_prime, margin)
             # create labels (correct class is the batch index)
             labels = tf.range((batch_size), dtype=tf.int32)
             # compute crossentropy loss
             xent_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
-                    labels, all_logits1 / tau)) + tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
-                    labels, all_logits2 / tau))
+                    labels, all_logits1 / tau)) #+ tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
+                    #labels, all_logits2 / tau))
             if weight_decay > 0:
                 l2_loss = compute_l2_loss(model)
             else:
@@ -194,7 +194,7 @@ def _build_momentum_contrast_training_step(model, mo_model, optimizer, buffer, a
         weight_diff = exponential_model_update(mo_model, model, alpha)
 
         # update buffer
-        _update_queue(k1, buffer)
+        _update_queue(k2, buffer)
 
         # also compute the "accuracy"; what fraction of the batch has
         # the key as the largest logit. from figure 2b of the MoCHi paper
