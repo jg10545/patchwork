@@ -407,7 +407,7 @@ class MomentumContrastTrainer(GenericExtractor):
             self._linear_classification_test(avpool=avpool,
                                              query_fig=query_fig)
 
-            acc, conf_mat = linear_classification_test(self._models["momentum_encoder"],
+            acc, conf_mat = linear_classification_test(self._models["momentum_encoder"].layers[0],
                                                  self._downstream_labels,
                                                  avpool=avpool, **self.input_config)
             self._record_scalars(momentum_encoder_linear_classification_accuracy=acc, metric=True)
