@@ -2,7 +2,7 @@
 import numpy as np
 import tensorflow as tf
 
-from patchwork.feature._generic import GenericExtractor, _TENSORBOARD_DESCRIPTIONS
+from patchwork.feature._generic import GenericExtractor, _TENSORBOARD_DESCRIPTIONS, linear_classification_test
 from patchwork._augment import augment_function
 from patchwork.loaders import load_dataset_from_tfrecords
 from patchwork._util import compute_l2_loss, _compute_alignment_and_uniformity
