@@ -14,7 +14,8 @@ from patchwork.loaders import _generate_imtypes, _build_load_function
 _DESCRIPTIONS = {
     "nt_xent_loss":"Contrastive crossentropy loss",
     "nce_batch_acc":"training accuracy for the contrastive learning task",
-    "weight_diff":"total squared difference in the values of weights between the encoder and momentum encoder"
+    "weight_diff":"total squared difference in the values of weights between the encoder and momentum encoder",
+    "momentum_encoder_linear_classification_accuracy":"linear classification test using the momentum encoder"
 }
 for d in _TENSORBOARD_DESCRIPTIONS:
     _DESCRIPTIONS[d] = _TENSORBOARD_DESCRIPTIONS[d]
@@ -405,6 +406,11 @@ class MomentumContrastTrainer(GenericExtractor):
         if self._downstream_labels is not None:
             self._linear_classification_test(avpool=avpool,
                                              query_fig=query_fig)
+
+            acc, conf_mat = linear_classification_test(self._models["momentum_encoder"],
+                                                 self._downstream_labels,
+                                                 avpool=avpool, **self.input_config)
+            self._record_scalars(momentum_encoder_linear_classification_accuracy=acc, metric=True)
 
 
     #def load_weights(self, logdir):

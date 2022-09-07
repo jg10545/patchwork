@@ -346,7 +346,7 @@ class GenericExtractor(object):
 
     def _linear_classification_test(self, avpool=True, query_fig=False):
 
-         results = linear_classification_test(self.fcn,
+         results = linear_classification_test(self._models["fcn"],
                                     self._downstream_labels,
                                     avpool=avpool, query_fig=query_fig,
                                     **self.input_config)
