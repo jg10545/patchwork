@@ -1,14 +1,50 @@
 import numpy as np
 import pandas as pd
 import tensorflow as tf
-import sklearn.linear_model, sklearn.preprocessing, sklearn.metrics
+import sklearn.linear_model, sklearn.preprocessing, sklearn.metrics, sklearn.multioutput
 from tqdm import tqdm
 
 from patchwork.loaders import dataset
 
 
+def _add_label_noise(X, rate=0.05):
+    """
+    Randomly flip values in a matrix of multihot labels
+    """
+    X = X.copy()
+    shift = np.random.choice([0,1], p=[1-rate,rate], size=X.shape)
+    return (X+shift)%2
+
+
+def _split_domains(subset):
+    """
+    Randomly subset train and test set so that they're from
+    different domains
+    """
+    domains = list(set(subset))
+    domains_in_A = np.random.randint(1, len(domains))
+    domainA = set(np.random.choice(domains, replace=False, size=domains_in_A))
+    domainB = set(np.array([d for d in domains if d not in domainA]))
+
+    subA = np.array([s in domainA for s in subset])
+    subB = np.array([s in domainB for s in subset])
+
+    return subA, subB, domainA, domainB
+
+
+def _get_accuracy(trainX, trainY, testX, testY):
+    """
+
+    """
+    estimator = sklearn.linear_model.LogisticRegression()
+    multiestimator = sklearn.multioutput.MultiOutputClassifier(estimator)
+    multiestimator.fit(trainX, trainY)
+    train_acc = sklearn.metrics.accuracy_score(trainY, multiestimator.predict(trainX))
+    test_acc = sklearn.metrics.accuracy_score(testY, multiestimator.predict(testX))
+    return train_acc, test_acc
+
 def _get_features(fcn, df, imshape=(256 ,256), batch_size=64, num_parallel_calls=None,
-                  num_channels=3, norm=255, single_channel=False):
+                  num_channels=3, norm=255, single_channel=False, augment=False):
     """
 
     """
@@ -18,58 +54,115 @@ def _get_features(fcn, df, imshape=(256 ,256), batch_size=64, num_parallel_calls
     model = tf.keras.Model(inpt, net)
     ds, ns = dataset(list(df.filepath.values), imshape=imshape, batch_size=batch_size,
                                 num_parallel_calls=num_parallel_calls, num_channels=num_channels,
-                                single_channel=single_channel, norm=norm)
+                                single_channel=single_channel, norm=norm, augment=augment)
     return model.predict(ds)
 
 
-def sample_and_evaluate(fcn, df, category, num_experiments=100, minsize=10, **kwargs):
+def sample_and_evaluate(fcndict, df, num_experiments=100, minsize=10, label_noise_frac=0,
+                        split_domains=False, image_noise_dict={}, showprogress=True, **kwargs):
     """
     Train a linear model on top of your feature extractor using random subsets of your
     training set, so that you can visualize how your feature extractor performs as data is added.
 
-    :fcn: keras model containing a fully-convolutional network
+    :fcndict: dictionary of keras models containing a fully-convolutional network to compare
     :df: pandas dataframe containing labels; same format you'd use for active learning GUI
-    :category: string; category to compute performance for
     :num_experiments: int; number of sampled datasets to train and evaluate models on
     :minsize: minimum size of sampled dataset
+    :label_noise_frac: randomly select this fraction of training labels and flip their value
+    :split_domains: if True, randomly divide the values of the "subset" column into to disjoint sets;
+        train on one and evaluate and the other.
+    :image_noise_dict: set this to be an augmentation dictionary, and for every experiment features
+        will be recomputed using this augmentation as a source of noise.
+    :showprogress: whether to use a tqdm progressbar
     :kwargs: passed to pw.loaders.dataset()
 
     Returns a dataframe containing a set of performance measures for each experiment.
     """
+    # find all the categories
+    categories = [c for c in df.columns if c not in PROTECTED_COLUMN_NAMES]
+    if split_domains:
+        subset = df["subset"].values
+
+    if not isinstance(fcndict, dict):
+        fcndict = {"fcn": fcndict}
+
+    # boolean array for identifying training and testing points
+    notnull = pd.notnull(df[categories]).values.prod(1).astype(bool)
+    train_index = (~df.exclude.values) & (~df.validation.values) & notnull
+    test_index = (~df.exclude.values) & (~df.validation.values) & notnull
+
     # get features
-    features = _get_features(fcn, df, **kwargs)
-    train = features[(~df.exclude.values) & (~df.validation.values) & pd.notnull(df[category]).values]
-    test = features[(~df.exclude.values) & (df.validation.values) & pd.notnull(df[category]).values]
-    y_train = df[(~df.exclude.values) & (~df.validation.values) & pd.notnull(df[category]).values][category].values
-    y_test = df[(~df.exclude.values) & (df.validation.values) & pd.notnull(df[category]).values][category].values
-    # run experiment
+    featuredict = {k: _get_features(fcndict[k], df, augment=image_noise_dict, **kwargs)
+                   for k in fcndict}
+
+    # run experiments!
     results = []
-    progressbar = tqdm(total=num_experiments)
-    while len(results) < num_experiments:
-        n = int(10 ** np.random.uniform(np.log10(minsize), np.log10(train.shape[0])))
-        indices = np.random.choice(np.arange(train.shape[0]), size=n, replace=False)
+    if showprogress: progressbar = tqdm(total=num_experiments)
+    while len(results) < num_experiments * len(fcndict):
+        try:
+            # ORDER OF OPERATIONS:
+            # 1) rebuild feature vectors if necessary
+            # 2) split domains if necessary
+            # 3) get train and test features/labels for full dataset
+            # 4) random subset of training data
+            # 5) corrupt training labels
+            # 6) train a model based off each FCN and record results
 
-        trainingset = train[indices]
-        traininglabels = y_train[indices]
-        if traininglabels.mean() > 0 and traininglabels.mean() < 1:
-            linear = sklearn.linear_model.SGDClassifier(loss="log", max_iter=10000, n_jobs=-1,
-                                                        learning_rate="adaptive", eta0=1e-2)
-            linear.fit(trainingset, traininglabels)
-            probs = linear.predict_proba(test)[:, 1]
+            # 1) if adding image noise- recompute TRAINING features only
+            if len(image_noise_dict) > 0:
+                features = {k: _get_features(fcndict[k], df, augment=image_noise_dict, **kwargs)
+                            for k in fcndict}
+            else:
+                features = featuredict
 
-            preds = (probs >= 0.5).astype(int)
-            metrics = {
-                "n": n,
-                "num_positive": traininglabels.sum(),
-                "num_negative": n - traininglabels.sum(),
-                "auc": sklearn.metrics.roc_auc_score(y_test, probs),
-                "accuracy": sklearn.metrics.accuracy_score(y_test, preds),
-                "f1": sklearn.metrics.f1_score(y_test, preds),
-                "precision": sklearn.metrics.precision_score(y_test, preds),
-                "recall": sklearn.metrics.recall_score(y_test, preds)
-            }
-            results.append(metrics)
-            progressbar.update()
+            # 2) split domains if necessary
+            if split_domains:
+                subA, subB, domainA, domainB = _split_domains(subset)
+                expt_train_index = train_index * subA
+                expt_test_index = test_index * subB
+            else:
+                expt_train_index = train_index
+                expt_test_index = test_index
 
-    progressbar.close()
+            # 3) get train and test features and labels
+            x_train = {k: features[k][expt_train_index] for k in features}
+            x_test = {k: features[k][expt_test_index] for k in features}
+            y_train = df[categories].values[expt_train_index]
+            y_test = df[categories].values[expt_test_index]
+
+            # 4) random subset of training data
+            N = x_train[list(fcndict.keys())[0]].shape[0]
+            n = int(10 ** np.random.uniform(np.log10(minsize), np.log10(N)))
+            sample_indices = np.random.choice(np.arange(N), size=n, replace=False)
+            x_train = {k: x_train[k][sample_indices] for k in x_train}
+            y_train = y_train[sample_indices]
+
+            # 5) add label noise
+            y_train = _add_label_noise(y_train, label_noise_frac)
+
+            # 6) for each FCN train a model
+            for k in fcndict:
+                fcn = fcndict[k]
+                train_acc, test_acc = _get_accuracy(x_train[k], y_train, x_test[k], y_test)
+                exptdict = {
+                    "fcn": k,
+                    "N": n,
+                    "label_noise_frac": label_noise_frac,
+                    "train_accuracy": train_acc,
+                    "test_accuracy": test_acc,
+                    "test error": 1 - test_acc,
+                    "train error": 1 - train_acc
+                }
+                for e, c in enumerate(categories):
+                    exptdict[f"num_positive_{c}"] = y_train[:, e].sum()
+                    exptdict[f"num_negative_{c}"] = n - y_train[:, e].sum()
+                if split_domains:
+                    exptdict["training_domains"] = ", ".join(list(domainA))
+                    exptdict["test_domains"] = ", ".join(list(domainB))
+                results.append(exptdict)
+
+            if showprogress: progressbar.update()
+        except:
+            continue
+    if showprogress: progressbar.close()
     return pd.DataFrame(results)

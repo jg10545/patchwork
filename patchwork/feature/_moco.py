@@ -413,11 +413,11 @@ class MomentumContrastTrainer(GenericExtractor):
             self._record_scalars(momentum_encoder_linear_classification_accuracy=acc, metric=True)
 
 
-    #def load_weights(self, logdir):
-    #    """
-    #    Update model weights from a previously trained model
-    #    """
-    #    super().load_weights(logdir)
-    #    self._prepopulate_buffer()
+    def load_weights(self, logdir):
+        """
+        Update model weights from a previously trained model
+        """
+        super().load_weights(logdir)
+        self._prepopulate_buffer(self.input_config["batch_size"], self.config["K"])
 
 
