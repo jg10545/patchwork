@@ -2,7 +2,7 @@
 import numpy as np
 import tensorflow as tf
 
-from patchwork.feature._generic import GenericExtractor, _TENSORBOARD_DESCRIPTIONS
+from patchwork.feature._generic import GenericExtractor, _TENSORBOARD_DESCRIPTIONS, linear_classification_test
 from patchwork._augment import augment_function
 from patchwork.loaders import load_dataset_from_tfrecords
 from patchwork._util import compute_l2_loss, _compute_alignment_and_uniformity
@@ -14,7 +14,8 @@ from patchwork.loaders import _generate_imtypes, _build_load_function
 _DESCRIPTIONS = {
     "nt_xent_loss":"Contrastive crossentropy loss",
     "nce_batch_acc":"training accuracy for the contrastive learning task",
-    "weight_diff":"total squared difference in the values of weights between the encoder and momentum encoder"
+    "weight_diff":"total squared difference in the values of weights between the encoder and momentum encoder",
+    "momentum_encoder_linear_classification_accuracy":"linear classification test using the momentum encoder"
 }
 for d in _TENSORBOARD_DESCRIPTIONS:
     _DESCRIPTIONS[d] = _TENSORBOARD_DESCRIPTIONS[d]
@@ -157,32 +158,34 @@ def _build_momentum_contrast_training_step(model, mo_model, optimizer, buffer, a
     Function to build tf.function for a MoCo training step. Basically just follow
     Algorithm 1 in He et al's paper.
     """
-
-    @tf.function
+    # check whether we're in mixed-precision mode
+    #mixed = tf.keras.mixed_precision.global_policy().name == 'mixed_float16'
     def training_step(img1, img2):
         print("tracing training step")
         batch_size = img1.shape[0]
         # compute averaged embeddings. tensor is (N,d)
-        k1 = tf.nn.l2_normalize(mo_model(img1, training=True), axis=1)
+        #k1 = tf.nn.l2_normalize(mo_model(img1, training=True), axis=1)
         k2 = tf.nn.l2_normalize(mo_model(img2, training=True), axis=1)
         with tf.GradientTape() as tape:
             # compute normalized embeddings for each batch of augmented images
             q1 = tf.nn.l2_normalize(model(img1, training=True), axis=1)
-            q2 = tf.nn.l2_normalize(model(img2, training=True), axis=1)
+            #q2 = tf.nn.l2_normalize(model(img2, training=True), axis=1)
             # compute MoCo and/or MoCHi logits
             all_logits1 = _build_logits(q1, k2, buffer, N, s, s_prime, margin)
-            all_logits2 = _build_logits(q2, k1, buffer, N, s, s_prime, margin)
+            #all_logits2 = _build_logits(q2, k1, buffer, N, s, s_prime, margin)
             # create labels (correct class is the batch index)
             labels = tf.range((batch_size), dtype=tf.int32)
             # compute crossentropy loss
             xent_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
-                    labels, all_logits1 / tau)) + tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
-                    labels, all_logits2 / tau))
+                    labels, all_logits1 / tau)) #+ tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
+                    #labels, all_logits2 / tau))
             if weight_decay > 0:
                 l2_loss = compute_l2_loss(model)
             else:
                 l2_loss = 0
             loss = xent_loss + weight_decay*l2_loss
+            #if mixed:
+            #    loss = optimizer.get_scaled_loss(loss)
 
         # update fast model
         variables = model.trainable_variables
@@ -192,7 +195,7 @@ def _build_momentum_contrast_training_step(model, mo_model, optimizer, buffer, a
         weight_diff = exponential_model_update(mo_model, model, alpha)
 
         # update buffer
-        _update_queue(k1, buffer)
+        _update_queue(k2, buffer)
 
         # also compute the "accuracy"; what fraction of the batch has
         # the key as the largest logit. from figure 2b of the MoCHi paper
@@ -404,12 +407,17 @@ class MomentumContrastTrainer(GenericExtractor):
             self._linear_classification_test(avpool=avpool,
                                              query_fig=query_fig)
 
+            acc, conf_mat = linear_classification_test(self._models["momentum_encoder"].layers[0],
+                                                 self._downstream_labels,
+                                                 avpool=avpool, **self.input_config)
+            self._record_scalars(momentum_encoder_linear_classification_accuracy=acc, metric=True)
 
-    #def load_weights(self, logdir):
-    #    """
-    #    Update model weights from a previously trained model
-    #    """
-    #    super().load_weights(logdir)
-    #    self._prepopulate_buffer()
+
+    def load_weights(self, logdir):
+        """
+        Update model weights from a previously trained model
+        """
+        super().load_weights(logdir)
+        self._prepopulate_buffer(self.input_config["batch_size"], self.config["K"])
 
 
