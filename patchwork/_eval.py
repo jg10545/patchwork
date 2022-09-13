@@ -5,6 +5,7 @@ import sklearn.linear_model, sklearn.preprocessing, sklearn.metrics, sklearn.mul
 from tqdm import tqdm
 
 from patchwork.loaders import dataset
+from patchwork._sample import PROTECTED_COLUMN_NAMES
 
 
 def _add_label_noise(X, rate=0.05):
@@ -32,11 +33,11 @@ def _split_domains(subset):
     return subA, subB, domainA, domainB
 
 
-def _get_accuracy(trainX, trainY, testX, testY):
+def _get_accuracy(trainX, trainY, testX, testY, C=1.0):
     """
 
     """
-    estimator = sklearn.linear_model.LogisticRegression()
+    estimator = sklearn.linear_model.LogisticRegression(solver='liblinear', max_iter=1000, C=1.0)
     multiestimator = sklearn.multioutput.MultiOutputClassifier(estimator)
     multiestimator.fit(trainX, trainY)
     train_acc = sklearn.metrics.accuracy_score(trainY, multiestimator.predict(trainX))
@@ -58,7 +59,7 @@ def _get_features(fcn, df, imshape=(256 ,256), batch_size=64, num_parallel_calls
     return model.predict(ds)
 
 
-def sample_and_evaluate(fcndict, df, num_experiments=100, minsize=10, label_noise_frac=0,
+def sample_and_evaluate(fcndict, df, num_experiments=100, minsize=10, C=1.0, label_noise_frac=0,
                         split_domains=False, image_noise_dict={}, showprogress=True, **kwargs):
     """
     Train a linear model on top of your feature extractor using random subsets of your
@@ -68,6 +69,7 @@ def sample_and_evaluate(fcndict, df, num_experiments=100, minsize=10, label_nois
     :df: pandas dataframe containing labels; same format you'd use for active learning GUI
     :num_experiments: int; number of sampled datasets to train and evaluate models on
     :minsize: minimum size of sampled dataset
+    :C: inverse regularization strength for logistic regression (passed to sklearn.linear_model.LogisticRegression())
     :label_noise_frac: randomly select this fraction of training labels and flip their value
     :split_domains: if True, randomly divide the values of the "subset" column into to disjoint sets;
         train on one and evaluate and the other.
@@ -143,7 +145,7 @@ def sample_and_evaluate(fcndict, df, num_experiments=100, minsize=10, label_nois
             # 6) for each FCN train a model
             for k in fcndict:
                 fcn = fcndict[k]
-                train_acc, test_acc = _get_accuracy(x_train[k], y_train, x_test[k], y_test)
+                train_acc, test_acc = _get_accuracy(x_train[k], y_train, x_test[k], y_test, C=C)
                 exptdict = {
                     "fcn": k,
                     "N": n,
