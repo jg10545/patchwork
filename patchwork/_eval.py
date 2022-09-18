@@ -23,7 +23,7 @@ def _split_domains(subset):
     different domains
     """
     domains = list(set(subset))
-    domains_in_A = np.random.randint(1, len(domains))
+    domains_in_A = len(domains) - 1 #np.random.randint(1, len(domains))
     domainA = set(np.random.choice(domains, replace=False, size=domains_in_A))
     domainB = set(np.array([d for d in domains if d not in domainA]))
 
