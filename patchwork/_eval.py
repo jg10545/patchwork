@@ -45,7 +45,7 @@ def _get_accuracy(trainX, trainY, testX, testY, C=1.0):
     return train_acc, test_acc
 
 def _get_features(fcn, df, imshape=(256 ,256), batch_size=64, num_parallel_calls=None,
-                  num_channels=3, norm=255, single_channel=False, augment=False):
+                  num_channels=3, norm=255, single_channel=False, augment=False, normalize=False):
     """
 
     """
@@ -56,11 +56,16 @@ def _get_features(fcn, df, imshape=(256 ,256), batch_size=64, num_parallel_calls
     ds, ns = dataset(list(df.filepath.values), imshape=imshape, batch_size=batch_size,
                                 num_parallel_calls=num_parallel_calls, num_channels=num_channels,
                                 single_channel=single_channel, norm=norm, augment=augment)
-    return model.predict(ds)
+    features = model.predict(ds)
+    if normalize:
+        return sklearn.preprocessing.normalize(features)
+    else:
+        return features
 
 
 def sample_and_evaluate(fcndict, df, num_experiments=100, minsize=10, C=1.0, label_noise_frac=0,
-                        split_domains=False, image_noise_dict={}, showprogress=True, **kwargs):
+                        split_domains=False, image_noise_dict={}, showprogress=True, normalize=False,
+                        **kwargs):
     """
     Train a linear model on top of your feature extractor using random subsets of your
     training set, so that you can visualize how your feature extractor performs as data is added.
@@ -76,6 +81,7 @@ def sample_and_evaluate(fcndict, df, num_experiments=100, minsize=10, C=1.0, lab
     :image_noise_dict: set this to be an augmentation dictionary, and for every experiment features
         will be recomputed using this augmentation as a source of noise.
     :showprogress: whether to use a tqdm progressbar
+    :normalize: bool; whether to normalize features to a unit hypersphere
     :kwargs: passed to pw.loaders.dataset()
 
     Returns a dataframe containing a set of performance measures for each experiment.
@@ -94,7 +100,8 @@ def sample_and_evaluate(fcndict, df, num_experiments=100, minsize=10, C=1.0, lab
     test_index = (~df.exclude.values) & (~df.validation.values) & notnull
 
     # get features
-    featuredict = {k: _get_features(fcndict[k], df, augment=image_noise_dict, **kwargs)
+    featuredict = {k: _get_features(fcndict[k], df, augment=image_noise_dict,
+                                    normalize=normalize, **kwargs)
                    for k in fcndict}
 
     # run experiments!
@@ -112,7 +119,8 @@ def sample_and_evaluate(fcndict, df, num_experiments=100, minsize=10, C=1.0, lab
 
             # 1) if adding image noise- recompute TRAINING features only
             if len(image_noise_dict) > 0:
-                features = {k: _get_features(fcndict[k], df, augment=image_noise_dict, **kwargs)
+                features = {k: _get_features(fcndict[k], df, augment=image_noise_dict,
+                                             normalize=normalize, **kwargs)
                             for k in fcndict}
             else:
                 features = featuredict
