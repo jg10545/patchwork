@@ -18,3 +18,6 @@ import patchwork.feature
 import patchwork.viz
 import patchwork.loaders
 import patchwork.models
+
+from . import _version
+__version__ = _version.get_versions()['version']
