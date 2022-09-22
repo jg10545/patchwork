@@ -27,9 +27,9 @@ requirements = [
         "holoviews"
         ]
 
-setup_requirements = [ ]
+setup_requirements = requirements #[ ]
 
-test_requirements = [ ]
+test_requirements = requirements #[ ]
 
 setup(
     version=versioneer.get_version(),
