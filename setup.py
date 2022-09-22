@@ -4,6 +4,7 @@
 """The setup script."""
 
 from setuptools import setup, find_packages
+import versioneer
 
 with open('README.md') as readme_file:
     readme = readme_file.read()
@@ -14,7 +15,7 @@ with open('HISTORY.rst') as history_file:
 requirements = [
         "numpy",
         "pandas",
-        "tensorflow==2.4",
+        "tensorflow>=2.4",
         "panel",
         "param",
         "pillow",
@@ -22,7 +23,8 @@ requirements = [
         "tqdm",
         "scikit-learn",
         "scipy",
-        "scikit-image"
+        "scikit-image",
+        "holoviews"
         ]
 
 setup_requirements = [ ]
@@ -30,6 +32,8 @@ setup_requirements = [ ]
 test_requirements = [ ]
 
 setup(
+    version=versioneer.get_version(),
+    cmdclass=versioneer.get_cmdclass(),
     author="Joe Gezo",
     author_email='joegezo@gmail.com',
     classifiers=[
