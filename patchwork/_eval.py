@@ -5,6 +5,7 @@ import sklearn.linear_model, sklearn.preprocessing, sklearn.metrics, sklearn.mul
 from tqdm import tqdm
 
 from patchwork.loaders import dataset
+from patchwork._sample import PROTECTED_COLUMN_NAMES
 
 
 def _add_label_noise(X, rate=0.05):
@@ -22,7 +23,7 @@ def _split_domains(subset):
     different domains
     """
     domains = list(set(subset))
-    domains_in_A = np.random.randint(1, len(domains))
+    domains_in_A = len(domains) - 1 #np.random.randint(1, len(domains))
     domainA = set(np.random.choice(domains, replace=False, size=domains_in_A))
     domainB = set(np.array([d for d in domains if d not in domainA]))
 
@@ -32,11 +33,11 @@ def _split_domains(subset):
     return subA, subB, domainA, domainB
 
 
-def _get_accuracy(trainX, trainY, testX, testY):
+def _get_accuracy(trainX, trainY, testX, testY, C=1.0):
     """
 
     """
-    estimator = sklearn.linear_model.LogisticRegression()
+    estimator = sklearn.linear_model.LogisticRegression(solver='liblinear', max_iter=1000, C=1.0)
     multiestimator = sklearn.multioutput.MultiOutputClassifier(estimator)
     multiestimator.fit(trainX, trainY)
     train_acc = sklearn.metrics.accuracy_score(trainY, multiestimator.predict(trainX))
@@ -44,7 +45,7 @@ def _get_accuracy(trainX, trainY, testX, testY):
     return train_acc, test_acc
 
 def _get_features(fcn, df, imshape=(256 ,256), batch_size=64, num_parallel_calls=None,
-                  num_channels=3, norm=255, single_channel=False, augment=False):
+                  num_channels=3, norm=255, single_channel=False, augment=False, normalize=False):
     """
 
     """
@@ -55,11 +56,16 @@ def _get_features(fcn, df, imshape=(256 ,256), batch_size=64, num_parallel_calls
     ds, ns = dataset(list(df.filepath.values), imshape=imshape, batch_size=batch_size,
                                 num_parallel_calls=num_parallel_calls, num_channels=num_channels,
                                 single_channel=single_channel, norm=norm, augment=augment)
-    return model.predict(ds)
+    features = model.predict(ds)
+    if normalize:
+        return sklearn.preprocessing.normalize(features)
+    else:
+        return features
 
 
-def sample_and_evaluate(fcndict, df, num_experiments=100, minsize=10, label_noise_frac=0,
-                        split_domains=False, image_noise_dict={}, showprogress=True, **kwargs):
+def sample_and_evaluate(fcndict, df, num_experiments=100, minsize=10, C=1.0, label_noise_frac=0,
+                        split_domains=False, image_noise_dict={}, showprogress=True, normalize=False,
+                        rescale=False, **kwargs):
     """
     Train a linear model on top of your feature extractor using random subsets of your
     training set, so that you can visualize how your feature extractor performs as data is added.
@@ -68,12 +74,15 @@ def sample_and_evaluate(fcndict, df, num_experiments=100, minsize=10, label_nois
     :df: pandas dataframe containing labels; same format you'd use for active learning GUI
     :num_experiments: int; number of sampled datasets to train and evaluate models on
     :minsize: minimum size of sampled dataset
+    :C: inverse regularization strength for logistic regression (passed to sklearn.linear_model.LogisticRegression())
     :label_noise_frac: randomly select this fraction of training labels and flip their value
     :split_domains: if True, randomly divide the values of the "subset" column into to disjoint sets;
         train on one and evaluate and the other.
     :image_noise_dict: set this to be an augmentation dictionary, and for every experiment features
         will be recomputed using this augmentation as a source of noise.
     :showprogress: whether to use a tqdm progressbar
+    :normalize: bool; whether to normalize features to a unit hypersphere
+    :rescale: bool; if True, scale so each feature has zero mean and unit variance across the training set
     :kwargs: passed to pw.loaders.dataset()
 
     Returns a dataframe containing a set of performance measures for each experiment.
@@ -92,7 +101,8 @@ def sample_and_evaluate(fcndict, df, num_experiments=100, minsize=10, label_nois
     test_index = (~df.exclude.values) & (~df.validation.values) & notnull
 
     # get features
-    featuredict = {k: _get_features(fcndict[k], df, augment=image_noise_dict, **kwargs)
+    featuredict = {k: _get_features(fcndict[k], df, augment=image_noise_dict,
+                                    normalize=normalize, **kwargs)
                    for k in fcndict}
 
     # run experiments!
@@ -110,7 +120,8 @@ def sample_and_evaluate(fcndict, df, num_experiments=100, minsize=10, label_nois
 
             # 1) if adding image noise- recompute TRAINING features only
             if len(image_noise_dict) > 0:
-                features = {k: _get_features(fcndict[k], df, augment=image_noise_dict, **kwargs)
+                features = {k: _get_features(fcndict[k], df, augment=image_noise_dict,
+                                             normalize=normalize, **kwargs)
                             for k in fcndict}
             else:
                 features = featuredict
@@ -136,6 +147,12 @@ def sample_and_evaluate(fcndict, df, num_experiments=100, minsize=10, label_nois
             sample_indices = np.random.choice(np.arange(N), size=n, replace=False)
             x_train = {k: x_train[k][sample_indices] for k in x_train}
             y_train = y_train[sample_indices]
+            # 4a) if rescaling, apply that now
+            if rescale:
+                for k in x_train:
+                    scaler = sklearn.preprocessing.StandardScaler()
+                    x_train[k] = scaler.fit_transform(x_train[k])
+                    x_test[k] = scaler.transform(x_test[k])
 
             # 5) add label noise
             y_train = _add_label_noise(y_train, label_noise_frac)
@@ -143,7 +160,7 @@ def sample_and_evaluate(fcndict, df, num_experiments=100, minsize=10, label_nois
             # 6) for each FCN train a model
             for k in fcndict:
                 fcn = fcndict[k]
-                train_acc, test_acc = _get_accuracy(x_train[k], y_train, x_test[k], y_test)
+                train_acc, test_acc = _get_accuracy(x_train[k], y_train, x_test[k], y_test, C=C)
                 exptdict = {
                     "fcn": k,
                     "N": n,

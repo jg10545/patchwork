@@ -13,7 +13,8 @@ def error_vs_n_plot(results, testerr=True, width=900, height=600, logx=True, cma
         y = "test error"
     else:
         y = "train error"
-    fig = hv.Scatter(results, kdims=["N", y], vdims=vdims).opts(color="fcn", tools=["hover"], size=size,
+    fig = hv.Scatter(results, kdims=["N", y], vdims=vdims).opts(color="fcn",
+                                                                tools=["hover"], size=size,
                                                              width=width, height=height, logx=logx,
                                                                 cmap=cmap, show_grid=True, alpha=alpha,
                                                                **kwargs)
