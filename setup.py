@@ -15,7 +15,7 @@ with open('HISTORY.rst') as history_file:
 requirements = [
         "numpy",
         "pandas",
-        "tensorflow==2.4",
+        "tensorflow>=2.4",
         "panel",
         "param",
         "pillow",
@@ -23,7 +23,8 @@ requirements = [
         "tqdm",
         "scikit-learn",
         "scipy",
-        "scikit-image"
+        "scikit-image",
+        "holoviews"
         ]
 
 setup_requirements = [ ]
