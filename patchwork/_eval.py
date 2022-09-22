@@ -65,7 +65,7 @@ def _get_features(fcn, df, imshape=(256 ,256), batch_size=64, num_parallel_calls
 
 def sample_and_evaluate(fcndict, df, num_experiments=100, minsize=10, C=1.0, label_noise_frac=0,
                         split_domains=False, image_noise_dict={}, showprogress=True, normalize=False,
-                        **kwargs):
+                        rescale=False, **kwargs):
     """
     Train a linear model on top of your feature extractor using random subsets of your
     training set, so that you can visualize how your feature extractor performs as data is added.
@@ -82,6 +82,7 @@ def sample_and_evaluate(fcndict, df, num_experiments=100, minsize=10, C=1.0, lab
         will be recomputed using this augmentation as a source of noise.
     :showprogress: whether to use a tqdm progressbar
     :normalize: bool; whether to normalize features to a unit hypersphere
+    :rescale: bool; if True, scale so each feature has zero mean and unit variance across the training set
     :kwargs: passed to pw.loaders.dataset()
 
     Returns a dataframe containing a set of performance measures for each experiment.
@@ -146,6 +147,12 @@ def sample_and_evaluate(fcndict, df, num_experiments=100, minsize=10, C=1.0, lab
             sample_indices = np.random.choice(np.arange(N), size=n, replace=False)
             x_train = {k: x_train[k][sample_indices] for k in x_train}
             y_train = y_train[sample_indices]
+            # 4a) if rescaling, apply that now
+            if rescale:
+                for k in x_train:
+                    scaler = sklearn.preprocessing.StandardScaler()
+                    x_train[k] = scaler.fit_transform(x_train[k])
+                    x_test[k] = scaler.transform(x_test[k])
 
             # 5) add label noise
             y_train = _add_label_noise(y_train, label_noise_frac)
