@@ -12,6 +12,9 @@ with open('README.md') as readme_file:
 with open('HISTORY.rst') as history_file:
     history = history_file.read()
 
+with open("requirements.txt") as req_file:
+    requirements = [x.strip() for x in req_file.read().split("\n")]
+"""
 requirements = [
         "numpy",
         "pandas",
@@ -25,11 +28,11 @@ requirements = [
         "scipy",
         "scikit-image",
         "holoviews"
-        ]
+        ]"""
 
-setup_requirements = requirements #[ ]
+setup_requirements = [ ]
 
-test_requirements = requirements #[ ]
+test_requirements = [ ]
 
 setup(
     version=versioneer.get_version(),

@@ -10,3 +10,4 @@ scikit-learn
 scipy
 scikit-image
 holoviews
+pytest-mock
