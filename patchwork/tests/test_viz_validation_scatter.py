@@ -8,15 +8,15 @@ from patchwork.viz._validation_scatter import _get_tsne_features, _build_scatter
 
 
 def test_get_tsne_features():
-    N = 13
+    N = 31
     d = 7
     features = np.random.normal(0, 1, (N,d))
     embeds = _get_tsne_features(features)
-    
+
     assert isinstance(embeds, np.ndarray)
     assert embeds.shape == (N,2)
-    
-    
+
+
 def test_build_scatter_holomap():
     N = 25
     embeds = np.random.normal(0, 1, (N,2))
@@ -26,7 +26,7 @@ def test_build_scatter_holomap():
     categories = ["cat0", "cat1", "cat2"]
     for c in categories:
         df[c] = np.random.randint(0,2,size=N)
-        
+
     pred_df = pd.DataFrame({c:np.random.uniform(0, 1, size=N) for c in categories},
                       index=df.index)
     hmap = _build_scatter_holomap(df, pred_df, embeds)

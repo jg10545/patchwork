@@ -12,24 +12,13 @@ with open('README.md') as readme_file:
 with open('HISTORY.rst') as history_file:
     history = history_file.read()
 
-requirements = [
-        "numpy",
-        "pandas",
-        "tensorflow>=2.4",
-        "panel",
-        "param",
-        "pillow",
-        "matplotlib",
-        "tqdm",
-        "scikit-learn",
-        "scipy",
-        "scikit-image",
-        "holoviews"
-        ]
+with open("requirements.txt") as req_file:
+    requirements = [x.strip() for x in req_file.read().split("\n")]
 
-setup_requirements = requirements #[ ]
 
-test_requirements = requirements #[ ]
+setup_requirements = [ ]
+
+test_requirements = [ ]
 
 setup(
     version=versioneer.get_version(),
@@ -61,6 +50,5 @@ setup(
     test_suite='tests',
     tests_require=test_requirements,
     url='https://github.com/jg10545/patchwork',
-    version='0.1.0',
     zip_safe=False,
 )
