@@ -14,21 +14,7 @@ with open('HISTORY.rst') as history_file:
 
 with open("requirements.txt") as req_file:
     requirements = [x.strip() for x in req_file.read().split("\n")]
-"""
-requirements = [
-        "numpy",
-        "pandas",
-        "tensorflow>=2.4",
-        "panel",
-        "param",
-        "pillow",
-        "matplotlib",
-        "tqdm",
-        "scikit-learn",
-        "scipy",
-        "scikit-image",
-        "holoviews"
-        ]"""
+
 
 setup_requirements = [ ]
 
@@ -64,6 +50,5 @@ setup(
     test_suite='tests',
     tests_require=test_requirements,
     url='https://github.com/jg10545/patchwork',
-    version='0.1.0',
     zip_safe=False,
 )
