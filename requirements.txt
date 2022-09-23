@@ -1,0 +1,12 @@
+numpy
+pandas
+tensorflow>=2.4
+panel
+param
+pillow
+matplotlib
+tqdm
+scikit-learn
+scipy
+scikit-image
+holoviews
