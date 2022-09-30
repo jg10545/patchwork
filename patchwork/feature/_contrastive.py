@@ -87,11 +87,14 @@ def _build_negative_mask(batch_size):
     This function builds a (2*batch_size, 2*batch_size) matrix that masks out
     the positive cases.
     """
-    mask = np.ones((2*batch_size, 2*batch_size), dtype=np.float32)
-    for i in range(2*batch_size):
-        for j in range(2*batch_size):
-            if (i == j) or (abs(i-j) == batch_size):
-                mask[i,j] = 0
+    # start with a mask of all ones
+    mask = tf.ones([2*batch_size, 2*batch_size])
+    # set the diagonals to zero
+    mask = tf.subtract(mask, tf.eye(2*batch_size))
+    # there are other entries that aren't negatives because we've symmetrized
+    # the loss function
+    mask = tf.subtract(mask, tf.linalg.diag(tf.ones(batch_size), k=batch_size))
+    mask = tf.subtract(mask, tf.linalg.diag(tf.ones(batch_size), k=-1*batch_size))
     return mask
 
 
