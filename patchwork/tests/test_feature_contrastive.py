@@ -8,7 +8,7 @@ from patchwork.feature._contrastive import  _contrastive_loss, _build_augment_pa
 
 def test_build_negative_mask():
     gbs = 7
-    mask = _build_negative_mask(gbs)
+    mask = _build_negative_mask(gbs).numpy()
     assert mask.shape == (2*gbs, 2*gbs)
     assert (mask.sum(0) == 2*gbs - 2).all()
 
@@ -16,7 +16,7 @@ def test_build_negative_mask():
 def test_simclr_softmax_prob_trivial_case():
     gbs = 7
     d = 23
-    mask = _build_negative_mask(gbs)
+    mask = _build_negative_mask(gbs).numpy()
     z = tf.nn.l2_normalize(np.random.normal(0,1, (gbs,d)))
     softmax_prob, nce_batch_acc = _simclr_softmax_prob(z,z,1,mask)
 
@@ -31,7 +31,7 @@ def test_simclr_softmax_prob_trivial_case():
 def test_simclr_softmax_prob_random_case():
     gbs = 7
     d = 23
-    mask = _build_negative_mask(gbs)
+    mask = _build_negative_mask(gbs).numpy()
     z1 = tf.nn.l2_normalize(np.random.normal(0,1, (gbs,d)))
     z2 = tf.nn.l2_normalize(np.random.normal(0,1, (gbs,d)))
     softmax_prob, nce_batch_acc = _simclr_softmax_prob(z1,z2,1,mask)
