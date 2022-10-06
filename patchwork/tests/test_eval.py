@@ -29,7 +29,8 @@ def test_get_accuracy():
     N = 10000
     d = 3
     X = np.random.normal(0, 1, size=(N, d))
-    Y = (X[:, :2] > 0).astype(int)
+    #Y = (X[:, :2] > 0).astype(int)
+    Y = (X[:, 0] > 0).astype(int)
 
-    train_acc, test_acc = _get_accuracy(X, Y, X, Y)
+    train_acc, test_acc, train_auc, test_auc = _get_accuracy(X, Y, X, Y)
     assert test_acc > 0.99
