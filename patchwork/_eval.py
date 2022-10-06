@@ -122,7 +122,7 @@ def sample_and_evaluate(fcndict, df, category, num_experiments=100, minsize=10, 
         fcndict = {"fcn": fcndict}
 
     # boolean array for identifying training and testing points
-    notnull = pd.notnull(df[category]).values.prod(1).astype(bool)
+    notnull = pd.notnull(df[category]).values#.prod(1).astype(bool)
     train_index = (~df.exclude.values) & (~df.validation.values) & notnull
     test_index = (~df.exclude.values) & (~df.validation.values) & notnull
 
@@ -197,6 +197,9 @@ def sample_and_evaluate(fcndict, df, category, num_experiments=100, minsize=10, 
             # 5) add label noise
             y_train = _add_label_noise(y_train, label_noise_frac)
 
+            # check to make our sample has both positive and negative examples
+            assert y_train.min() == 0
+            assert y_train.max() == 1
             # 6) for each FCN train a model
             for k in fcndict:
                 #fcn = fcndict[k]
@@ -231,5 +234,5 @@ def sample_and_evaluate(fcndict, df, category, num_experiments=100, minsize=10, 
     if showprogress: progressbar.close()
     if usedask:
         with dask.diagnostics.ProgressBar():
-            results = dask.compute(results)
+            results = dask.compute(results)[0]
     return pd.DataFrame(results)
