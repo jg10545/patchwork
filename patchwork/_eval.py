@@ -67,7 +67,7 @@ def _get_features(fcn, df, imshape=(256 ,256), batch_size=64, num_parallel_calls
 
 
 def _experiment_dict(x_train, y_train, x_test, y_test, C, split_domains, domainA, domainB,
-                     k, n, label_noise_frac):
+                     k, n, label_noise_frac, rescale, normalize, pos_class_prob):
     train_acc, test_acc, train_auc, test_auc = _get_accuracy(x_train, y_train, x_test, y_test, C=C)
     exptdict = {
         "fcn": k,
@@ -78,7 +78,10 @@ def _experiment_dict(x_train, y_train, x_test, y_test, C, split_domains, domainA
         "test error": 1 - test_acc,
         "train error": 1 - train_acc,
         "train AUC": train_auc,
-        "test AUC": test_auc
+        "test AUC": test_auc,
+        "rescale":rescale,
+        "normalize":normalize,
+        "pos_class_prob":pos_class_prob
     }
     if split_domains:
         exptdict["training_domains"] = ", ".join(list(domainA))
@@ -206,7 +209,7 @@ def sample_and_evaluate(fcndict, df, category, num_experiments=100, minsize=10, 
                 if usedask:
                     results.append(dask.delayed(
                         _experiment_dict)(x_train[k], y_train, x_test[k], y_test, C, split_domains, domainA, domainB,
-                                         k, n, label_noise_frac))
+                                         k, n, label_noise_frac, rescale, normalize, pos_class_prob))
                 else:
                     results.append(_experiment_dict(x_train[k], y_train, x_test[k], y_test, C, split_domains, domainA, domainB,
                      k, n, label_noise_frac))
