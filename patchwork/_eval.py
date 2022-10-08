@@ -212,7 +212,7 @@ def sample_and_evaluate(fcndict, df, category, num_experiments=100, minsize=10, 
                                          k, n, label_noise_frac, rescale, normalize, pos_class_prob))
                 else:
                     results.append(_experiment_dict(x_train[k], y_train, x_test[k], y_test, C, split_domains, domainA, domainB,
-                     k, n, label_noise_frac))
+                     k, n, label_noise_frac, rescale, normalize, pos_class_prob))
                 """
                 train_acc, test_acc, train_auc, test_auc = _get_accuracy(x_train[k], y_train, x_test[k], y_test, C=C)
                 exptdict = {
