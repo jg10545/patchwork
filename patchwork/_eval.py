@@ -38,11 +38,14 @@ def _get_accuracy(trainX, trainY, testX, testY, C=1.0):
 
     """
     estimator = sklearn.linear_model.LogisticRegression(solver='liblinear', max_iter=1000, C=1.0)
-    multiestimator = sklearn.multioutput.MultiOutputClassifier(estimator)
-    multiestimator.fit(trainX, trainY)
-    train_acc = sklearn.metrics.accuracy_score(trainY, multiestimator.predict(trainX))
-    test_acc = sklearn.metrics.accuracy_score(testY, multiestimator.predict(testX))
-    return train_acc, test_acc
+    #multiestimator = sklearn.multioutput.MultiOutputClassifier(estimator)
+    #multiestimator.fit(trainX, trainY)
+    estimator.fit(trainX, trainY)
+    train_acc = sklearn.metrics.accuracy_score(trainY, estimator.predict(trainX))
+    test_acc = sklearn.metrics.accuracy_score(testY, estimator.predict(testX))
+    train_auc = sklearn.metrics.roc_auc_score(trainY, estimator.predict_proba(trainX)[:, 1])
+    test_auc = sklearn.metrics.roc_auc_score(testY, estimator.predict_proba(testX)[:, 1])
+    return train_acc, test_acc, train_auc, test_auc
 
 def _get_features(fcn, df, imshape=(256 ,256), batch_size=64, num_parallel_calls=None,
                   num_channels=3, norm=255, single_channel=False, augment=False, normalize=False):
@@ -63,15 +66,39 @@ def _get_features(fcn, df, imshape=(256 ,256), batch_size=64, num_parallel_calls
         return features
 
 
-def sample_and_evaluate(fcndict, df, num_experiments=100, minsize=10, C=1.0, label_noise_frac=0,
+def _experiment_dict(x_train, y_train, x_test, y_test, C, split_domains, domainA, domainB,
+                     k, n, label_noise_frac, rescale, normalize, pos_class_prob):
+    train_acc, test_acc, train_auc, test_auc = _get_accuracy(x_train, y_train, x_test, y_test, C=C)
+    exptdict = {
+        "fcn": k,
+        "N": n,
+        "label_noise_frac": label_noise_frac,
+        "train_accuracy": train_acc,
+        "test_accuracy": test_acc,
+        "test error": 1 - test_acc,
+        "train error": 1 - train_acc,
+        "train AUC": train_auc,
+        "test AUC": test_auc,
+        "rescale":rescale,
+        "normalize":normalize,
+        "pos_class_prob":pos_class_prob
+    }
+    if split_domains:
+        exptdict["training_domains"] = ", ".join(list(domainA))
+        exptdict["test_domains"] = ", ".join(list(domainB))
+    return exptdict
+
+
+def sample_and_evaluate(fcndict, df, category, num_experiments=100, minsize=10, C=1.0, label_noise_frac=0,
                         split_domains=False, image_noise_dict={}, showprogress=True, normalize=False,
-                        rescale=False, **kwargs):
+                        rescale=False, pos_class_prob=None, usedask=False, **kwargs):
     """
     Train a linear model on top of your feature extractor using random subsets of your
     training set, so that you can visualize how your feature extractor performs as data is added.
 
     :fcndict: dictionary of keras models containing a fully-convolutional network to compare
     :df: pandas dataframe containing labels; same format you'd use for active learning GUI
+    :category:
     :num_experiments: int; number of sampled datasets to train and evaluate models on
     :minsize: minimum size of sampled dataset
     :C: inverse regularization strength for logistic regression (passed to sklearn.linear_model.LogisticRegression())
@@ -87,8 +114,10 @@ def sample_and_evaluate(fcndict, df, num_experiments=100, minsize=10, C=1.0, lab
 
     Returns a dataframe containing a set of performance measures for each experiment.
     """
+    if usedask:
+        import dask, dask.diagnostics
     # find all the categories
-    categories = [c for c in df.columns if c not in PROTECTED_COLUMN_NAMES]
+    #categories = [c for c in df.columns if c not in PROTECTED_COLUMN_NAMES]
     if split_domains:
         subset = df["subset"].values
 
@@ -96,7 +125,7 @@ def sample_and_evaluate(fcndict, df, num_experiments=100, minsize=10, C=1.0, lab
         fcndict = {"fcn": fcndict}
 
     # boolean array for identifying training and testing points
-    notnull = pd.notnull(df[categories]).values.prod(1).astype(bool)
+    notnull = pd.notnull(df[category]).values#.prod(1).astype(bool)
     train_index = (~df.exclude.values) & (~df.validation.values) & notnull
     test_index = (~df.exclude.values) & (~df.validation.values) & notnull
 
@@ -134,17 +163,31 @@ def sample_and_evaluate(fcndict, df, num_experiments=100, minsize=10, C=1.0, lab
             else:
                 expt_train_index = train_index
                 expt_test_index = test_index
+                domainA = None
+                domainB = None
 
             # 3) get train and test features and labels
             x_train = {k: features[k][expt_train_index] for k in features}
             x_test = {k: features[k][expt_test_index] for k in features}
-            y_train = df[categories].values[expt_train_index]
-            y_test = df[categories].values[expt_test_index]
+            y_train = df[category].values[expt_train_index]
+            y_test = df[category].values[expt_test_index]
 
             # 4) random subset of training data
             N = x_train[list(fcndict.keys())[0]].shape[0]
             n = int(10 ** np.random.uniform(np.log10(minsize), np.log10(N)))
-            sample_indices = np.random.choice(np.arange(N), size=n, replace=False)
+            # sample either uniformly or stratified
+            if pos_class_prob is None:
+                sample_indices = np.random.choice(np.arange(N), size=n, replace=False)
+            else:
+                pos_n = max(1, int(n*pos_class_prob))
+                neg_n = n - pos_n
+                indices = np.arange(N)
+                pos_indices = indices[y_train == 1]
+                neg_indices = indices[y_train == 0]
+                sample_indices = np.concatenate([
+                    np.random.choice(pos_indices, size=pos_n, replace=False),
+                    np.random.choice(neg_indices, size=neg_n, replace=False)
+                ])
             x_train = {k: x_train[k][sample_indices] for k in x_train}
             y_train = y_train[sample_indices]
             # 4a) if rescaling, apply that now
@@ -157,10 +200,21 @@ def sample_and_evaluate(fcndict, df, num_experiments=100, minsize=10, C=1.0, lab
             # 5) add label noise
             y_train = _add_label_noise(y_train, label_noise_frac)
 
+            # check to make our sample has both positive and negative examples
+            assert y_train.min() == 0
+            assert y_train.max() == 1
             # 6) for each FCN train a model
             for k in fcndict:
-                fcn = fcndict[k]
-                train_acc, test_acc = _get_accuracy(x_train[k], y_train, x_test[k], y_test, C=C)
+                #fcn = fcndict[k]
+                if usedask:
+                    results.append(dask.delayed(
+                        _experiment_dict)(x_train[k], y_train, x_test[k], y_test, C, split_domains, domainA, domainB,
+                                         k, n, label_noise_frac, rescale, normalize, pos_class_prob))
+                else:
+                    results.append(_experiment_dict(x_train[k], y_train, x_test[k], y_test, C, split_domains, domainA, domainB,
+                     k, n, label_noise_frac, rescale, normalize, pos_class_prob))
+                """
+                train_acc, test_acc, train_auc, test_auc = _get_accuracy(x_train[k], y_train, x_test[k], y_test, C=C)
                 exptdict = {
                     "fcn": k,
                     "N": n,
@@ -168,18 +222,20 @@ def sample_and_evaluate(fcndict, df, num_experiments=100, minsize=10, C=1.0, lab
                     "train_accuracy": train_acc,
                     "test_accuracy": test_acc,
                     "test error": 1 - test_acc,
-                    "train error": 1 - train_acc
+                    "train error": 1 - train_acc,
+                    "train AUC":train_auc,
+                    "test AUC":test_auc
                 }
-                for e, c in enumerate(categories):
-                    exptdict[f"num_positive_{c}"] = y_train[:, e].sum()
-                    exptdict[f"num_negative_{c}"] = n - y_train[:, e].sum()
                 if split_domains:
                     exptdict["training_domains"] = ", ".join(list(domainA))
                     exptdict["test_domains"] = ", ".join(list(domainB))
-                results.append(exptdict)
+                results.append(exptdict)"""
 
             if showprogress: progressbar.update()
         except:
             continue
     if showprogress: progressbar.close()
+    if usedask:
+        with dask.diagnostics.ProgressBar():
+            results = dask.compute(results)[0]
     return pd.DataFrame(results)
