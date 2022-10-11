@@ -1,6 +1,7 @@
 import numpy as np
 import tensorflow as tf
-from patchwork.feature.lit import _build_lit_dataset_from_in_memory_features
+from patchwork.feature.lit import _build_lit_dataset_from_in_memory_features, save_lit_dataset
+from patchwork.feature.lit import load_lit_dataset_from_tfrecords
 
 
 class FakeEncoder():
@@ -72,3 +73,33 @@ def test_build_list_dataset_from_in_memory_features_with_prompt_function():
     assert y.shape == (batch_size, d)
     assert x.dtype == tf.int64
     assert y.dtype == tf.float32
+
+
+def test_save_and_load_tfrecord(test_png_path, tmp_path_factory):
+    # generate fake prompt/image pairs
+    N = 25
+    d = 7
+    imfiles = [test_png_path] * N
+    prompts = ["foo"] * N
+    # fake model for testing
+    inpt = tf.keras.layers.Input((None, None, 3))
+    net = tf.keras.layers.Conv2D(d, 1)(inpt)
+    fcn = tf.keras.Model(inpt, net)
+    fcn.count_params()
+
+    # SAVE IT TO TFRECORD FILES
+    outdir = str(tmp_path_factory.mktemp("litdata"))
+    save_lit_dataset(prompts, imfiles, fcn, outdir, num_shards=2,
+                              imshape=(32, 32), num_channels=3,
+                              norm=255)
+    # LOAD IT BACK
+    ds = load_lit_dataset_from_tfrecords(outdir, d, shuffle=5)
+    for x,y in ds:
+        break
+
+    assert isinstance(ds, tf.data.Dataset)
+    assert x.shape == ()
+    assert x.dtype == tf.string
+    assert y.shape == (d)
+    assert y.dtype == tf.float32
+
