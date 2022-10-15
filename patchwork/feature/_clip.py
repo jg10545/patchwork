@@ -64,7 +64,7 @@ def clip_dataset(imfiles, labels, encoder, maxlen=76, imshape=(256,256),
 
 
 
-def build_image_encoder(fcn, num_channels=3, output_dim=64):
+def _build_image_encoder(fcn, num_channels=3, output_dim=64):
     """
     NOT the full version used in OpenAI's paper- just a linear
     projection head after the global average pool, instead of
@@ -74,7 +74,7 @@ def build_image_encoder(fcn, num_channels=3, output_dim=64):
     :num_channels: int; number of input channels
     :output_dim: int; output dimension of final dense layer
     """
-    inpt = tf.keras.layers.Input((None, None, 3))
+    inpt = tf.keras.layers.Input((None, None, num_channels))
     x = fcn(inpt)
     x = tf.keras.layers.GlobalAveragePooling2D()(x)
     x = tf.keras.layers.Dense(output_dim)(x)
@@ -229,7 +229,7 @@ class CLIPTrainer(GenericExtractor):
             self.fcn = fcn
             # Create a Keras model that wraps the base encoder and
             # the projection head
-            full = build_image_encoder(fcn, num_channels=num_channels,
+            full = _build_image_encoder(fcn, num_channels=num_channels,
                                        output_dim=output_dim)
             text = build_text_transformer(self._vocab_size, maxlen,
                                           embed_dim=embed_dim, num_layers=num_layers,
