@@ -172,7 +172,7 @@ def test_save_and_load_tfrecord_with_map_fn_and_prompt_processor(test_png_path, 
     assert y.dtype == tf.float32
 
 
-def test_zero_shot_accuracy_test():
+def test_zero_shot_accuracy_test(text_sample_path):
     N = 17
     d = 5
     maxlen = 13
@@ -183,7 +183,7 @@ def test_zero_shot_accuracy_test():
     im_feats = np.random.normal(0, 1, size=(N, d)).astype(np.float32)
     # create a sentencepiece encoder
     model = io.BytesIO()
-    spm.SentencePieceTrainer.train(input="declaration.txt", model_writer=model, vocab_size=100)
+    spm.SentencePieceTrainer.train(input=text_sample_path, model_writer=model, vocab_size=100)
     sp = spm.SentencePieceProcessor(model_proto=model.getvalue())
     # build a text embedding model
     textenc = build_text_transformer(100, maxlen, embed_dim=3, num_layers=1,
