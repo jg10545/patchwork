@@ -3,7 +3,9 @@ import tensorflow as tf
 import sentencepiece as spm
 import io
 from patchwork.feature.lit import _build_lit_dataset_from_in_memory_features, save_lit_dataset
-from patchwork.feature.lit import load_lit_dataset_from_tfrecords, _wrap_encoder
+from patchwork.feature.lit import load_lit_dataset_from_tfrecords, _wrap_encoder, _zero_shot_accuracy_test
+
+from patchwork.feature._text_transformer import build_text_transformer
 
 def _get_encoder(filepath, vocab_size=100):
     model = io.BytesIO()
@@ -168,3 +170,25 @@ def test_save_and_load_tfrecord_with_map_fn_and_prompt_processor(test_png_path, 
     assert x.dtype == tf.int64
     assert y.shape == (d)
     assert y.dtype == tf.float32
+
+
+def test_zero_shot_accuracy_test():
+    N = 17
+    d = 5
+    maxlen = 13
+    # generate random prompts
+    np.random.seed(1)
+    prompts = np.random.choice(["foo", "bar", "foobar", "barfoo"], size=N).reshape(-1, 1)
+    # generate random image embeddings
+    im_feats = np.random.normal(0, 1, size=(N, d)).astype(np.float32)
+    # create a sentencepiece encoder
+    model = io.BytesIO()
+    spm.SentencePieceTrainer.train(input="declaration.txt", model_writer=model, vocab_size=100)
+    sp = spm.SentencePieceProcessor(model_proto=model.getvalue())
+    # build a text embedding model
+    textenc = build_text_transformer(100, maxlen, embed_dim=3, num_layers=1,
+                                                                  num_heads=1, ff_dim=2, final_projection=d)
+    # run the test
+    acc = _zero_shot_accuracy_test(im_feats, prompts, sp, textenc, maxlen=maxlen)
+    assert acc >= 0
+    assert acc <= 1

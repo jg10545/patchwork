@@ -1,5 +1,6 @@
 import numpy as np
 import tensorflow as tf
+import sklearn.preprocessing
 
 from patchwork.loaders import _image_file_dataset
 from patchwork._tfrecord import save_dataset_to_tfrecords
@@ -176,6 +177,29 @@ def build_lit_training_step(text_model, optimizer, temp=0.07, weight_decay=0):
     return trainstep
 
 
+def _zero_shot_accuracy_test(image_features, prompts, encoder, text_model, maxlen=72):
+    """
+    :image_features: (N,d) numpy array of image features
+    :prompts: length-N list of strings; prompt for each image
+    :encoder: trained SentencePiece encoder object
+    :text_model: Keras model; text encoder
+    """
+    # label encoder- convert strings to an integer index
+    labelenc = sklearn.preprocessing.OneHotEncoder()
+    prompt_labels = np.array(labelenc.fit_transform(prompts).argmax(1)).ravel()
+
+    # get normalized encodings for each unique prompt
+    enc = _wrap_encoder(encoder, maxlen, tfpyfunc=False)
+    prompt_encodings = np.array([enc(x) for x in labelenc.categories_[0]])
+    prompt_features = text_model.predict(prompt_encodings)
+    prompt_features = sklearn.preprocessing.normalize(prompt_features, norm='l2', axis=1)
+    # normalize image encodings
+    image_features = sklearn.preprocessing.normalize(image_features, norm='l2', axis=1)
+
+    # for each image find the highest dot-product to a prompt category
+    highest_dot_products = image_features.dot(prompt_features.T).argmax(1)
+
+    return np.mean(prompt_labels == highest_dot_products)
 
 class LiTTrainer(GenericExtractor):
     """

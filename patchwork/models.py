@@ -3,14 +3,15 @@ import tensorflow as tf
 from patchwork._convmixer import build_convmixer_fcn
 from patchwork._convnext import build_convnext_fcn
 from patchwork._resnet import build_resnet50
+from patchwork.feature._text_transformer import build_text_transformer
 
 def build_wide_resnet(n=16, k=1, num_channels=3, dropout=0.5, inputshape=None,
                       syncbn=False):
     """
     Build a WideResnet WRN-n-k, as defined in "Wide Residual Networks" by Zagoruyko et al.
-    
+
     Does not include the final average pooling layer.
-    
+
     :n: int; number of conv layers in network (10, 16, 2, 28, 34...)
     :k: int; width scaling of network
     :num_channels: int; number of input channels for fully-convolutional network
@@ -20,7 +21,7 @@ def build_wide_resnet(n=16, k=1, num_channels=3, dropout=0.5, inputshape=None,
     """
     assert (n-4)%6 == 0, "invalid number of conv layers (try 10, 16, 22, 28, 34...)"
     N = int((n-4)/6)
-    
+
     if syncbn:
         BN = tf.keras.layers.experimental.SyncBatchNormalization
     else:
@@ -47,20 +48,20 @@ def build_wide_resnet(n=16, k=1, num_channels=3, dropout=0.5, inputshape=None,
             net = tf.keras.layers.Activation("relu")(net)
             # spatial downsample on the first conv of every group
             if i == 0:
-                block_start = tf.keras.layers.Conv2D(b*k, 3, padding="same", 
+                block_start = tf.keras.layers.Conv2D(b*k, 3, padding="same",
                                                  strides=2, activation="relu")(block_start)
                 net = tf.keras.layers.Conv2D(b*k, 3, padding="same", strides=2)(net)
             else:
                 net = tf.keras.layers.Conv2D(b*k, 3, padding="same")(net)
-            
+
             if dropout > 0:
                 net = tf.keras.layers.SpatialDropout2D(dropout)(net)
-            
+
             net = BN()(net)
             net = tf.keras.layers.Activation("relu")(net)
             net = tf.keras.layers.Conv2D(b*k, 3, padding="same")(net)
             # end residual block
             net = tf.keras.layers.Add()([block_start, net])
             net = BN()(net)
-        
+
     return tf.keras.Model(inpt, net)
