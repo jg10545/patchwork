@@ -78,18 +78,16 @@ def save_lit_dataset(prompts, filepaths, fcn, outdir, imshape=(256, 256), num_pa
     net = tf.keras.layers.GlobalAveragePooling2D()(net)
     model = tf.keras.Model(inpt, net)
     # load the images- dataset will be (image, prompt)
-    ds = _image_file_dataset(filepaths, ys=prompts, imshape=imshape,
+    load_ds = _image_file_dataset(filepaths, ys=prompts, imshape=imshape,
                                         num_parallel_calls=num_parallel_calls, norm=norm,
                                         num_channels=num_channels, shuffle=shuffle,
                                         single_channel=single_channel, augment=augment)
-    ds = ds.batch(batch_size)
-    ds = ds.prefetch(1)
-
+    load_ds = load_ds.batch(batch_size)
     # run each image through the feature extractor and swap order- dataset will be batches of (prompt, feature)
-    def _get_features(x, y):
-        return y, model(x)
-
-    ds = ds.map(_get_features, num_parallel_calls=1)
+    def _gen():
+        for x,y in load_ds:
+            yield y, model(x, training=False)
+    ds = tf.data.Dataset.from_generator(_gen, output_types=(tf.string, tf.float32))
     # unbatch so we get single instances of (prompt, feature)
     ds = ds.unbatch()
     # write to file
