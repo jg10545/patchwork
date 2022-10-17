@@ -324,8 +324,7 @@ class LiTTrainer(GenericExtractor):
         self.step = 0
 
         # parse and write out config YAML
-        metrics= ["linear_classification_accuracy",
-                   "test_acc"]
+        metrics= ["zero_shot_accuracy"]
         self._parse_configs(metrics=metrics,
                             tokenizer=tokenizer, maxlen=maxlen,
                             #augment=augment,
