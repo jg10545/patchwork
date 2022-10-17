@@ -78,18 +78,16 @@ def save_lit_dataset(prompts, filepaths, fcn, outdir, imshape=(256, 256), num_pa
     net = tf.keras.layers.GlobalAveragePooling2D()(net)
     model = tf.keras.Model(inpt, net)
     # load the images- dataset will be (image, prompt)
-    ds = _image_file_dataset(filepaths, ys=prompts, imshape=imshape,
+    load_ds = _image_file_dataset(filepaths, ys=prompts, imshape=imshape,
                                         num_parallel_calls=num_parallel_calls, norm=norm,
                                         num_channels=num_channels, shuffle=shuffle,
                                         single_channel=single_channel, augment=augment)
-    ds = ds.batch(batch_size)
-    ds = ds.prefetch(1)
-
+    load_ds = load_ds.batch(batch_size)
     # run each image through the feature extractor and swap order- dataset will be batches of (prompt, feature)
-    def _get_features(x, y):
-        return y, model(x)
-
-    ds = ds.map(_get_features, num_parallel_calls=1)
+    def _gen():
+        for x,y in load_ds:
+            yield y, model(x, training=False)
+    ds = tf.data.Dataset.from_generator(_gen, output_types=(tf.string, tf.float32))
     # unbatch so we get single instances of (prompt, feature)
     ds = ds.unbatch()
     # write to file
@@ -218,6 +216,7 @@ class LiTTrainer(GenericExtractor):
                  lr=0.01, lr_decay=0, decay_type="cosine",
                  opt_type="adam",
                  prompt_func=None,
+                 zero_shot_tests=None,
                  #imshape=(256,256), num_channels=3,
                  #norm=255,
                  batch_size=64, num_parallel_calls=None,
@@ -268,6 +267,7 @@ class LiTTrainer(GenericExtractor):
         if strategy is None:
             strategy = tf.distribute.get_strategy()
         self.strategy = strategy
+        self._zero_shot_tests = zero_shot_tests
 
 
         self._file_writer = tf.summary.create_file_writer(logdir, flush_millis=10000)
@@ -279,16 +279,7 @@ class LiTTrainer(GenericExtractor):
             self._tokenizer = tokenizer
         self._vocab_size = self._tokenizer.vocab_size()
 
-        # if no FCN is passed- build one
-        with self.scope():
-            text_model = build_text_transformer(self._vocab_size, maxlen,
-                                          embed_dim=embed_dim, num_layers=num_layers,
-                                          num_heads=num_heads, ff_dim=ff_dim,
-                                          final_projection=output_dim)
-
-        self._models = {"fcn":fcn,
-                        "full":full,
-                        "text":text_model}
+        self._models = {"text":text_model}
 
         # build training dataset
         # if user passes location of training tfrecords- load as a dataset
@@ -363,22 +354,26 @@ class LiTTrainer(GenericExtractor):
             self._record_scalars(learning_rate=self._get_current_learning_rate())
             self.step += 1
 
-    def evaluate(self, avpool=True, query_fig=False):
+    def _run_zero_shot_tests(self, zero_shot_tests, suffix=""):
+        # if user passes an (image features, prompts) tuple: run zero-shot accuracy
+        if isinstance(zero_shot_tests, tuple):
+            z = zero_shot_tests
+            acc = _zero_shot_accuracy_test(z[0], z[1], self._tokenizer,
+                                           self._models["text"], maxlen=self.config["maxlen"])
+            key = "zero_shot_accuracy"
+            if len(suffix) > 0:
+                key += "_" + suffix
+            self._record_scalars(**{key:acc})
+        # if user passed a dict of (image features, prompts) tuples- run this function once
+        # for each dataset
+        elif isinstance(zero_shot_tests, dict):
+            for k in dict:
+                self._run_zero_shot_tests(zero_shot_tests[k], suffix=k)
 
-        if self._test:
-            test_acc = []
-            test_loss = []
-            for x, y in self._test_ds:
-                l, a = self._loss_step(x,y)
-                test_acc.append(a.numpy())
-                test_loss.append(l.numpy())
 
-            self._record_scalars(test_acc=np.mean(test_acc),
-                                 test_loss=np.mean(test_loss))
-
-        if self._downstream_labels is not None:
-            self._linear_classification_test(avpool=avpool, query_fig=query_fig)
-
+    def evaluate(self, *args, **kwargs):
+        if self._zero_shot_tests is not None:
+            self._run_zero_shot_tests(self._zero_shot_tests)
 
     def load_weights(self, logdir):
         """
