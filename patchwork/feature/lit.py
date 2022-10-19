@@ -134,9 +134,11 @@ def build_lit_training_step(text_model, optimizer, temp=0.07, weight_decay=0):
     # check whether we're in mixed-precision mode
     mixed = tf.keras.mixed_precision.global_policy().name == 'mixed_float16'
     def trainstep(text_batch, img_embedding_batch):
+        print(text_batch.shape)
+        print(img_embedding_batch.shape)
         img_embedding_batch = tf.nn.l2_normalize(img_embedding_batch, 1)
         z1 = _gather(img_embedding_batch)
-        labels = tf.arange(text_batch.shape[0])
+        labels = tf.range(text_batch.shape[0], dtype=tf.int64)
         with tf.GradientTape() as tape:
             text_embed = text_model(text_batch, training=True)
             text_embed = tf.nn.l2_normalize(text_embed, 1)
@@ -162,11 +164,11 @@ def build_lit_training_step(text_model, optimizer, temp=0.07, weight_decay=0):
             else:
                 l2_loss = 0
 
-            loss = nce_loss + weight_decay*l2_loss
+            loss = xent_loss + weight_decay*l2_loss
             if mixed:
                 loss = optimizer.get_scaled_loss(loss)
-        grads = tape.gradient(loss, textmodel.trainable_variables)
-        optimizer.apply_gradients(zip(grads, textmodel.trainable_variables))
+        grads = tape.gradient(loss, text_model.trainable_variables)
+        optimizer.apply_gradients(zip(grads, text_model.trainable_variables))
         return {"nt_xent_loss": xent_loss,
                 "l2_loss": l2_loss,
                 "loss": loss,
@@ -184,7 +186,7 @@ def _zero_shot_accuracy_test(image_features, prompts, encoder, text_model, maxle
     """
     # label encoder- convert strings to an integer index
     labelenc = sklearn.preprocessing.OneHotEncoder()
-    prompt_labels = np.array(labelenc.fit_transform(prompts).argmax(1)).ravel()
+    prompt_labels = np.array(labelenc.fit_transform(np.array(prompts).reshape(-1,1)).argmax(1)).ravel()
 
     # get normalized encodings for each unique prompt
     enc = _wrap_encoder(encoder, maxlen, tfpyfunc=False)
@@ -262,7 +264,6 @@ class LiTTrainer(GenericExtractor):
         output_dim = text_model.output_shape[-1]
         self.logdir = logdir
         self.trainingdata = trainingdata
-        self._downstream_labels = downstream_labels
         self._test_index_updated = False
         if strategy is None:
             strategy = tf.distribute.get_strategy()
@@ -284,10 +285,12 @@ class LiTTrainer(GenericExtractor):
         # build training dataset
         # if user passes location of training tfrecords- load as a dataset
         if isinstance(trainingdata, str):
-            ds = load_lit_dataset_from_tfrecords(trainingdata, embed_dim,
+            ds = load_lit_dataset_from_tfrecords(trainingdata, output_dim,
                                                        num_parallel_calls=num_parallel_calls,
-                                                       map_fn=_wrap_encoder(encoder, maxlen,
+                                                       map_fn=_wrap_encoder(tokenizer, maxlen,
                                                                             prompt_func=prompt_func))
+            ds = ds.batch(batch_size)
+            ds = ds.prefetch(1)
         else:
             ds = trainingdata
         self._ds = self._distribute_dataset(ds)
@@ -335,10 +338,10 @@ class LiTTrainer(GenericExtractor):
                             lr=lr, lr_decay=lr_decay,
                             #imshape=imshape, num_channels=num_channels,
                             #norm=norm,
-                            # batch_size=batch_size,
+                            batch_size=batch_size,
                             num_parallel_calls=num_parallel_calls,
                             #single_channel=single_channel,
-                            # notes=notes,
+                            notes=notes,
                             trainer="lit", strategy=str(strategy),
                             decay_type=decay_type, opt_type=opt_type, **kwargs)
 

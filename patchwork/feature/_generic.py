@@ -223,7 +223,7 @@ class GenericExtractor(object):
         """
         self.config = {}
         self.input_config = {}
-        self.augment_config = False
+        self.augment_config = {}#False
         # separate out input params, augmentation params, and model-specific
         # params
         for k in kwargs:
