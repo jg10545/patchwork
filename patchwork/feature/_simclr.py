@@ -178,6 +178,7 @@ class SimCLRTrainer(GenericExtractor):
                  num_projection_layers=2,
                  decoupled=False, eps=0, q=0,
                  lr=0.01, lr_decay=100000, decay_type="exponential",
+                 warmup_steps=5000,
                  opt_type="adam",
                  imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, num_parallel_calls=None,
@@ -207,6 +208,7 @@ class SimCLRTrainer(GenericExtractor):
         :lr: (float) initial learning rate
         :lr_decay:  (int) number of steps for one decay period (0 to disable)
         :decay_type: (string) how to decay the learning rate- "exponential" (smooth exponential decay), "staircase" (non-smooth exponential decay), "cosine", or "warmupcosine"
+        :warmup_steps: (int) number of steps for warmupcosine decay type to ramp up over
         :opt_type: (string) optimizer type; "adam", "momentum", or "lars"
         :imshape: (tuple) image dimensions in H,W
         :num_channels: (int) number of image channels
@@ -260,7 +262,8 @@ class SimCLRTrainer(GenericExtractor):
         self._optimizer = self._build_optimizer(lr, lr_decay, opt_type=opt_type,
                                                 decay_type=decay_type,
                                                 weight_decay=weight_decay,
-                                                initial_step=initial_step)
+                                                initial_step=initial_step,
+                                                warmup_steps=warmup_steps)
 
 
         # build training step

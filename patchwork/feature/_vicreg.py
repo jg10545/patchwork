@@ -157,7 +157,7 @@ class VICRegTrainer(GenericExtractor):
     def __init__(self, logdir, trainingdata, testdata=None, fcn=None,
                  augment=True, lam=25, mu=25, nu=1, num_hidden=8192,
                  weight_decay=0, lr=0.01, lr_decay=100000,
-                 decay_type="exponential", opt_type="adam",
+                 decay_type="exponential", warmup_steps=5000, opt_type="adam",
                  imshape=(256,256), num_channels=3,
                  norm=255, batch_size=64, num_parallel_calls=None,
                  single_channel=False, notes="",
@@ -177,6 +177,7 @@ class VICRegTrainer(GenericExtractor):
         :lr: (float) initial learning rate
         :lr_decay:  (int) number of steps for one decay period (0 to disable)
         :decay_type: (string) how to decay the learning rate- "exponential" (smooth exponential decay), "staircase" (non-smooth exponential decay), "cosine", or "warmupcosine"
+        :warmup_steps:
         :opt_type: (string) optimizer type; "adam", "momentum", or "lars"
         :imshape: (tuple) image dimensions in H,W
         :num_channels: (int) number of image channels
@@ -229,7 +230,8 @@ class VICRegTrainer(GenericExtractor):
         self._optimizer = self._build_optimizer(lr, lr_decay, opt_type=opt_type,
                                                 decay_type=decay_type,
                                                 weight_decay=weight_decay,
-                                                initial_step=initial_step)
+                                                initial_step=initial_step,
+                                                warmup_steps=warmup_steps)
 
 
         # build training step
