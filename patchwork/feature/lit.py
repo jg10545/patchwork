@@ -1,13 +1,22 @@
 import numpy as np
 import tensorflow as tf
 import sklearn.preprocessing
+import os
 
 from patchwork.loaders import _image_file_dataset
 from patchwork._tfrecord import save_dataset_to_tfrecords
 
 from patchwork.feature._text_transformer import build_text_transformer
 from patchwork.feature._simclr import _gather
-from patchwork.feature._generic import GenericExtractor
+from patchwork.feature._generic import GenericExtractor, _TENSORBOARD_DESCRIPTIONS
+
+_DESCRIPTIONS = {
+    "nt_xent_loss":"Contrastive crossentropy loss",
+    "zero_shot_accuracy":"Accuracy computed from a list of image embeddings and prompts, by interpreting each distinct prompt as a seprate class, computing a text embedding for each class, and then measuring whether each image vector has highest cosine similarity to the correct text vector."
+}
+for d in _TENSORBOARD_DESCRIPTIONS:
+    _DESCRIPTIONS[d] = _TENSORBOARD_DESCRIPTIONS[d]
+
 
 def _wrap_encoder(encoder, maxlen, prompt_func=None, tfpyfunc=True):
     """
@@ -24,7 +33,8 @@ def _wrap_encoder(encoder, maxlen, prompt_func=None, tfpyfunc=True):
         if N > maxlen:
             y = y[:maxlen]
         elif N < maxlen:
-            y += [0] * (maxlen - N)
+            #
+            y = [0] * (maxlen - N) + y
         return np.array(y)
 
     if tfpyfunc:
@@ -269,6 +279,14 @@ class LiTTrainer(GenericExtractor):
             strategy = tf.distribute.get_strategy()
         self.strategy = strategy
         self._zero_shot_tests = zero_shot_tests
+        self._description = _DESCRIPTIONS
+        
+        if isinstance(zero_shot_tests, dict):
+            for k in zero_shot_tests:
+                if len(k) == 3:
+                    self._description["zero_shot_accuracy_" + k] = zero_shot_tests[k][2]
+                else:
+                    self._description["zero_shot_accuracy_" + k] = self._description["zero_shot_accuracy"]
 
 
         self._file_writer = tf.summary.create_file_writer(logdir, flush_millis=10000)
@@ -305,24 +323,6 @@ class LiTTrainer(GenericExtractor):
         trainstep = build_lit_training_step(text_model, self._optimizer,
                                             temp=temperature, weight_decay=weight_decay)
         self._training_step = self._distribute_training_function(trainstep)
-        """
-        if testdata is not None:
-            self._test_ds = clip_dataset(testdata, testlabels, self._tokenizer,
-                                         maxlen=maxlen, imshape=imshape,
-                                         num_channels=num_channels,
-                                         num_parallel_calls=num_parallel_calls,
-                                         norm=norm, batch_size=batch_size, shuffle=False)
-            @tf.function
-            def loss_step(x,y):
-                img_embed = self._models["full"](x, training=False)
-                text_embed = self._models["text"](y, training=False)
-                img_norm = tf.nn.l2_normalize(img_embed, 1)
-                text_norm = tf.nn.l2_normalize(text_embed, 1)
-                return _contrastive_loss(img_norm, text_norm, temperature)
-            self._loss_step = loss_step
-            self._test = True
-        else:
-            self._test = False"""
 
         self.step = 0
 
@@ -369,13 +369,18 @@ class LiTTrainer(GenericExtractor):
         # if user passed a dict of (image features, prompts) tuples- run this function once
         # for each dataset
         elif isinstance(zero_shot_tests, dict):
-            for k in dict:
+            for k in zero_shot_tests:
                 self._run_zero_shot_tests(zero_shot_tests[k], suffix=k)
 
 
     def evaluate(self, *args, **kwargs):
         if self._zero_shot_tests is not None:
             self._run_zero_shot_tests(self._zero_shot_tests)
+            
+    def save(self):
+        for m in self._models:
+            path = os.path.join(self.logdir, m)
+            self._models[m].save(path, overwrite=True, save_format="tf")
 
     def load_weights(self, logdir):
         """
