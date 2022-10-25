@@ -9,6 +9,7 @@ from patchwork._tfrecord import save_dataset_to_tfrecords
 from patchwork.feature._text_transformer import build_text_transformer
 from patchwork.feature._simclr import _gather
 from patchwork.feature._generic import GenericExtractor, _TENSORBOARD_DESCRIPTIONS
+from patchwork._util import compute_l2_loss
 
 _DESCRIPTIONS = {
     "nt_xent_loss":"Contrastive crossentropy loss",
