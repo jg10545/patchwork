@@ -21,7 +21,15 @@ for d in _TENSORBOARD_DESCRIPTIONS:
 
 def _wrap_encoder(encoder, maxlen, prompt_func=None, tfpyfunc=True):
     """
-
+    Helper function to wrap a sentencepiece encoder so that you can call it inside a tf.data.Dataset.
+    
+    The wrapped function also pads or truncates encoded sequences to a predefined length. Padding is
+    done at the front so that the end of the prompt will always be the last element in the sequence.
+    
+    :encoder: sentencepiece encoder object
+    :maxlen: int; sequence length
+    :prompt_func: prompt generation function- should input and output a string
+    :tfpyfunc: set False to turn off the tf.py_function() wrapper
     """
 
     # first wrap all the pieces into a python function
@@ -190,6 +198,8 @@ def build_lit_training_step(text_model, optimizer, temp=0.07, weight_decay=0):
 
 def _zero_shot_accuracy_test(image_features, prompts, encoder, text_model, maxlen=72):
     """
+    Helper function to estimate zero-shot accuracy.
+    
     :image_features: (N,d) numpy array of image features
     :prompts: length-N list of strings; prompt for each image
     :encoder: trained SentencePiece encoder object
@@ -221,51 +231,35 @@ class LiTTrainer(GenericExtractor):
     modelname = "LiT"
 
     def __init__(self, logdir, text_model, tokenizer, trainingdata,
-                 testdata=None, testlabels=None,
-                 maxlen=76, #embed_dim=512, ff_dim=2048,
-                 #num_layers=12, num_heads=8,
-                 temperature=0.07, #output_dim=64,
+                 maxlen=76, 
+                 temperature=0.07,
                  weight_decay=0,
                  lr=0.01, lr_decay=0, decay_type="cosine",
                  opt_type="adam",
                  prompt_func=None,
                  zero_shot_tests=None,
-                 #imshape=(256,256), num_channels=3,
-                 #norm=255,
                  batch_size=64, num_parallel_calls=None,
-                 #single_channel=False,
                  notes="",
-                 #downstream_labels=None,
                  strategy=None, **kwargs):
         """
         :logdir: (string) path to log directory
-        :tokenizer: (string) path to sentencepiece model file OR a custom tokenizer
-        :trainingdata: (list) list of strings; paths to training images
-        :traininglabels: (list) list of strings; captions for training images
-        :testdata: (list) filepaths of a batch of images to use for eval
-        :testlabels: (list) list of strings; captions for test images
-        :fcn: (keras Model) fully-convolutional network to train as feature extractor
-        :augment: (dict) dictionary of augmentation parameters, True for defaults
+        :text_model: (keras Model) text embedding model. Should output a vector of same dimension as the image model
+        :tokenizer: (string) path to sentencepiece model file OR a sentencepiece tokenizer
+        :trainingdata: (string) path to tfrecord directory OR custom tf.data.Dataset object
         :maxlen: int; length to pad or truncate encoded text queries to
-        :embed_dim: int; embedding dimension of tokens and transformers for language model
-        :ff_dim: int; dimension of internal feed-forward layers inside transformer blocks
-        :num_layers: int; number of transformer blocks in language model
-        :num_heads: int; number of heads in each transformer block in language model
-        :temperature: the Boltzmann temperature parameter- rescale the cosine similarities by this factor before computing softmax loss.
-        :output_dim: dimension of projection head's output space.
-        :weight_decay: coefficient for L2-norm loss. The original SimCLR paper used 1e-6.
+        :temperature: the Gibbs temperature parameter- rescale the cosine similarities by this factor before computing softmax loss.
+        :weight_decay: coefficient for L2-norm loss. The original LiT paper used 0.
         :lr: (float) initial learning rate
         :lr_decay:  (int) number of steps for one decay period (0 to disable)
         :decay_type: (string) how to decay the learning rate- "exponential" (smooth exponential decay), "staircase" (non-smooth exponential decay), or "cosine"
         :opt_type: (string) optimizer type; "adam" or "momentum"
-        :imshape: (tuple) image dimensions in H,W
-        :num_channels: (int) number of image channels
-        :norm: (int or float) normalization constant for images (for rescaling to
-               unit interval)
+        :prompt_func: prompt generation function- should input and output a string
+        :zero_shot_tests: data for running zero-shot accuracy benchmarks at the end of every epoch (or whenever self.evaluate() is called). Three options for inputs:
+            -A tuple of ( (N,d) numpy array of image features, (N) list of prompt strings)
+            -A dictionary where each value is a (features, prompts) tuple. Each test will get a separate tensorboard output.
+            -A dictionary where each value is a (features, prompts, description) tuple, to record info about each test in tensorboard.
         :batch_size: (int) batch size for training
         :num_parallel_calls: (int) number of threads for loader mapping
-        :single_channel: if True, expect a single-channel input image and
-                stack it num_channels times.
         :notes: (string) any notes on the experiment that you want saved in the
                 config.yml file
         :downstream_labels: dictionary mapping image file paths to labels

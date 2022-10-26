@@ -190,7 +190,7 @@ class SimCLRTrainer(GenericExtractor):
         :testdata: (list) filepaths of a batch of images to use for eval
         :fcn: (keras Model) fully-convolutional network to train as feature extractor
         :augment: (dict) dictionary of augmentation parameters, True for defaults
-        :temperature: (float) the Boltzmann temperature parameter- rescale the cosine similarities by this factor before computing softmax loss.
+        :temperature: (float) the Gibbs temperature parameter- rescale the cosine similarities by this factor before computing softmax loss.
         :num_hidden: (int) number of hidden neurons in the network's projection head. Set to 0 to
             use the DirectCLR method from "Understanding Dimesnional Collapse in Contrastive
             Self-Supervised Learning"
