@@ -2,6 +2,7 @@ import numpy as np
 import tensorflow as tf
 import sklearn.preprocessing
 import os
+import sentencepiece as spm
 
 from patchwork.loaders import _image_file_dataset
 from patchwork._tfrecord import save_dataset_to_tfrecords
@@ -192,7 +193,6 @@ def build_lit_training_step(text_model, optimizer, temp=0.07, weight_decay=0):
                 "l2_loss": l2_loss,
                 "loss": loss,
                 "nce_batch_acc": nce_batch_acc}
-        return lossdict
     return trainstep
 
 
