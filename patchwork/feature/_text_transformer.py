@@ -72,7 +72,11 @@ def build_text_transformer(vocab_size, maxlen, embed_dim=512, num_layers=12, num
     for n in range(num_layers):
         x = TransformerBlock(embed_dim, num_heads, ff_dim)(x)
     if final_projection:
-        x = tf.keras.layers.GlobalAvgPool1D(data_format='channels_last')(x)
+        print(x.shape)
+        x = tf.keras.layers.Lambda(lambda y: y[:,-1,:])(x)
+        #x = tf.keras.layers.GlobalAvgPool1D(data_format='channels_last')(x)
+        print(x.shape)
         x = tf.keras.layers.Dense(final_projection)(x)
+        print(x.shape)
     
     return tf.keras.Model(inpt, x)

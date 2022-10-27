@@ -22,23 +22,23 @@ except:
     logging.debug("unable to import sentencepiece- CLIPTrainer won't work.")
 
 
-def clip_dataset(imfiles, labels, encoder, maxlen=76, imshape=(256,256), 
-                 num_channels=3, num_parallel_calls=None, norm=255, 
+def clip_dataset(imfiles, labels, encoder, maxlen=76, imshape=(256,256),
+                 num_channels=3, num_parallel_calls=None, norm=255,
                  batch_size=256, augment=False, shuffle=True,
                  single_channel=False):
     """
     Build a tf.data.Dataset object for training CLIP
-    
+
     :imfiles: list of paths to training images
-    :labels: list of strings containing a caption for each image 
+    :labels: list of strings containing a caption for each image
     :encoder: sentencepiece object for mapping strings to byte pair encoded arrays
     :maxlen: int; length of sequences. BPE arrays will be padded or truncated to this.
     """
-    ds = _image_file_dataset(imfiles, ys=labels, imshape=imshape, 
+    ds = _image_file_dataset(imfiles, ys=labels, imshape=imshape,
                                         augment=augment, shuffle=shuffle)
 
     if augment:
-        aug_func = augment_function(imshape, {"rot90":True})
+        aug_func = augment_function(imshape, augment)
 
 
     def _encode_text(y):
@@ -56,7 +56,7 @@ def clip_dataset(imfiles, labels, encoder, maxlen=76, imshape=(256,256),
             x = aug_func(x)
         y = tf.py_function(_encode_text, (y,), Tout=tf.int64)
         return x,y
-    
+
     ds = ds.map(_augment_and_encode, num_parallel_calls=num_parallel_calls)
     ds = ds.batch(batch_size)
     ds = ds.prefetch(1)
@@ -64,17 +64,17 @@ def clip_dataset(imfiles, labels, encoder, maxlen=76, imshape=(256,256),
 
 
 
-def build_image_encoder(fcn, num_channels=3, output_dim=64):
+def _build_image_encoder(fcn, num_channels=3, output_dim=64):
     """
     NOT the full version used in OpenAI's paper- just a linear
     projection head after the global average pool, instead of
     a multi-head attention mechanism
-    
+
     :fcn: fully convolutional network to build off of
     :num_channels: int; number of input channels
     :output_dim: int; output dimension of final dense layer
     """
-    inpt = tf.keras.layers.Input((None, None, 3))
+    inpt = tf.keras.layers.Input((None, None, num_channels))
     x = fcn(inpt)
     x = tf.keras.layers.GlobalAveragePooling2D()(x)
     x = tf.keras.layers.Dense(output_dim)(x)
@@ -87,13 +87,13 @@ def compute_nce_loss(img_embed, text_embed, temp=0.07, return_acc=False):
     N = img_embed.shape[0]
     img_norm = tf.nn.l2_normalize(img_embed, 1)
     text_norm = tf.nn.l2_normalize(text_embed, 1)
-    # NOTE this is different from what's described in the paper- check 
+    # NOTE this is different from what's described in the paper- check
     # pseudocode in figure 3
     logits1 = tf.matmul(img_norm, text_norm, transpose_b=True)/temp
     labels1 = tf.range(N)
     loss1 = tf.reduce_mean(
         tf.losses.sparse_categorical_crossentropy(labels1, logits1, from_logits=True))
-    
+
     logits2 = tf.matmul(text_norm, img_norm, transpose_b=True)/temp
     labels2 = tf.range(N)
     loss2 = tf.reduce_mean(
@@ -103,7 +103,7 @@ def compute_nce_loss(img_embed, text_embed, temp=0.07, return_acc=False):
         pred = tf.argmax(logits1, 1)
         acc = tf.reduce_mean(tf.cast(tf.cast(pred, tf.int32) == tf.cast(labels1, tf.int32), tf.float32))
         return loss, acc
-    
+
     return loss
 
 
@@ -115,13 +115,13 @@ def build_clip_training_step(img_model, text_model, optimizer, temp=0.07, weight
         with tf.GradientTape() as tape:
             img_embed = img_model(img_batch, training=True)
             text_embed = text_model(text_batch, training=True)
-            
+
             nce_loss = compute_nce_loss(img_embed, text_embed, temp)
             if (weight_decay > 0)&("LARS" not in optimizer._name):
                 l2_loss = compute_l2_loss(img_model) + compute_l2_loss(text_model)
             else:
                 l2_loss = 0
-                
+
             loss = nce_loss + weight_decay*l2_loss
         grads = tape.gradient(loss, trainvars)
         optimizer.apply_gradients(zip(grads, trainvars))
@@ -135,13 +135,13 @@ def build_clip_test_step(img_model, text_model, optimizer, temp=0.07, weight_dec
     def teststep(img_batch, text_batch):
         img_embed = img_model(img_batch, training=False)
         text_embed = text_model(text_batch, training=False)
-            
+
         nce_loss, acc = compute_nce_loss(img_embed, text_embed, temp, True)
         if weight_decay > 0:
             l2_loss = compute_l2_loss(img_model) + compute_l2_loss(text_model)
         else:
             l2_loss = 0
-                
+
         loss = nce_loss + weight_decay*l2_loss
         return loss, acc
     return teststep
@@ -150,14 +150,14 @@ def build_clip_test_step(img_model, text_model, optimizer, temp=0.07, weight_dec
 
 class CLIPTrainer(GenericExtractor):
     """
-    Class for training a CLIP model. 
-    
+    Class for training a CLIP model.
+
     Based on "Learning transferable visual models from natural language
     supervision" by Radford et al.
     """
     modelname = "CLIP"
 
-    def __init__(self, logdir, tokenizer, trainingdata, traininglabels, 
+    def __init__(self, logdir, tokenizer, trainingdata, traininglabels,
                  testdata=None, testlabels=None, fcn=None,  augment=True,
                  maxlen=76, embed_dim=512, ff_dim=2048,
                  num_layers=12, num_heads=8,
@@ -185,7 +185,7 @@ class CLIPTrainer(GenericExtractor):
         :num_layers: int; number of transformer blocks in language model
         :num_heads: int; number of heads in each transformer block in language model
         :temperature: the Boltzmann temperature parameter- rescale the cosine similarities by this factor before computing softmax loss.
-        :output_dim: dimension of projection head's output space. 
+        :output_dim: dimension of projection head's output space.
         :weight_decay: coefficient for L2-norm loss. The original SimCLR paper used 1e-6.
         :lr: (float) initial learning rate
         :lr_decay:  (int) number of steps for one decay period (0 to disable)
@@ -197,7 +197,7 @@ class CLIPTrainer(GenericExtractor):
                unit interval)
         :batch_size: (int) batch size for training
         :num_parallel_calls: (int) number of threads for loader mapping
-        :single_channel: if True, expect a single-channel input image and 
+        :single_channel: if True, expect a single-channel input image and
                 stack it num_channels times.
         :notes: (string) any notes on the experiment that you want saved in the
                 config.yml file
@@ -212,53 +212,53 @@ class CLIPTrainer(GenericExtractor):
         if strategy is None:
             strategy = tf.distribute.get_strategy()
         self.strategy = strategy
-        
+
         self._testdata = testdata
         self._testlabels = testlabels
-        
+
         self._file_writer = tf.summary.create_file_writer(logdir, flush_millis=10000)
         self._file_writer.set_as_default()
         # load tokenizer
         self._tokenizer = spm.SentencePieceProcessor(tokenizer)
         self._vocab_size = self._tokenizer.vocab_size()
-        
+
         # if no FCN is passed- build one
         with self.scope():
             if fcn is None:
                 fcn = tf.keras.applications.ResNet50(weights=None, include_top=False)
             self.fcn = fcn
-            # Create a Keras model that wraps the base encoder and 
+            # Create a Keras model that wraps the base encoder and
             # the projection head
-            full = build_image_encoder(fcn, num_channels=num_channels, 
+            full = _build_image_encoder(fcn, num_channels=num_channels,
                                        output_dim=output_dim)
             text = build_text_transformer(self._vocab_size, maxlen,
                                           embed_dim=embed_dim, num_layers=num_layers,
                                           num_heads=num_heads, ff_dim=ff_dim,
                                           final_projection=output_dim)
-        
-        self._models = {"fcn":fcn, 
+
+        self._models = {"fcn":fcn,
                         "full":full,
                         "text":text}
-        
+
         # build training dataset
         ds = clip_dataset(trainingdata, traininglabels, self._tokenizer,
-                          maxlen=maxlen, imshape=imshape, 
-                          num_channels=num_channels, 
+                          maxlen=maxlen, imshape=imshape,
+                          num_channels=num_channels,
                           num_parallel_calls=num_parallel_calls,
                           norm=norm, batch_size=batch_size, shuffle=True)
         self._ds = self._distribute_dataset(ds)
-        
+
         # create optimizer
         self._optimizer = self._build_optimizer(lr, lr_decay, opt_type=opt_type,
                                                 decay_type=decay_type,
                                                 weight_decay=weight_decay)
-        
-        
+
+
         # build training step
-        self._training_step = build_clip_training_step(full, text, 
+        self._training_step = build_clip_training_step(full, text,
                                                        self._optimizer, temp=temperature,
                                                        weight_decay=weight_decay)
-        
+
         if testdata is not None:
             self._test_ds = clip_dataset(testdata, testlabels, self._tokenizer,
                                          maxlen=maxlen, imshape=imshape,
@@ -276,9 +276,9 @@ class CLIPTrainer(GenericExtractor):
             self._test = True
         else:
             self._test = False
-        
+
         self.step = 0
-        
+
         # parse and write out config YAML
         metrics= ["linear_classification_accuracy",
                    "test_acc"]
@@ -286,7 +286,7 @@ class CLIPTrainer(GenericExtractor):
                             tokenizer=tokenizer, maxlen=maxlen,
                             augment=augment, temperature=temperature,
                             output_dim=output_dim, weight_decay=weight_decay,
-                            num_layers=num_layers, 
+                            num_layers=num_layers,
                             num_heads=num_heads,
                             lr=lr, lr_decay=lr_decay,
                             imshape=imshape, num_channels=num_channels,
@@ -298,7 +298,7 @@ class CLIPTrainer(GenericExtractor):
 
     def _run_training_epoch(self, **kwargs):
         """
-        
+
         """
         self._test_index_updated = False
         for x, y in self._ds:
@@ -306,9 +306,9 @@ class CLIPTrainer(GenericExtractor):
             self._record_scalars(**lossdict)
             self._record_scalars(learning_rate=self._get_current_learning_rate())
             self.step += 1
-             
+
     def evaluate(self, avpool=True, query_fig=False):
-        
+
         if self._test:
             test_acc = []
             test_loss = []
@@ -316,31 +316,31 @@ class CLIPTrainer(GenericExtractor):
                 l, a = self._loss_step(x,y)
                 test_acc.append(a.numpy())
                 test_loss.append(l.numpy())
-                
+
             self._record_scalars(test_acc=np.mean(test_acc),
                                  test_loss=np.mean(test_loss))
 
-        if self._downstream_labels is not None:         
+        if self._downstream_labels is not None:
             self._linear_classification_test(avpool=avpool, query_fig=query_fig)
-            
+
     def save(self):
         """
         Write model(s) to disk
-        
+
         Note: tried to use SavedModel format for this and got a memory leak;
         think it's related to https://github.com/tensorflow/tensorflow/issues/32234
-        
+
         For now sticking with HDF5
         """
         for m in self._models:
             path = os.path.join(self.logdir, m)
             self._models[m].save(path, overwrite=True, save_format="tf")
-            
+
     def load_weights(self, logdir):
         """
         Update model weights from a previously trained model
-        
-        Different from generic load_weights because we're using TF 
+
+        Different from generic load_weights because we're using TF
         savedmodel format instead of HDF5
         """
         for k in self._models:
@@ -358,11 +358,11 @@ class CLIPTrainer(GenericExtractor):
             logging.info("updating embedding index on test data")
             self._test_index = self._models["full"].predict(self._test_ds)
             self._test_index_updated = True
-            
-            
+
+
     def query_test_set(self, querystring, plot=True):
         """
-        
+
         """
         maxlen = self.config["maxlen"]
         # make sure test index is up-to-date
@@ -379,14 +379,14 @@ class CLIPTrainer(GenericExtractor):
             query_array = np.concatenate([query_array,
                                           np.zeros(maxlen-L, dtype=np.int64)])
         query_array = query_array.reshape(1,-1)
-        
-        # now map that query to a semantic vector in the shared 
+
+        # now map that query to a semantic vector in the shared
         # embedding space
         query_vector = self._models["text"](query_array, training=False)
         # find distance to all the image embeddings from the test set
         dists = cdist(self._test_index, query_vector.numpy(), metric="cosine").ravel()
         ordering = dists.argsort()
-        
+
         if plot:
             plt.suptitle("Query: '%s'"%querystring, fontsize=14)
             for i in range(9):
@@ -397,9 +397,8 @@ class CLIPTrainer(GenericExtractor):
                 plt.title(self._testlabels[ordering[i]].replace(".",".\n").replace(",",",\n"))
         else:
             return dists
-                
-        
-        
-        
-        
-        
+
+
+
+
+
