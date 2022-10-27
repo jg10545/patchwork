@@ -132,7 +132,7 @@ def _compute_alignment_and_uniformity(dataset, model, alpha=2, t=2):
 
 
 def build_optimizer(lr, lr_decay=0, opt_type="adam", decay_type="exponential",
-                    weight_decay=None, initial_step=0):
+                    weight_decay=None, initial_step=0, warmup_steps=5000):
     """
     Macro to reduce some duplicative code for building optimizers
     for trainers
@@ -158,7 +158,7 @@ def build_optimizer(lr, lr_decay=0, opt_type="adam", decay_type="exponential",
                                                            t_mul=2., m_mul=1.,
                                                            alpha=0.)
         elif decay_type == "warmupcosine":
-            lr = CosineDecayWarmup(lr, lr_decay)
+            lr = CosineDecayWarmup(lr, lr_decay, warmup_steps=warmup_steps)
         else:
             assert False, "don't recognize this decay type"
     if opt_type == "adam":

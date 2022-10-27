@@ -12,3 +12,4 @@ scikit-image
 holoviews
 pytest-mock
 mlflow
+sentencepiece
