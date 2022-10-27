@@ -325,17 +325,11 @@ class LiTTrainer(GenericExtractor):
         metrics= ["zero_shot_accuracy"]
         self._parse_configs(metrics=metrics,
                             tokenizer=tokenizer, maxlen=maxlen,
-                            #augment=augment,
                             temperature=temperature,
                             output_dim=output_dim, weight_decay=weight_decay,
-                            #num_layers=num_layers,
-                            #num_heads=num_heads,
                             lr=lr, lr_decay=lr_decay,
-                            #imshape=imshape, num_channels=num_channels,
-                            #norm=norm,
                             batch_size=batch_size,
                             num_parallel_calls=num_parallel_calls,
-                            #single_channel=single_channel,
                             notes=notes,
                             trainer="lit", strategy=str(strategy),
                             decay_type=decay_type, opt_type=opt_type, **kwargs)
