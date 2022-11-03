@@ -343,24 +343,37 @@ class GenericExtractor(object):
             desc = self._description.get(h, None)
             tf.summary.histogram(h, hists[h], step=self.step,
                                  description=desc)
+    def set_linear_classification_config(self, **kwargs):
+        """
+        Want to run your classification test with different input parameters than
+        you use for training? You friggin weirdo?
+
+        Put your new input parameters here while you sort your life out.
+        """
+        self._linear_classification_config = kwargs
 
     def _linear_classification_test(self, avpool=True, query_fig=False):
 
-         results = linear_classification_test(self._models["fcn"],
+        if hasattr(self, "_linear_classification_config"):
+            config = self._linear_classification_config
+        else:
+            config = self.input_config
+
+        results = linear_classification_test(self._models["fcn"],
                                     self._downstream_labels,
                                     avpool=avpool, query_fig=query_fig,
-                                    **self.input_config)
-         if query_fig:
-             acc, conf_mat, fig = results
-             self._record_images(closest_feature_vectors=fig)
-         else:
-             acc, conf_mat =results
+                                    **config)#self.input_config)
+        if query_fig:
+            acc, conf_mat, fig = results
+            self._record_images(closest_feature_vectors=fig)
+        else:
+            acc, conf_mat =results
 
-         conf_mat = np.expand_dims(np.expand_dims(conf_mat, 0), -1)/conf_mat.max()
-         self._record_scalars(linear_classification_accuracy=acc, metric=True)
-         # commenting out the confusion matrix record- I don't think I've ever found
-         # this actually useful
-         #self._record_images(linear_classification_confusion_matrix=conf_mat)
+        conf_mat = np.expand_dims(np.expand_dims(conf_mat, 0), -1)/conf_mat.max()
+        self._record_scalars(linear_classification_accuracy=acc, metric=True)
+        # commenting out the confusion matrix record- I don't think I've ever found
+        # this actually useful
+        #self._record_images(linear_classification_confusion_matrix=conf_mat)
 
 
     def rotation_classification_test(self, testdata=None, avpool=False):
