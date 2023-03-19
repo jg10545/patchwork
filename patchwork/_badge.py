@@ -36,7 +36,7 @@ class KPlusPlusSampler():
         self.d = X.shape[1]
         # create boolean array of length N indicating which
         # indices are available for sampling
-        self.available = np.ones(self.N).astype(np.bool)
+        self.available = np.ones(self.N).astype(bool)
         if indices is not None:
             for i in indices:
                 self.available[i] = False
