@@ -117,7 +117,6 @@ def _add_convnext_block(inpt, use_grn=False, **kwargs):
     x = tf.keras.layers.Activation(tf.nn.gelu)(x)
 
     if use_grn:
-        #x = LayerScale(1e-6)(x)
         x = GRN()(x)
     
     x = tf.keras.layers.Conv2D(k0,1)(x)

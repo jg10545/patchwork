@@ -2,8 +2,6 @@
 
 import tensorflow as tf
 import numpy as np
-from tensorflow.python.framework import random_seed
-random_seed.set_seed(42)
 
 from patchwork._convnext import _add_convnext_block, build_convnext_fcn
 
