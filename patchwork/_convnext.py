@@ -26,6 +26,37 @@ _blocks = {
     "XL":(3, 3, 27, 3)
 }
 
+
+class LayerScale(tf.keras.layers.Layer):
+    """
+    Layer scale layer - subtly used in the Convnext paper
+    A ConvNet for the 2020s https://arxiv.org/abs/2201.03545
+
+    Removed in Convnext V2 w/ GRN
+    """
+
+    def __init__(self, init_value, **kwargs):
+        super().__init__(**kwargs)
+        self.init_value = init_value
+
+    def build(self, input_shape):
+        n_channels = input_shape[-1]
+        self.gamma = self.add_weight(
+            shape=(n_channels,),
+            initializer=tf.keras.initializers.Constant(self.init_value),
+            name="gamma",
+            trainable=True,
+        )
+
+    def call(self, inputs):
+        return self.gamma * inputs
+
+    def get_config(self):
+        config = super().get_config()
+        config["init_value"] = self.init_value
+        return config
+
+
 class GRN(tf.keras.layers.Layer):
     """
     Global Response Normalization layer
@@ -63,8 +94,10 @@ class GRN(tf.keras.layers.Layer):
         )
 
     def call(self, inputs):
-        Gx = tf.norm(inputs, ord=2, axis=(1,2), keepdims=True)
-        Nx = Gx / (tf.reduce_mean(Gx, axis=-1, keepdims=True) + 1e-6) # CN2 code uses mean, paper seems to use sum
+        #why doesn't this work: Gx = tf.norm(inputs, ord=2, axis=(1,2), keepdims=True)
+        Gx = tf.sqrt(tf.reduce_sum(tf.pow(inputs,2), axis=(1,2), keepdims=True))
+        # ConvnextV2 code uses mean, paper seems to use sum
+        Nx = Gx / (tf.reduce_mean(Gx, axis=-1, keepdims=True) + 1e-6)
         return self.gamma * (inputs * Nx) + self.beta + inputs
 
     def get_config(self):
@@ -72,7 +105,7 @@ class GRN(tf.keras.layers.Layer):
         return config
 
 
-def _add_convnext_block(inpt, use_grn, **kwargs):
+def _add_convnext_block(inpt, use_grn=False, **kwargs):
     """
     
     """
@@ -84,6 +117,7 @@ def _add_convnext_block(inpt, use_grn, **kwargs):
     x = tf.keras.layers.Activation(tf.nn.gelu)(x)
 
     if use_grn:
+        #x = LayerScale(1e-6)(x)
         x = GRN()(x)
     
     x = tf.keras.layers.Conv2D(k0,1)(x)
@@ -92,7 +126,7 @@ def _add_convnext_block(inpt, use_grn, **kwargs):
 
 def build_convnext_fcn(m, use_grn=False, num_channels=3):
     """
-    :m: str; "T", "S", "B", "L", or "XL"
+    :m: str; "A", "F", "P", "N", "T", "S", "B", "L", or "XL"
     """
     inpt = tf.keras.layers.Input((None, None, num_channels))
     x = tf.keras.layers.Conv2D(_channels[m][0], 4, strides=4)(inpt)

@@ -1,9 +1,31 @@
 # -*- coding: utf-8 -*-
 
 import tensorflow as tf
+import numpy as np
+from tensorflow.python.framework import random_seed
+random_seed.set_seed(42)
 
-from patchwork._convnext import _add_convnext_block
+from patchwork._convnext import _add_convnext_block, build_convnext_fcn
 
+
+def test_build_convnext():
+    x = tf.ones((1, 224, 224, 3))
+    fcn = build_convnext_fcn("T", use_grn=True, num_channels=3)
+    print(fcn(x).shape)
+    assert fcn(x).shape == (1, 7, 7, 768)
+
+    
+def test_convnext_grn():
+    tf.config.experimental.enable_op_determinism()
+    x = tf.random.uniform((1, 224, 224, 1))
+    tf.keras.utils.set_random_seed(1)
+    fcn_nogrn = build_convnext_fcn("T", use_grn=False, num_channels=1)
+    tf.keras.utils.set_random_seed(1)
+    fcn_grn = build_convnext_fcn("T", use_grn=True, num_channels=1)
+    nogrn_out = fcn_nogrn(x)
+    grn_out = fcn_grn(x)
+    assert np.array_equal(nogrn_out.numpy(), grn_out.numpy())
+    
 
 def test_add_convnext_block():
     inpt = tf.keras.layers.Input((11, 13, 7))
