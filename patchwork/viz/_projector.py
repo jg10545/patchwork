@@ -28,7 +28,7 @@ def _make_sprite(images, spritesize=50):
     """
     num_sprites = images.shape[0]
     imsize = images.shape[1]
-    gridsize = np.int(np.ceil(np.sqrt(num_sprites)))
+    gridsize = int(np.ceil(np.sqrt(num_sprites)))
     output = np.zeros((imsize*gridsize, imsize*gridsize, 3), dtype=np.uint8)
 
     for i in range(num_sprites):
