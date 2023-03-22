@@ -2,6 +2,7 @@
 import numpy as np
 import tensorflow as tf
 
+tf.random.seed(1)
 from patchwork.feature._moco import copy_model, exponential_model_update
 from patchwork.feature._moco import _build_momentum_contrast_training_step
 from patchwork.feature._moco import _build_logits

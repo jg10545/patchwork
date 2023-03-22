@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 import tensorflow as tf
+tf.random.seed(1)
 from patchwork._optimizers import CosineDecayWarmup, LARSOptimizer
 
 

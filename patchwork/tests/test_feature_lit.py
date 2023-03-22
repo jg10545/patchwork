@@ -5,6 +5,7 @@ import io
 from patchwork.feature.lit import _build_lit_dataset_from_in_memory_features, save_lit_dataset
 from patchwork.feature.lit import load_lit_dataset_from_tfrecords, _wrap_encoder, _zero_shot_accuracy_test
 
+tf.random.seed(1)
 from patchwork.feature._text_transformer import build_text_transformer
 
 def _get_encoder(filepath, vocab_size=100):

@@ -2,6 +2,7 @@
 import numpy as np
 import tensorflow as tf
 
+tf.random.seed(1)
 from patchwork.feature._text_transformer import TransformerBlock, TokenAndPositionEmbedding
 from patchwork.feature._text_transformer import build_text_transformer
 

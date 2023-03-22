@@ -2,6 +2,7 @@
 import numpy as np
 import tensorflow as tf
 
+tf.random.set_seed(1)
 from patchwork._distill import _build_student_model,  Distillerator
 
 
