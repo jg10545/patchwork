@@ -7,7 +7,7 @@ from patchwork.loaders import _get_features, _get_rotation_features
 from patchwork.loaders import _build_rotation_dataset
 from patchwork.loaders import _fixmatch_unlab_dataset
 
-
+tf.random.set_seed(1)
 
 def test_build_load_function_png(test_png_path):
     load_fn = _build_load_function(test_png_path,

@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 from PIL import Image
+import tensorflow as tf
+tf.random.set_seed(1)
 
 from patchwork.feature._detcon_utils import _get_segments, _get_grid_segments
 from patchwork.feature._detcon_utils import _segment_aug, _filter_out_bad_segments

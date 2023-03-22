@@ -2,7 +2,7 @@
 import numpy as np
 import tensorflow as tf
 from PIL import Image
-
+tf.random.set_seed(1)
 from patchwork._tasks import _rotate
 
 
