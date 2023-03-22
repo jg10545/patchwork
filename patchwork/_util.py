@@ -162,9 +162,9 @@ def build_optimizer(lr, lr_decay=0, opt_type="adam", decay_type="exponential",
         else:
             assert False, "don't recognize this decay type"
     if opt_type == "adam":
-        opt = tf.keras.optimizers.Adam(lr)
+        opt = tf.keras.optimizers.legacy.Adam(lr)
     elif opt_type == "momentum":
-        opt = tf.keras.optimizers.SGD(lr, momentum=0.9)
+        opt = tf.keras.optimizers.legacy.SGD(lr, momentum=0.9)
     elif opt_type == "lars":
         if weight_decay is None:
             kwargs = {}
