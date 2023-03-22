@@ -67,7 +67,7 @@ def test_stabilize():
     
     
 # MOCK KERAS MODELS FOR TESTING UPDATE FUNCTIONS 
-opt = tf.keras.optimizers.SGD(1e-3)
+opt = tf.keras.optimizers.legacy.SGD(1e-3)
 # INPAINTER
 inpt = tf.keras.layers.Input((None,None,3))
 outpt = tf.keras.layers.Conv2D(3, 1)(inpt)
