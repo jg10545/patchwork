@@ -1,6 +1,6 @@
 import numpy as np
 import tensorflow as tf
-tf.random.seed(1)
+tf.random.set_seed(1)
 
 from patchwork.feature._contrastive import _build_negative_mask
 from patchwork.feature._contrastive import _simclr_softmax_prob, _hcl_softmax_prob

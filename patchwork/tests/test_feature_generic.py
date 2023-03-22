@@ -2,7 +2,7 @@
 import numpy as np
 import tensorflow as tf
 
-tf.random.seed(1)
+tf.random.set_seed(1)
 
 from patchwork.feature._generic import linear_classification_test
 from patchwork.feature._generic import build_optimizer

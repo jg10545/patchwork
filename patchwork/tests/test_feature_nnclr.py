@@ -1,7 +1,7 @@
 import numpy as np
 import tensorflow as tf
 
-tf.random.seed(1)
+tf.random.set_seed(1)
 from patchwork.feature._nnclr import _find_nearest_neighbors, _update_queue, _build_nnclr_training_step
 
 

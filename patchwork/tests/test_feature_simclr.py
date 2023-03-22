@@ -1,7 +1,7 @@
 
 import numpy as np
 import tensorflow as tf
-tf.random.seed(1)
+tf.random.set_seed(1)
 
 from patchwork.feature._simclr import _build_embedding_model
 from patchwork.feature._simclr import _build_simclr_training_step
