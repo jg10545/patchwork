@@ -54,7 +54,10 @@ def _gen_figs(arrays, dim=3, lw=5):
         figs.append(fig)
     return figs
 
-
+def _dummy_fig():
+    fig = plt.figure(figsize=(6,6))
+    fig.text(0.25, 0.25, 'temporary figure')
+    return fig
 
 def _single_class_radiobuttons(width=125, height=25):
     """
@@ -86,7 +89,7 @@ class ButtonPanel(object):
         self.dim = dim
         self._num_images = dim**2
 
-        self._figpanel = pn.pane.Matplotlib(height_policy="fit",
+        self._figpanel = pn.pane.Matplotlib(_dummy_fig(), height_policy="fit",
                                             width_policy="fit",
                                             aspect_ratio=1,
                                             width=size, height=size)
