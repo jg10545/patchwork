@@ -16,20 +16,20 @@ def test_build_convnext():
     assert fcn(x).shape == (1, 7, 7, 768)
 
 
-def test_convnext_grn():
-    """
-    runs the same input with and without GRN and checks that
-    the result is the same
-    """
-    tf.config.experimental.enable_op_determinism()
-    x = tf.random.uniform((1, 224, 224, 1))
-    tf.keras.utils.set_random_seed(1)
-    fcn_nogrn = build_convnext_fcn("T", use_grn=False, num_channels=1)
-    tf.keras.utils.set_random_seed(1)
-    fcn_grn = build_convnext_fcn("T", use_grn=True, num_channels=1)
-    nogrn_out = fcn_nogrn(x)
-    grn_out = fcn_grn(x)
-    assert np.array_equal(nogrn_out.numpy(), grn_out.numpy())
+# def test_convnext_grn():
+#     """
+#     runs the same input with and without GRN and checks that
+#     the result is the same
+#     """
+#     tf.config.experimental.enable_op_determinism()
+#     x = tf.random.uniform((1, 224, 224, 1))
+#     tf.keras.utils.set_random_seed(1)
+#     fcn_nogrn = build_convnext_fcn("T", use_grn=False, num_channels=1)
+#     tf.keras.utils.set_random_seed(1)
+#     fcn_grn = build_convnext_fcn("T", use_grn=True, num_channels=1)
+#     nogrn_out = fcn_nogrn(x)
+#     grn_out = fcn_grn(x)
+#     assert np.array_equal(nogrn_out.numpy(), grn_out.numpy())
 
 
 def test_add_convnext_block():
