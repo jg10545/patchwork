@@ -7,6 +7,7 @@ GUI code for training a model
 
 """
 import numpy as np
+import skimage.exposure
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 import panel as pn
@@ -114,7 +115,10 @@ class ButtonPanel(object):
         
         self.label_counts = pn.pane.Markdown("")
         
+        self._exposure = pn.widgets.Toggle(name="histeq", button_type="default", value=True, width=50)
         self._button_panel = pn.Column(pn.Spacer(height=50),
+                                        pn.pane.Markdown("## Display"),
+                                        self._exposure,
                                        pn.pane.Markdown("## Image labels"),
                                         self._exclude, 
                                         self._validation,
@@ -149,6 +153,10 @@ class ButtonPanel(object):
         filepaths = self._df["filepath"].iloc[indices]
         # load to numpy arrays
         self._image_arrays = [self._load_func(f) for f in filepaths]
+        if self._exposure.value:
+            for idx in range(len(self._image_arrays)):
+                self._image_arrays[idx] = skimage.exposure.equalize_adapthist(self._image_arrays[idx])
+
         # make a list of matplotlib figures, one for each image that
         # could be highlighted
         self._figs = _gen_figs(self._image_arrays, dim=self.dim, lw=5)
