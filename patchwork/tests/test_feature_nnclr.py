@@ -1,6 +1,7 @@
 import numpy as np
 import tensorflow as tf
 
+tf.random.set_seed(1)
 from patchwork.feature._nnclr import _find_nearest_neighbors, _update_queue, _build_nnclr_training_step
 
 
@@ -66,7 +67,7 @@ def test_nnclr_training_step_with_weight_decay():
     net = tf.keras.layers.Dense(d)(inpt)
     embed_model = tf.keras.Model(inpt,net)
 
-    opt = tf.keras.optimizers.SGD()
+    opt = tf.keras.optimizers.legacy.SGD()
 
     step = _build_nnclr_training_step(embed_model, opt, Q, weight_decay=1e-6)
 

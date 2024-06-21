@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 import tensorflow as tf
+tf.random.set_seed(1)
+
 from patchwork._tfrecord import save_dataset_to_tfrecords
 from patchwork.loaders import load_dataset_from_tfrecords
 

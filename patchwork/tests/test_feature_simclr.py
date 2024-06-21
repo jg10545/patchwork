@@ -1,7 +1,7 @@
 
 import numpy as np
 import tensorflow as tf
-
+tf.random.set_seed(1)
 
 from patchwork.feature._simclr import _build_embedding_model
 from patchwork.feature._simclr import _build_simclr_training_step
@@ -31,7 +31,7 @@ def test_build_embedding_model_extra_layers():
     
 def test_build_simclr_training_step():
     model = _build_embedding_model(fcn, (32,32), 3, 5, 7)
-    opt = tf.keras.optimizers.SGD()
+    opt = tf.keras.optimizers.legacy.SGD()
     step = _build_simclr_training_step(model, opt, 0.1)
     
     x = tf.zeros((4,32,32,3), dtype=tf.float32)
@@ -46,7 +46,7 @@ def test_build_simclr_training_step():
     
 def test_build_embedding_model_directclr():
     model = _build_embedding_model(fcn, (32,32), 3, 0, 7)
-    opt = tf.keras.optimizers.SGD()
+    opt = tf.keras.optimizers.legacy.SGD()
     step = _build_simclr_training_step(model, opt, 0.1)
     
     x = tf.zeros((4,32,32,3), dtype=tf.float32)
@@ -61,7 +61,7 @@ def test_build_embedding_model_directclr():
     
 def test_build_simclr_training_step_with_weight_decay():
     model = _build_embedding_model(fcn, (32,32), 3, 5, 7)
-    opt = tf.keras.optimizers.SGD()
+    opt = tf.keras.optimizers.legacy.SGD()
     step = _build_simclr_training_step(model, opt, 0.1,
                                        weight_decay=1e-6)
     
