@@ -51,7 +51,7 @@ This part's pretty unimaginative- starting with the model you trained using `pat
 
 ## Installation
 
-use pip
+use pip!
 
 
 ## Credits
